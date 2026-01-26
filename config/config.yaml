@@ -123,7 +123,7 @@ volatility_filter:
   # Sessions à éviter (heures UTC) - OPTIMISÉ 2025-12-24 après audit
   # Heures toxiques identifiées: 01h, 02h, 05h, 18h, 19h, 20h, 21h, 22h
   avoid_low_liquidity: true
-  low_liquidity_hours_utc: [0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23]
+  low_liquidity_hours_utc: [0, 1, 5, 6, 7, 9, 10, 11, 13, 14, 17, 19, 20, 21]  # 2026-01-26: Heures 22,23,2,3,4 rentables, 14,17 perdantes
 
   # Blackout autour des news
   news_blackout_enabled: true
@@ -204,7 +204,7 @@ orchestrator:
   # SOLUTION 5: Limites de trading journalières (OPTIMISATION 2025-12-13)
   # MISE A JOUR 2026-01-06: Ajout allocation par symbole
   # ══════════════════════════════════════════════════════════════════════════
-  max_trades_per_day: 10         # RÉDUIT 15→10 - Max 10 trades/jour total
+  max_trades_per_day: 6          # 2026-01-26: 10→6 - Moins de trades = moins d'exposition
   cooldown_after_loss_minutes: 30  # Pause 30 min après une perte
   max_consecutive_losses_pause: 3  # Pause si 3 pertes consécutives
 
@@ -235,7 +235,7 @@ orchestrator:
   # BUDGET HORAIRE - Éviter la concentration des trades (FIX 2025-12-17)
   # Problème détecté: 83% des trades entre 14:00-16:00 UTC
   # ══════════════════════════════════════════════════════════════════════════
-  max_trades_per_hour: 5         # NOUVEAU - Max 5 trades par heure
+  max_trades_per_hour: 3          # 2026-01-26: 5→3 - Moins de concentration
 
   # ══════════════════════════════════════════════════════════════════════════
   # PHASE 1: EVENT GUARD - Protection annonces économiques (2025-12-17)
@@ -372,7 +372,7 @@ scalping:
     rsi_overbought: 65                # ASSOUPLI de 70 → 65 (plus de signaux SHORT)
     rsi_oversold: 35                  # ASSOUPLI de 30 → 35 (plus de signaux LONG)
     tp_mult: 2.0
-    sl_mult: 1.5
+    sl_mult: 2.0                      # 2026-01-26: 1.5→2.0 (SL trop serrés: 161 SL vs 81 TP)
     vol_window: 20
     vol_spike_ratio: 1.2
     notify_telegram: false            # Désactivé - seuls trade_event et daily_digest
@@ -388,10 +388,10 @@ swing:
     trend_rsi_short: 50               # ASSOUPLI de 48 → 50
     range_rsi_long: 35                # ASSOUPLI de 32 → 35
     range_rsi_short: 65               # ASSOUPLI de 68 → 65
-    trend_tp_mult: 3.5                # RÉDUIT de 4.0 → 3.5 (meilleur RR)
-    trend_sl_mult: 2.0
-    range_tp_mult: 2.0
-    range_sl_mult: 1.5
+    trend_tp_mult: 3.0                # 2026-01-26: 3.5→3.0 (SL touchés trop souvent)
+    trend_sl_mult: 2.5                # 2026-01-26: 2.0→2.5 (SL plus large)
+    range_tp_mult: 1.8                # 2026-01-26: 2.0→1.8
+    range_sl_mult: 2.0                # 2026-01-26: 1.5→2.0 (SL plus large)
     slope_level: 0.04                 # RÉDUIT de 0.05 → 0.04 (détecte plus de tendances)
     atr_level_val: 0.015
     eco_event_minutes: 60

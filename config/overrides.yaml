@@ -190,7 +190,7 @@ LTCUSD:  # Configuration ULTRA-CONSERVATRICE 2026-01-18
   position_manager:
     enabled: true
     break_even:
-      rr: 0.7                          # RÉDUIT 0.9→0.7 (BE plus rapide)
+      rr: 0.6                          # 2026-01-26: 0.7→0.6 (BE encore plus tôt)
       offset_points: 2.0               # AJOUTÉ - Offset pour sécuriser
     partials:
       - rr: 0.8                        # RÉDUIT 1.2→0.8 (prendre profit tôt)
@@ -282,7 +282,7 @@ BNBUSD:
   position_manager:
     enabled: true
     break_even:
-      rr: 1.0
+      rr: 0.6                          # 2026-01-26: 1.0→0.6 (BE plus tôt)
       offset_points: 0.0
     partials:
       - rr: 1.3
@@ -302,7 +302,7 @@ XAUUSD:
     position_manager:
       enabled: true
       break_even:
-        rr: 0.9
+        rr: 0.6                        # 2026-01-26: 0.9→0.6 (BE plus tôt)
         offset_points: 0.0
       partials:
         - rr: 1.0
@@ -352,7 +352,7 @@ BTCUSD:
     position_manager:
       enabled: true
       break_even:
-        rr: 0.9
+        rr: 0.6                        # 2026-01-26: 0.9→0.6 (BE plus tôt)
         offset_points: 0.0
       partials:
         - rr: 1.0
@@ -452,7 +452,7 @@ ETHUSD:
   position_manager:
     enabled: true
     break_even:
-      rr: 0.9
+      rr: 0.6                          # 2026-01-26: 0.9→0.6 (BE plus tôt)
       offset_points: 0.0
     partials:
       - rr: 1.2
@@ -528,7 +528,7 @@ EURUSD:
   position_manager:
     enabled: true
     break_even:
-      rr: 0.8
+      rr: 0.6                          # 2026-01-26: 0.8→0.6 (BE plus tôt)
       offset_points: 0.0
     partials:
       - rr: 1.0
