@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-01-02T12:12:38.505681+00:00",
+  "symbol": "USOUSD",
+  "retail": {
+    "long_percentage": 45.0,
+    "short_percentage": 55.0,
+    "source": "simulated"
+  }
+}

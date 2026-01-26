@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-01-02T12:16:56.480356+00:00",
+  "symbol": "ETHUSD",
+  "retail": {
+    "long_percentage": 57.0,
+    "short_percentage": 43.0,
+    "source": "simulated"
+  }
+}

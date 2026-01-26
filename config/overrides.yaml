@@ -1,0 +1,544 @@
+# config/presets/overrides.weekend.yaml
+# Week-end Crypto (ultra-agressif) - BTC/LINK 24/7, compounding + garde-fous
+
+GLOBAL:
+  orchestrator:
+    weekend_guard:
+      enabled: true
+      close_positions: true
+      close_day: FRI
+      close_time: "23:00"
+      reopen_day: MON
+      reopen_time: "05:30"
+
+BTCUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    status_report_hours: 2
+
+    # Agrégation & qualité - ASSOUPLI pour permettre plus de trades (2025-12-05)
+    min_rr: 1.15                      # RÉDUIT de 1.35 → 1.15
+    votes_required: 2
+    min_confluence: 0.8               # RÉDUIT de 1 → 0.8
+    min_confluence_dispersion: 0.25   # RÉDUIT de 0.3 → 0.25
+    confluence_weights:
+      technical: 1.2
+      scalping: 0.9
+      swing: 1.0
+      structure: 1.1
+      smc: 0.8
+      sentiment: 0.6
+      fundamental: 0.7
+    tf_weight_dynamic_scale: 0.25
+    tracker_confluence_weight: 0.6
+    tracker_vote_threshold: 0.55      # RÉDUIT de 0.65 → 0.55
+    market_confluence_weight: 0.6     # RÉDUIT de 0.7 → 0.6
+    min_score_for_proposal: 1.2       # RÉDUIT de 1.6 → 1.2
+
+    agent_weights:
+      news: 0.5
+      swing: 0.5
+      scalping: 0.8
+      structure: 0.6
+      smc: 0.6
+    whale_override:
+      enable: true
+      min_trust: 0.65
+      min_signal: 0.6
+      allow_in_vol_spike: false
+      volatility_z_th: 3.0
+
+    multi_timeframes:
+      enabled: true
+      tfs: ["H4", "H1", "M30", "M15", "M5"]
+      tf_weights:
+        D1: 1.2
+        H4: 1.1
+        H1: 1.2
+        M30: 1.0
+        M15: 0.9
+        M5: 0.8
+        M1: 0.7
+
+    # Cadence
+    once_per_candle_tf: "M15"
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 150   # 2min30
+      max_trades_per_day: 20
+      after_trade_min: 1
+      after_win_min: 0
+      after_loss_min: 5
+      after_reject_min: 2
+      after_streak_n: 3
+      after_streak_min: 15
+
+    # Fallback ATR
+    atr_sl_mult: 1.8
+    atr_tp_mult: 2.8
+
+    # 24/7 pour crypto
+    trading_window:
+      enabled: false
+
+    # Bucket d'exposition crypto partagé BTC+LINK
+    crypto_bucket:
+      enabled: true
+      cap: 0.06          # 6% equity cumulé week-end
+      min_factor: 0.20   # si réduction <20% → on annule
+
+    timeframes:
+      orchestrator: 60
+
+  risk:
+    risk_per_trade: 0.014         # 1.4% par trade week-end (agressif)
+    max_consec_losses: 4
+    daily_loss_limit_pct: 0.035   # stop si -3.5% jour
+    dynamic_risk: true
+
+  agents:
+    structure:
+      smc_enabled: true
+      smc_pivot_window: 3
+      smc_fvg_tolerance: 0.05
+      smc_eq_tolerance: 0.02
+
+  interval_secs: 20
+
+LTCUSD:  # Configuration ULTRA-CONSERVATRICE 2026-01-18
+  # ══════════════════════════════════════════════════════════════════════════════
+  # OPTIMISATION 2026-01-18: Mode conservateur après WR 5.2%
+  # - Seuils de qualité TRÈS STRICTS (ne trader que les meilleures opportunités)
+  # - Volume et risque MINIMAUX
+  # - Cooldown AGRESSIF après pertes
+  # ══════════════════════════════════════════════════════════════════════════════
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    status_report_hours: 2
+    min_rr: 2.0                        # AUGMENTÉ 1.2→2.0 (meilleur R:R requis)
+    votes_required: 3                  # AUGMENTÉ 2→3 (plus de confirmation)
+    min_confluence: 3.0                # AUGMENTÉ 1.2→3.0 (signaux forts uniquement)
+    min_confluence_dispersion: 0.15    # RÉDUIT 0.20→0.15 (consensus plus serré)
+    min_score_for_proposal: 4.0        # AUGMENTÉ 1.3→4.0 (score élevé requis)
+    require_scalping_entry: false
+    require_swing_confirm: true        # ACTIVÉ - Confirmation swing requise
+    agent_weights:
+      swing: 0.8                       # AUGMENTÉ - Prioriser swing
+      structure: 0.9                   # AUGMENTÉ - Prioriser structure
+      scalping: 0.4                    # RÉDUIT - Moins de poids scalping
+      smart_money: 0.7
+      news: 0.3                        # RÉDUIT - Moins de poids news
+    tracker_confluence_weight: 0.70    # AUGMENTÉ
+    tracker_vote_threshold: 0.80       # AUGMENTÉ 0.65→0.80
+    market_confluence_weight: 0.75     # AUGMENTÉ
+    tf_weight_dynamic_scale: 0.15
+    multi_timeframes:
+      enabled: true
+      tfs: ["H4", "H1", "M30"]         # RÉDUIT - Retrait M15 (trop de bruit)
+      tf_weights:
+        H4: 1.3                        # AUGMENTÉ - Plus de poids H4
+        H1: 1.2
+        M30: 0.9
+    once_per_candle_tf: "H1"           # CHANGÉ M30→H1 (moins de trades)
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 1800    # AUGMENTÉ 480→1800 (30 min entre trades)
+      max_trades_per_day: 3            # RÉDUIT 7→3 (max 3 trades/jour)
+      after_trade_min: 15              # AUGMENTÉ 4→15
+      after_win_min: 20                # AUGMENTÉ 6→20
+      after_loss_min: 60               # AUGMENTÉ 20→60 (1h après perte)
+      after_reject_min: 10             # AUGMENTÉ 3→10
+      after_streak_n: 2                # RÉDUIT 3→2 (pause plus rapide)
+      after_streak_min: 120            # AUGMENTÉ 25→120 (2h après 2 pertes)
+    news_filter:
+      enabled: true
+      csv_path: data/news_calendar.csv
+      impacts: ["High"]                # RÉDUIT - Seulement High impact
+      window_before_min: 60            # AUGMENTÉ
+      window_after_min: 60             # AUGMENTÉ
+    position_limits:
+      max_positions: 1                 # RÉDUIT 2→1 (1 seule position)
+      max_volume: 0.01                 # RÉDUIT 0.02→0.01
+      max_net_volume: 0.01             # Maintenu
+    live_guard:
+      enabled: true
+      pf_min_live: 1.50                # AUGMENTÉ 1.20→1.50 (exige PF élevé)
+      hit_min_live: 0.55               # AUGMENTÉ 0.40→0.55 (exige WR 55%+)
+      min_trades_live: 10              # RÉDUIT 15→10 (évaluation plus rapide)
+      lookback_days: 5                 # RÉDUIT 7→5 (réaction plus rapide)
+    # ══════════════════════════════════════════════════════════════════════════════
+    # TRADING WINDOW LTCUSD - RESTREINT aux meilleures heures
+    # Avant: 09:00-20:00 (trop large)
+    # Après: 10:00-12:00 et 15:00-17:00 (heures optimales seulement)
+    # ══════════════════════════════════════════════════════════════════════════════
+    trading_window:
+      enabled: true
+      timezone: "Europe/Zurich"
+      sessions:
+        - {start: "10:00", end: "12:00"}  # Session matin
+        - {start: "15:00", end: "17:00"}  # Session après-midi
+    atr_sl_mult: 2.5                   # AUGMENTÉ 2.0→2.5 (SL plus large pour volatilité)
+    atr_tp_mult: 3.5                   # AUGMENTÉ 2.6→3.5 (TP plus ambitieux)
+  risk:
+    risk_per_trade: 0.002              # RÉDUIT 0.004→0.002 (0.2% par trade)
+    daily_loss_abs: 50                 # RÉDUIT 120→50 (stop journalier serré)
+    max_consec_losses: 2               # RÉDUIT 3→2 (pause après 2 pertes)
+    daily_loss_limit_pct: 0.01         # RÉDUIT 0.025→0.01 (1% max/jour)
+    dynamic_risk: true
+  position_manager:
+    enabled: true
+    break_even:
+      rr: 0.7                          # RÉDUIT 0.9→0.7 (BE plus rapide)
+      offset_points: 2.0               # AJOUTÉ - Offset pour sécuriser
+    partials:
+      - rr: 0.8                        # RÉDUIT 1.2→0.8 (prendre profit tôt)
+        close_frac: 0.5                # AUGMENTÉ 0.4→0.5 (50% à RR 0.8)
+      - rr: 1.5                        # RÉDUIT 2.2→1.5
+        close_frac: 0.3
+    trailing:
+      enabled: true
+      start_rr: 1.0                    # RÉDUIT 1.6→1.0 (trail plus tôt)
+      atr_timeframe: M15
+      atr_period: 21
+      atr_mult: 1.5                    # RÉDUIT 1.7→1.5 (trail plus serré)
+      lock_rr: 0.5                     # AUGMENTÉ 0.3→0.5 (lock profit plus tôt)
+  interval_secs: 60                    # AUGMENTÉ 30→60 (scan moins fréquent)
+
+BNBUSD:
+  # ══════════════════════════════════════════════════════════════════════════════
+  # OPTIMISATION 2026-01-18: Réduction des volumes
+  # Avant: avg 33 lots, max 43 lots - TROP ÉLEVÉ
+  # Après: max 2 lots (aligné sur BTCUSD/ETHUSD)
+  # ══════════════════════════════════════════════════════════════════════════════
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    min_rr: 1.20                       # R:R minimum - ajustable si 0 trade
+    votes_required: 2                  # Votes agents requis
+    min_confluence: 1.2                # Confluence minimale - ajustable si 0 trade
+    min_score_for_proposal: 1.3        # Score minimum - ajustable si 0 trade
+    require_scalping_entry: false      # DÉSACTIVÉ - était bloquant
+    require_swing_confirm: false       # DÉSACTIVÉ - était bloquant
+    agent_weights:
+      swing: 0.6
+      structure: 0.7
+      scalping: 0.6
+      smart_money: 0.6
+      news: 0.4
+    once_per_candle_tf: "M30"
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 420
+      max_trades_per_day: 6
+      after_trade_min: 4
+      after_loss_min: 20
+      after_win_min: 6
+      after_streak_n: 3
+      after_streak_min: 25
+    news_filter:
+      enabled: true
+      csv_path: data/news_calendar.csv
+      impacts: ["High", "Medium"]
+      window_before_min: 45
+      window_after_min: 45
+    position_limits:
+      max_positions: 2               # RÉDUIT 4→2 (2026-01-18)
+      max_volume: 0.02               # RÉDUIT 0.06→0.02 (2026-01-18)
+      max_net_volume: 0.01           # RÉDUIT 0.04→0.01 (2026-01-18)
+    live_guard:
+      enabled: true
+      pf_min_live: 1.20
+      hit_min_live: 0.40
+      min_trades_live: 15
+      lookback_days: 7
+    # ══════════════════════════════════════════════════════════════════════════════
+    # TRADING WINDOW BNBUSD - Optimisé 2026-01-11
+    # Fenêtre: 08:00-19:00 Europe/Zurich (couvre créneaux semaine + week-end)
+    # Semaine optimal: 08:00–11:00 et 14:00–18:00
+    # Week-end optimal: 09:00–12:00 et 14:00–19:00
+    # Note: Les cryptos passent le filtre weekend_crypto_only automatiquement
+    # ══════════════════════════════════════════════════════════════════════════════
+    trading_window:
+      enabled: true
+      timezone: "Europe/Zurich"
+      start: "08:00"
+      end: "19:00"
+    multi_timeframes:
+      enabled: true
+      tfs: ["H4", "H1", "M30", "M15"]
+      tf_weights:
+        H4: 1.1
+        H1: 1.1
+        M30: 1.0
+        M15: 0.85
+  risk:
+    risk_per_trade: 0.004
+    daily_loss_abs: 120
+    max_consec_losses: 3
+    daily_loss_limit_pct: 0.025
+    dynamic_risk: true
+  position_manager:
+    enabled: true
+    break_even:
+      rr: 1.0
+      offset_points: 0.0
+    partials:
+      - rr: 1.3
+        close_frac: 0.4
+      - rr: 2.3
+        close_frac: 0.4
+    trailing:
+      enabled: true
+      start_rr: 1.7
+      atr_timeframe: M15
+      atr_period: 21
+      atr_mult: 1.8
+      lock_rr: 0.3
+
+XAUUSD:
+  orchestrator:
+    position_manager:
+      enabled: true
+      break_even:
+        rr: 0.9
+        offset_points: 0.0
+      partials:
+        - rr: 1.0
+          close_frac: 0.4
+        - rr: 1.8
+          close_frac: 0.4
+      trailing:
+        enabled: true
+        start_rr: 1.4
+        atr_timeframe: M15
+        atr_period: 21
+        atr_mult: 1.4
+        lock_rr: 0.3
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 240
+      max_trades_per_day: 14
+      after_trade_min: 3
+      after_loss_min: 10
+      after_win_min: 4
+      after_streak_n: 3
+      after_streak_min: 25
+    news_filter:
+      enabled: true
+      csv_path: data/news_calendar.csv
+      impacts: ["High", "Medium"]
+      window_before_min: 30
+      window_after_min: 30
+    position_limits:
+      max_positions: 6
+      max_volume: 0.08
+      max_net_volume: 0.05
+    live_guard:
+      enabled: true
+      pf_min_live: 1.10
+      hit_min_live: 0.40
+      min_trades_live: 15
+      lookback_days: 7
+  risk:
+    risk_per_trade: 0.012
+    daily_loss_abs: 220
+
+BTCUSD:
+  orchestrator:
+    require_scalping_entry: false      # DÉSACTIVÉ - était bloquant
+    require_swing_confirm: false       # DÉSACTIVÉ - était bloquant
+    position_manager:
+      enabled: true
+      break_even:
+        rr: 0.9
+        offset_points: 0.0
+      partials:
+        - rr: 1.0
+          close_frac: 0.35
+        - rr: 1.8
+          close_frac: 0.35
+      trailing:
+        enabled: true
+        start_rr: 1.5
+        atr_timeframe: M15
+        atr_period: 21
+        atr_mult: 1.5
+        lock_rr: 0.35
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 300
+      max_trades_per_day: 10
+      after_trade_min: 4
+      after_loss_min: 20
+      after_win_min: 5
+      after_streak_n: 3
+      after_streak_min: 30
+    news_filter:
+      enabled: true
+      csv_path: data/news_calendar.csv
+      impacts: ["High", "Medium"]
+      window_before_min: 45
+      window_after_min: 45
+    position_limits:
+      max_positions: 6
+      max_volume: 0.08
+      max_net_volume: 0.05
+    live_guard:
+      enabled: true
+      pf_min_live: 1.25
+      hit_min_live: 0.42
+      min_trades_live: 18
+      lookback_days: 7
+  risk:
+    risk_per_trade: 0.008
+    daily_loss_abs: 250
+
+ETHUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    min_rr: 1.20                       # RÉDUIT de 1.6 → 1.20
+    votes_required: 2                  # RÉDUIT de 3 → 2
+    min_confluence: 1.2                # RÉDUIT de 2.3 → 1.2
+    min_score_for_proposal: 1.3        # RÉDUIT de 2.0 → 1.3
+    require_scalping_entry: false      # DÉSACTIVÉ - était bloquant
+    require_swing_confirm: false       # DÉSACTIVÉ - était bloquant
+    once_per_candle_tf: "M30"
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 420
+      max_trades_per_day: 8
+      after_trade_min: 3
+      after_loss_min: 15
+      after_win_min: 5
+      after_streak_n: 3
+      after_streak_min: 25
+    news_filter:
+      enabled: true
+      csv_path: data/news_calendar.csv
+      impacts: ["High", "Medium"]
+      window_before_min: 30
+      window_after_min: 30
+    position_limits:
+      max_positions: 4
+      max_volume: 0.06
+      max_net_volume: 0.04
+    live_guard:
+      enabled: true
+      pf_min_live: 1.05
+      hit_min_live: 0.35
+      min_trades_live: 12
+      lookback_days: 7
+    trading_window:
+      enabled: true
+      sessions:
+        - {start: "07:00", end: "23:00", tz: "Europe/Zurich"}
+    multi_timeframes:
+      enabled: true
+      tfs: ["H4", "H1", "M30", "M15"]
+      tf_weights:
+        H4: 1.1
+        H1: 1.2
+        M30: 1.0
+        M15: 0.85
+  risk:
+    risk_per_trade: 0.006
+    daily_loss_abs: 150
+    max_consec_losses: 3
+    daily_loss_limit_pct: 0.025
+    dynamic_risk: true
+  position_manager:
+    enabled: true
+    break_even:
+      rr: 0.9
+      offset_points: 0.0
+    partials:
+      - rr: 1.2
+        close_frac: 0.4
+      - rr: 2.2
+        close_frac: 0.4
+    trailing:
+      enabled: true
+      start_rr: 1.6
+      atr_timeframe: M15
+      atr_period: 21
+      atr_mult: 1.8
+      lock_rr: 0.3
+
+EURUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    status_report_hours: 2
+    min_rr: 1.25                       # RÉDUIT de 1.6 → 1.25
+    votes_required: 2                  # RÉDUIT de 3 → 2
+    min_confluence: 1.3                # RÉDUIT de 2.4 → 1.3
+    min_score_for_proposal: 1.4        # RÉDUIT de 2.1 → 1.4
+    require_scalping_entry: false      # DÉSACTIVÉ - était bloquant
+    require_swing_confirm: false       # DÉSACTIVÉ - était bloquant
+    once_per_candle_tf: "M30"
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 480
+      max_trades_per_day: 8
+      after_trade_min: 4
+      after_loss_min: 20
+      after_win_min: 6
+      after_streak_n: 3
+      after_streak_min: 30
+    news_filter:
+      enabled: true
+      csv_path: data/news_calendar.csv
+      impacts: ["High", "Medium"]
+      window_before_min: 45
+      window_after_min: 45
+    trading_window:
+      enabled: true
+      sessions:
+        - {start: "07:00", end: "22:30", tz: "Europe/Zurich"}
+    position_limits:
+      max_positions: 12
+      max_volume: 0.12
+      max_net_volume: 0.05
+    live_guard:
+      enabled: true
+      pf_min_live: 1.15
+      hit_min_live: 0.35
+      min_trades_live: 24
+      lookback_days: 7
+    multi_timeframes:
+      enabled: true
+      tfs: ["H4", "H1", "M30", "M15"]
+      tf_weights:
+        H4: 1.1
+        H1: 1.2
+        M30: 1.0
+        M15: 0.85
+    tracker_confluence_weight: 0.6
+    tracker_vote_threshold: 0.7
+    market_confluence_weight: 0.65
+  risk:
+    risk_per_trade: 0.003
+    daily_loss_abs: 150
+    max_consec_losses: 3
+    daily_loss_limit_pct: 0.02
+    dynamic_risk: true
+  position_manager:
+    enabled: true
+    break_even:
+      rr: 0.8
+      offset_points: 0.0
+    partials:
+      - rr: 1.0
+        close_frac: 0.35
+      - rr: 1.8
+        close_frac: 0.35
+    trailing:
+      enabled: true
+      start_rr: 1.5
+      atr_timeframe: M15
+      atr_period: 21
+      atr_mult: 1.9
+      lock_rr: 0.3

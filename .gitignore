@@ -1,0 +1,41 @@
+# Secrets et configuration locale
+.env
+
+# Fichiers volumineux
+data/agents_snap.jsonl
+
+# Environnements virtuels Python
+.venv/
+venv/
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Logs et fichiers temporaires
+*.log
+*.zip
+run.log
+
+# IDE
+.vscode/
+.idea/
+
+# Cache pip
+.pipcache/
+
+# Fichiers système
+desktop.ini
+python
+Set-ExecutionPolicy
+Set-Location
+utilise
+
+# Fichiers temporaires
+tmp_*.xml
+tmp_*.csv
+
+# Egg info
+*.egg-info/

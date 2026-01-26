@@ -1,0 +1,72 @@
+import asyncio
+from typing import Dict, Any, List
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+from utils.config import get_symbol_profile, get_enabled_symbols
+from utils.logger import logger
+from utils.mt5_client import MT5Client
+from utils.risk_manager import RiskManager
+
+class Orchestrator:
+    def __init__(self, symbol: str, telegram_client=None):
+        self.symbol = symbol
+        self.telegram_client = telegram_client  # optional Telegram client
+        self.profile: Dict[str, Any] = get_symbol_profile(symbol)
+        self.ori_cfg: Dict[str, Any] = self.profile.get("orchestrator", {})
+        self.votes_required: int = int(self.ori_cfg.get("votes_required", 2))
+
+        mtf = self.ori_cfg.get("multi_timeframes", {}) or {}
+        self.mtf_enabled: bool = bool(mtf.get("enabled", True))
+        self.tfs: List[str] = list(mtf.get("tfs", ["H1", "M15", "M5", "M1"]))
+        self.tf_weights: Dict[str, float] = dict(mtf.get("tf_weights", {}))
+
+        self.timeframes_cfg: Dict[str, Any] = self.ori_cfg.get("timeframes", {})
+        self.scheduler = AsyncIOScheduler()
+        self.risk = RiskManager(symbol)
+
+        MT5Client.initialize_if_needed()
+        self.mt5 = MT5Client()
+        self.mt5.ensure_symbol(self.symbol)
+
+        logger.info(f"[ORCH] {self.symbol} votes_required={self.votes_required} "
+                    f"tfs={self.tfs} weights={self.tf_weights}")
+
+    async def start(self):
+        interval_seconds = int(self.timeframes_cfg.get("orchestrator", 60))
+        job_id = f"orch_{self.symbol}"
+        # Avoid duplicate jobs on hot reload
+        try:
+            self.scheduler.remove_job(job_id)
+        except Exception:
+            pass
+        self.scheduler.add_job(self._orchestrate_once, "interval", seconds=interval_seconds, id=job_id)
+        self.scheduler.start()
+        logger.info(f"[ORCH] {self.symbol} scheduler démarré ({interval_seconds}s).")
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            self.scheduler.shutdown(wait=False)
+
+    async def _orchestrate_once(self):
+        try:
+            # TODO: plug your real agent logic here
+            logger.info(f"[ORCH] Tick {self.symbol}: orchestration exécutée.")
+        except Exception as e:
+            logger.exception(f"[ORCH] Erreur {self.symbol}: {e}")
+
+async def run_for_symbols(symbols: List[str]):
+    tasks = [Orchestrator(sym).start() for sym in symbols]
+    await asyncio.gather(*tasks)
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--symbols", nargs="*", help="Liste des symboles à lancer")
+    args = parser.parse_args()
+
+    syms = args.symbols if args.symbols else get_enabled_symbols()
+    if not syms:
+        raise SystemExit("Aucun symbole à lancer. Renseignez enabled_symbols dans profiles.yaml ou utilisez --symbols.")
+    logger.info(f"Lancement Orchestrator en parallèle pour: {syms}")
+    asyncio.run(run_for_symbols(syms))

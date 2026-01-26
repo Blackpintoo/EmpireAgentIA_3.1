@@ -1,0 +1,9 @@
+      self._sched = AsyncIOScheduler(event_loop=loop)
+
+        # --- Risk manager APRES MT5 ---
+        self.risk = RiskManager(self.symbol)
+
+        # --- Cache d'agents & proposition / contexte ---
+        self._agents: Dict[str, Any] = {}
+        self._last_proposal: Optional[Dict[str, Any]] = None
+        self._last_ctx: Optional[Dict[str, Any]] = None  # per_tf_signals / global_signals / indi

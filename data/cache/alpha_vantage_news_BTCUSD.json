@@ -1,0 +1,13 @@
+{
+  "timestamp": 1767730037.6496587,
+  "sentiment": {
+    "symbol": "BTCUSD",
+    "ticker": "CRYPTO:BTC",
+    "sentiment_score": 0.186,
+    "relevance_score": 0.437,
+    "category": "NEUTRAL",
+    "articles_count": 50,
+    "timestamp": "2026-01-06T20:07:17.649658+00:00",
+    "error": null
+  }
+}

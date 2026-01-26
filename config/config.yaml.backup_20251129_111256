@@ -1,0 +1,305 @@
+mt5:
+  account: 10960352
+  password: X9bV&%2Q
+  server: VantageInternational-Demo
+  terminal_path: "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+  autostart:
+    enabled: true
+    process_name: "terminal64.exe"
+    monday_start: "05:30"
+    friday_stop: "23:00"
+    check_interval_minutes: 5
+
+telegram:
+  enabled: true
+  token: 7969631468:AAHzPL6iCB9kO0K1iPtVeTkP-L2FevVdttc
+  chat_id: 5277012507
+  send_status_minutely: false
+  send_trade_validation_only: false
+  allow_kinds: [daily_digest, trade_event, startup, proposal, trade_validation, news_digest]
+  send_daily_digest: true
+  daily_digest_times: ["10:00", "19:00"]   # Europe/Zurich
+
+engine:
+  timezone: "Europe/Zurich"    # utilisé par le planning et les sessions
+  default_deviation: 30         # déviation par défaut (peut être surchargée par symbole via profiles.yaml)
+  max_symbols_parallel: 5
+  weekdays_only: true
+
+timeframes:
+  orchestrator: 60
+  scalping: M1
+  swing: H1
+
+multi_timeframes:
+  enabled: true
+  tfs: [D1, H4, H1, M30, M5, M1]
+  tf_weights:
+    D1: 1.2
+    H4: 1.1
+    H1: 1.0
+    M30: 0.9
+    M5: 0.8
+    M1: 0.7
+
+execution:
+  slippage_points: 10             # tolérance slippage (en points MT5)
+  max_retries: 3                  # essais sur retcodes récupérables
+  backoff_seconds: [0.5, 1.0, 2]  # exponentiel simple
+  circuit_breaker:
+    window_seconds: 60            # fenêtre de décompte des erreurs
+    max_errors: 5                 # stop envoi d’ordres si > max dans la fenêtre
+  price_refresh_on_requote: true  # resynchroniser le prix lors de REQUOTE/PRICE_CHANGED
+
+backtest:
+   gating:
+     pf_min: 1.30
+     maxdd_pct_max: 0.12      # 12%
+     expectancy_min: 0.0
+     sharpe_min: 1.2
+     sortino_min: 1.0
+     rr_proxy_min: 1.5
+     min_trades: 200
+
+paths:
+  audit_dir: data/audit
+     
+orchestrator:
+  votes_required: 2
+  push_only_on_master: true
+
+  position_policy:
+    allow_stacking: false       # 1 position max par sens
+    max_open_per_side: 1
+    max_open_total: 1
+    allow_opposite: false       # pas de hedge simultané
+
+  anti_spam:
+    per_bar_only: true
+    cooldown_minutes: 5         # ↑ pour réduire le bruit
+    price_delta_bps: 2          # ↑ filtre micro-variations
+    confidence_delta: 0.03
+    avoid_if_open_position: true
+
+  near_miss_alert: false
+
+  weighted:
+    enabled: true
+    threshold: 2.1              # ↑ exige plus de confluence
+    weights:
+      TechnicalAgent: 1.2
+      SwingAgent: 1.0
+      ScalpingAgent: 0.6        # ↓ scalping plus prudent
+      NewsAgent: 0.8
+      SentimentAgent: 0.6
+
+  notifications:
+    daily_report_enabled: false
+
+risk:
+  timezone: Europe/Zurich
+  reset_limits_daily: true
+  daily_loss_limit_pct: 0.02   # 2% — ajuste si tu veux 1%: 0.01
+  daily_goal_mode: auto
+  monthly_goal_chf_by_phase:
+    phase1: 500
+    phase1_max: 2000
+    phase2: 5000
+    phase3: 10000
+  trading_days_per_month: 22
+
+  max_consecutive_losses: 3
+  allow_multiple_positions: false
+  max_parallel_positions: 1
+
+  tiers:
+    - name: phase1
+      equity_min: 0
+      equity_max: 5000
+      risk_per_trade_pct: 0.01     # 0.5% au départ
+      max_daily_loss_pct: 2.0
+      max_parallel_positions: 1
+    - name: phase2
+      equity_min: 5000
+      equity_max: 15000
+      risk_per_trade_pct: 0.015
+      max_daily_loss_pct: 3.0
+      max_parallel_positions: 2
+    - name: phase3
+      equity_min: 15000
+      equity_max: 99999999
+      risk_per_trade_pct: 0.02
+      max_daily_loss_pct: 4.0
+      max_parallel_positions: 2
+
+  compounding:
+    mode: weekly
+    day_of_week: MON
+
+optuna:
+  n_trials: 50
+  timeout: 600
+
+logging:
+  level: DEBUG
+
+scalping:
+  params:
+    timeframe: M1
+    session_hours: [7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]  # Europe/Zurich
+    max_spread: 100
+    max_trades_per_hour: 6
+    rsi_period: 7
+    ema_period: 21
+    atr_period: 14
+    rsi_overbought: 70
+    rsi_oversold: 30
+    tp_mult: 2.0
+    sl_mult: 1.5
+    vol_window: 20
+    vol_spike_ratio: 1.2
+    notify_telegram: true
+
+swing:
+  params:
+    timeframe: H1
+    lookback: 200
+    ema_period: 50
+    rsi_period: 14
+    atr_period: 14
+    trend_rsi_long: 52
+    trend_rsi_short: 48
+    range_rsi_long: 32
+    range_rsi_short: 68
+    trend_tp_mult: 4.0
+    trend_sl_mult: 2.0
+    range_tp_mult: 2.0
+    range_sl_mult: 1.5
+    slope_level: 0.05
+    atr_level_val: 0.015
+    eco_event_minutes: 60
+    notify_telegram: true
+
+technical:
+  params:
+    ema_period: 50
+    rsi_period: 14
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    obv_window: 10
+    atr_period: 14
+    tp_mult: 2.5
+    sl_mult: 2.0
+    votes_required: 1
+    rsi_overbought: 60
+    rsi_oversold: 40
+    macd_eps: 0.0008
+    obv_z_deadzone: 0.35
+    notify_telegram: true
+
+news:
+  params:
+    send_realtime: true
+    news_feeds:
+      - https://cryptopanic.com/feed/news/
+      - https://www.coindesk.com/arc/outboundfeeds/rss/
+      - https://news.google.com/rss/search?q=bitcoin
+      - https://www.reuters.com/markets/companies/crypto/
+      - https://dailyhodl.com/feed/
+      - https://cointelegraph.com/rss
+      - https://fr.cryptowatchnews.com/feed/
+    min_articles: 5
+    request_timeout: 6
+    max_retries: 2
+    backoff_seconds: 2
+    max_per_feed: 15
+    source_weight:
+      coindesk: 2
+      cryptopanic: 1
+      google: 1
+      reuters: 3
+      bloomberg: 3
+    keywords_bullish: [etf, adoption, regulation, bullish, uptrend, buy, growth, rally, approval, partnership, institutional, invest, expansion]
+    keywords_bearish: [hack, ban, scam, bearish, downtrend, sell, collapse, fraud, "regulation ban", lawsuit, liquidation, delisting]
+    sentiment_threshold: 0.15
+    keyword_weight: 2.0
+    signal_threshold: 2
+    lookback_hours: 12
+    notify_telegram: true
+  digest:
+    enabled: true
+    time: "11:00"
+    timezone: Europe/Zurich
+    top_n: 8
+    include_scores: true
+
+fundamental:
+  blackout:
+    enabled: false
+  params:
+    calendar_api_url: https://calendar-api.fxstreet.com/events
+    major_events: [FOMC, CPI, NFP, ECB, employment, inflation, interest rate, GDP, PMI, retail sales, unemployment, trade balance]
+    asset_event_map:
+      USD: [FOMC, CPI, NFP, employment, inflation, interest rate, GDP, PMI, retail sales]
+      EUR: [ECB, inflation, unemployment, GDP, PMI, trade balance]
+      GBP: [BOE, GDP, CPI, PMI, employment]
+      JPY: [BOJ, GDP, CPI, PMI]
+      CHF: [SNB, GDP, CPI]
+    sens_map: { better: bullish, worse: bearish }
+    wait_minutes: 30
+    only_high_impact: true
+    lookback_minutes: 180
+    notify_telegram: true
+    use_forecast_diff_pct: true
+    diff_pct_threshold: 0.3
+    reverse_on_negative: true
+
+sentiment:
+  params:
+    fg_weight: 0.5
+    twitter_weight: 0.3
+    google_weight: 0.2
+    neutral_fg: 50
+    upper_threshold: 0.4
+    lower_threshold: -0.4
+    notify_telegram: true
+
+whale:
+  enabled: true
+  min_trust: 0.6
+  min_signal: 0.55
+  ewma_alpha: 0.2
+  allow_in_vol_spike: false
+  latency_ms_max: 15000
+  slippage_bps_max: 25
+  feeds:
+    onchain:
+      enabled: true
+      providers: [etherscan, arbitrum, bscscan]
+      poll_seconds: 15
+    cex:
+      enabled: true
+      venues: [binance, okx, bybit]
+      ws_url: wss://whales.example/ws
+    social:
+      enabled: true
+      sources: [twitter, mirror, news]
+  storage:
+    decisions_csv: data/whales_decisions.csv
+    cache_db: store/whales.db
+
+agents:
+  - scalping
+  - swing
+  - technical
+  - news
+  - fundamental
+  - sentiment
+
+broker_costs:
+  commission_per_lot: 8.0
+  point_value_per_lot: 1.0
+  spread_points: 25
+  slippage_points_entry: 2
+  slippage_points_exit: 2

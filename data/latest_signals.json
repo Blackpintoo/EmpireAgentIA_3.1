@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-01-26T19:11:23.877495+00:00",
+  "symbol": "AUDUSD",
+  "signals": {
+    "swing": {
+      "signal": "LONG",
+      "intensity": null,
+      "reason": ""
+    },
+    "structure": {
+      "signal": "LONG",
+      "intensity": null,
+      "reason": ""
+    },
+    "smc": {
+      "signal": "SHORT",
+      "intensity": null,
+      "reason": ""
+    },
+    "news": {
+      "signal": "LONG",
+      "intensity": null,
+      "reason": ""
+    }
+  }
+}

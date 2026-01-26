@@ -1,0 +1,479 @@
+# ----- EmpireAgentIA profiles.yaml (updated) -----
+enabled_symbols: [BTCUSD, XAUUSD, EURUSD, LINKUSD]
+
+profiles:
+  BTCUSD:
+    symbol: BTCUSD
+
+    instrument:
+      contract_size: 1.0
+      slippage: 10
+      point: 0.01
+      pip_value: 1.0
+
+    risk:
+      tier: phase3
+      risk_per_trade: 0.018
+      max_daily_loss: 0.040
+      max_consec_loss: 3
+
+    orchestrator:
+      votes_required: 1
+      min_confluence: 1
+      min_score_for_proposal: 1.0
+      require_scalping_entry: false
+      require_swing_confirm: false
+      atr_sl_mult: 1.5
+      atr_tp_mult: 2.5
+      timeframes:
+        orchestrator: 60   # secondes
+        scalping: M1
+        swing: H1
+      multi_timeframes:
+        enabled: true
+        tfs: [D1, H4, H1, M30, M15, M5, M1]
+        tf_weights:
+          D1: 1.2
+          H4: 1.1
+          H1: 1.0
+          M30: 0.9
+          M15: 0.85
+          M5: 0.8
+          M1: 0.7
+
+    agents:
+      technical:
+        timeframe: M15
+        lookback: 300
+        ema_period: 50
+        rsi_period: 14
+        rsi_oversold: 30
+        rsi_overbought: 70
+        atr_period: 14
+        obv_window: 50
+        obv_win_fast: 20
+        obv_win_slow: 50
+        macd_fast: 12
+        macd_slow: 26
+        macd_signal: 9
+        macd_eps: 0.0003
+        obv_z_deadzone: 0.20
+        votes_required: 2
+        sl_mult: 1.5
+        tp_mult: 2.5
+        notify_telegram: false
+
+      scalping:
+        timeframe: M1
+        rsi_period: 14
+        rsi_oversold: 30
+        rsi_overbought: 70
+        ema_period: 21
+        atr_period: 14
+        vol_window: 50
+        vol_spike_ratio: 1.8
+        session_hours: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+        notify_telegram: false
+
+      swing:
+        timeframe: H1
+        lookback: 400
+        ema_period: 50
+        atr_period: 14
+        rsi_period: 14
+        trend_rsi_long: 52
+        trend_rsi_short: 48
+        trend_sl_mult: 1.2
+        trend_tp_mult: 1.8
+        range_rsi_long: 40
+        range_rsi_short: 60
+        range_sl_mult: 1.2
+        range_tp_mult: 1.8
+        slope_level: 0.0
+        atr_level_val: 0.0
+        notify_telegram: false
+
+      news:
+        news_feeds:
+          - https://www.coindesk.com/arc/outboundfeeds/rss/
+          - https://cointelegraph.com/rss
+          - https://bitcoinmagazine.com/feed
+          - https://finance.yahoo.com/rss/topstories
+          - https://cryptoslate.com/feed/
+          - https://coinjournal.net/news/feed/
+          - https://news.google.com/rss/search?q=bitcoin
+        source_weight:
+          coindesk: 3
+          cointelegraph: 3
+          bitcoinmagazine: 2
+          yahoo: 1
+          cryptoslate: 1
+          coinjournal: 1
+          google: 1
+        keywords_bullish: ["etf","adoption","regulation","bullish","uptrend","buy","growth","rally","approval","partnership","institutional","invest","expansion","spot etf","sec approval"]
+        keywords_bearish: ["hack","ban","scam","bearish","downtrend","sell","collapse","fraud","lawsuit","liquidation","delisting","sec charges","probe","freeze"]
+        sentiment_threshold: 0.15
+        keyword_weight: 2.0
+        signal_threshold: 2.0
+        lookback_hours: 12
+        http_timeout: 8
+        retry: 0
+        max_per_feed: 15
+        cache_ttl: 900
+        warn_every: 600
+        notify_telegram: false
+
+  XAUUSD:
+    symbol: XAUUSD
+
+    instrument:
+      contract_size: 100.0
+      slippage: 20
+      point: 0.01
+      pip_value: 1.0
+
+    risk:
+      tier: phase3
+      risk_per_trade: 0.010
+      max_daily_loss: 0.030
+      max_consec_loss: 3
+
+    orchestrator:
+      votes_required: 2
+      min_confluence: 1
+      min_score_for_proposal: 1.2
+      require_scalping_entry: false
+      require_swing_confirm: false
+      atr_sl_mult: 1.5
+      atr_tp_mult: 2.5
+      timeframes:
+        orchestrator: 60
+        scalping: M1
+        swing: H1
+      multi_timeframes:
+        enabled: true
+        tfs: [D1, H4, H1, M30, M15, M5, M1]
+        tf_weights:
+          D1: 1.2
+          H4: 1.1
+          H1: 1.0
+          M30: 0.9
+          M15: 0.85
+          M5: 0.8
+          M1: 0.7
+
+    agents:
+      technical:
+        timeframe: M15
+        lookback: 300
+        ema_period: 50
+        rsi_period: 14
+        rsi_oversold: 30
+        rsi_overbought: 70
+        atr_period: 14
+        obv_window: 50
+        obv_win_fast: 20
+        obv_win_slow: 50
+        macd_fast: 12
+        macd_slow: 26
+        macd_signal: 9
+        macd_eps: 0.0003
+        obv_z_deadzone: 0.20
+        votes_required: 2
+        sl_mult: 1.5
+        tp_mult: 2.5
+        notify_telegram: false
+
+      scalping:
+        timeframe: M1
+        rsi_period: 14
+        rsi_oversold: 30
+        rsi_overbought: 70
+        ema_period: 21
+        atr_period: 14
+        vol_window: 50
+        vol_spike_ratio: 1.8
+        session_hours: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+        notify_telegram: false
+
+      swing:
+        timeframe: H1
+        lookback: 400
+        ema_period: 50
+        atr_period: 14
+        rsi_period: 14
+        trend_rsi_long: 52
+        trend_rsi_short: 48
+        trend_sl_mult: 1.2
+        trend_tp_mult: 1.8
+        range_rsi_long: 40
+        range_rsi_short: 60
+        range_sl_mult: 1.2
+        range_tp_mult: 1.8
+        slope_level: 0.0
+        atr_level_val: 0.0
+        notify_telegram: false
+
+      news:
+        news_feeds:
+          - https://www.coindesk.com/arc/outboundfeeds/rss/
+          - https://cointelegraph.com/rss
+          - https://bitcoinmagazine.com/feed
+          - https://finance.yahoo.com/rss/topstories
+          - https://cryptoslate.com/feed/
+          - https://coinjournal.net/news/feed/
+          - https://news.google.com/rss/search?q=bitcoin
+        source_weight:
+          coindesk: 3
+          cointelegraph: 3
+          bitcoinmagazine: 2
+          yahoo: 1
+          cryptoslate: 1
+          coinjournal: 1
+          google: 1
+        keywords_bullish: ["etf","adoption","regulation","bullish","uptrend","buy","growth","rally","approval","partnership","institutional","invest","expansion","spot etf","sec approval"]
+        keywords_bearish: ["hack","ban","scam","bearish","downtrend","sell","collapse","fraud","lawsuit","liquidation","delisting","sec charges","probe","freeze"]
+        sentiment_threshold: 0.15
+        keyword_weight: 2.0
+        signal_threshold: 2.0
+        lookback_hours: 12
+        http_timeout: 8
+        retry: 0
+        max_per_feed: 15
+        cache_ttl: 900
+        warn_every: 600
+        notify_telegram: false
+
+  EURUSD:
+    symbol: EURUSD
+
+    instrument:
+      contract_size: 100000.0     # 1 lot FX
+      slippage: 2                 # ~0.2 pip
+      point: 0.00001              # 5 décimales
+      pip_value: 10.0             # ~10 USD/pip/lot
+
+    risk:
+      tier: phase3
+      risk_per_trade: 0.008       # 0.8%/trade (FX plus stable)
+      max_daily_loss: 0.030
+      max_consec_loss: 3
+
+    orchestrator:
+      votes_required: 2
+      min_confluence: 1
+      min_score_for_proposal: 1.2
+      require_scalping_entry: false
+      require_swing_confirm: false
+      atr_sl_mult: 1.4
+      atr_tp_mult: 2.0
+      timeframes:
+        orchestrator: 60
+        scalping: M1
+        swing: H1
+      multi_timeframes:
+        enabled: true
+        tfs: [D1, H4, H1, M30, M15, M5, M1]
+        tf_weights:
+          D1: 1.2
+          H4: 1.1
+          H1: 1.0
+          M30: 0.9
+          M15: 0.85
+          M5: 0.8
+          M1: 0.7
+
+    agents:
+      technical:
+        timeframe: M15
+        lookback: 300
+        ema_period: 50
+        rsi_period: 14
+        rsi_oversold: 30
+        rsi_overbought: 70
+        atr_period: 14
+        obv_window: 50
+        obv_win_fast: 20
+        obv_win_slow: 50
+        macd_fast: 12
+        macd_slow: 26
+        macd_signal: 9
+        macd_eps: 0.00015
+        obv_z_deadzone: 0.15
+        votes_required: 2
+        sl_mult: 1.4
+        tp_mult: 2.0
+        notify_telegram: false
+
+      scalping:
+        timeframe: M1
+        rsi_period: 14
+        rsi_oversold: 30
+        rsi_overbought: 70
+        ema_period: 21
+        atr_period: 14
+        vol_window: 50
+        vol_spike_ratio: 1.6
+        session_hours: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
+        notify_telegram: false
+
+      swing:
+        timeframe: H1
+        lookback: 400
+        ema_period: 50
+        atr_period: 14
+        rsi_period: 14
+        trend_rsi_long: 52
+        trend_rsi_short: 48
+        trend_sl_mult: 1.2
+        trend_tp_mult: 1.8
+        range_rsi_long: 40
+        range_rsi_short: 60
+        range_sl_mult: 1.2
+        range_tp_mult: 1.8
+        slope_level: 0.0
+        atr_level_val: 0.0
+        notify_telegram: false
+
+      news:
+        news_feeds:
+          - https://finance.yahoo.com/rss/topstories
+          - https://news.google.com/rss/search?q=ecb+OR+fomc+OR+eurusd+OR+usd+OR+inflation+OR+cpi
+          - https://www.coindesk.com/arc/outboundfeeds/rss/   # laissé pour diversité générale
+        source_weight:
+          yahoo: 2
+          google: 1
+          coindesk: 1
+        keywords_bullish: ["hawkish","rate hike","strong dollar","strong euro","tightening","beat","surprise up"]
+        keywords_bearish: ["dovish","rate cut","weak dollar","weak euro","miss","recession","surprise down"]
+        sentiment_threshold: 0.10
+        keyword_weight: 1.5
+        signal_threshold: 1.5
+        lookback_hours: 12
+        http_timeout: 8
+        retry: 0
+        max_per_feed: 15
+        cache_ttl: 900
+        warn_every: 600
+        notify_telegram: false
+
+      LINKUSD:
+    symbol: LINKUSD
+
+    instrument:
+      contract_size: 1.0
+      slippage: 15
+      point: 0.01
+      pip_value: 1.0
+
+    risk:
+      tier: phase3
+      risk_per_trade: 0.015
+      max_daily_loss: 0.035
+      max_consec_loss: 3
+
+    orchestrator:
+      votes_required: 1
+      min_confluence: 1
+      min_score_for_proposal: 1.0
+      require_scalping_entry: false
+      require_swing_confirm: false
+      atr_sl_mult: 1.5
+      atr_tp_mult: 2.5
+      timeframes:
+        orchestrator: 60
+        scalping: M1
+        swing: H1
+      multi_timeframes:
+        enabled: true
+        tfs: [D1, H4, H1, M30, M15, M5, M1]
+        tf_weights:
+          D1: 1.2
+          H4: 1.1
+          H1: 1.0
+          M30: 0.9
+          M15: 0.85
+          M5: 0.8
+          M1: 0.7
+
+    agents:
+      technical:
+        timeframe: M15
+        lookback: 300
+        ema_period: 50
+        rsi_period: 14
+        rsi_oversold: 30
+        rsi_overbought: 70
+        atr_period: 14
+        obv_window: 50
+        obv_win_fast: 20
+        obv_win_slow: 50
+        macd_fast: 12
+        macd_slow: 26
+        macd_signal: 9
+        macd_eps: 0.0003
+        obv_z_deadzone: 0.20
+        votes_required: 2
+        sl_mult: 1.5
+        tp_mult: 2.5
+        notify_telegram: false
+
+      scalping:
+        timeframe: M1
+        rsi_period: 14
+        rsi_oversold: 30
+        rsi_overbought: 70
+        ema_period: 21
+        atr_period: 14
+        vol_window: 50
+        vol_spike_ratio: 1.8
+        session_hours: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]
+        notify_telegram: false
+
+      swing:
+        timeframe: H1
+        lookback: 400
+        ema_period: 50
+        atr_period: 14
+        rsi_period: 14
+        trend_rsi_long: 52
+        trend_rsi_short: 48
+        trend_sl_mult: 1.2
+        trend_tp_mult: 1.8
+        range_rsi_long: 40
+        range_rsi_short: 60
+        range_sl_mult: 1.2
+        range_tp_mult: 1.8
+        slope_level: 0.0
+        atr_level_val: 0.0
+        notify_telegram: false
+
+      news:
+        news_feeds:
+          - https://www.coindesk.com/arc/outboundfeeds/rss/
+          - https://cointelegraph.com/rss
+          - https://bitcoinmagazine.com/feed
+          - https://finance.yahoo.com/rss/topstories
+          - https://cryptoslate.com/feed/
+          - https://coinjournal.net/news/feed/
+          - https://news.google.com/rss/search?q=chainlink%20OR%20LINK%20OR%20crypto
+        source_weight:
+          coindesk: 3
+          cointelegraph: 3
+          bitcoinmagazine: 2
+          yahoo: 1
+          cryptoslate: 1
+          coinjournal: 1
+          google: 1
+        keywords_bullish: ["etf","adoption","regulation","bullish","uptrend","buy","growth","rally","approval","partnership","institutional","invest","expansion","spot etf","sec approval"]
+        keywords_bearish: ["hack","ban","scam","bearish","downtrend","sell","collapse","fraud","lawsuit","liquidation","delisting","sec charges","probe","freeze"]
+        sentiment_threshold: 0.15
+        keyword_weight: 2.0
+        signal_threshold: 2.0
+        lookback_hours: 12
+        http_timeout: 8
+        retry: 0
+        max_per_feed: 15
+        cache_ttl: 900
+        warn_every: 600
+        notify_telegram: false

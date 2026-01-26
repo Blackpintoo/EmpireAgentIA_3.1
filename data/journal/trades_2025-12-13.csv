@@ -1,0 +1,2 @@
+timestamp,symbol,side,lots,entry,sl,tp,score,confluence,rr_estimate,weighted_vote,tracker_vote,retcode
+2025-12-13T08:05:21.310883+00:00,BTCUSD,SHORT,0.01,90346.09,92619.27142857143,87504.61321428571,3.5,4,1.249999999999997,3.5,-0.025634411893648523,10009

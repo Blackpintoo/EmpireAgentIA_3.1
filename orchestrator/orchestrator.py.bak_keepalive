@@ -1,0 +1,2657 @@
+# orchestrator/orchestrator.py
+import asyncio
+import importlib
+import time
+import os
+import json
+import threading
+import inspect
+from typing import Dict, Any, List, Optional, Tuple, Callable
+from datetime import datetime, timezone, timedelta
+from utils.news_filter import is_frozen_now
+from zoneinfo import ZoneInfo
+import pytz
+import pandas as pd
+try:
+    import MetaTrader5 as _mt5
+except Exception:
+    _mt5 = None
+import requests
+import yaml
+import csv
+import subprocess
+import sys
+import types as _types
+try:
+    # cas 1 : config_loader.py à la racine du projet
+    from config_loader import load_dotenv_env, get_required  # type: ignore
+except Exception:
+    try:
+        # cas 2 : utils/config_loader.py
+        from utils.config_loader import load_dotenv_env, get_required  # type: ignore
+    except Exception:
+        # fallback no-op (utile en tests unitaires qui n’ont pas besoin de .env)
+        def load_dotenv_env(*args, **kwargs):  # type: ignore
+            return {}
+        def get_required(*keys):  # type: ignore
+            return {}
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+# Garantit un event loop même en contexte test
+try:
+    loop = asyncio.get_running_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+from apscheduler.schedulers.base import SchedulerAlreadyRunningError
+from utils.order_result import to_dict as order_res_dict, get as order_res_get
+from utils.position_manager import PositionManager  # type: ignore
+from utils.config import get_symbol_profile, get_enabled_symbols, is_symbol_active_now, load_config
+from utils.logger import logger
+from utils.mt5_client import MT5Client
+from utils.risk_manager import RiskManager
+from utils.gating import load_thresholds_for, should_allow_trade
+from utils.digest import daily_digest_for, format_digest_message
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from utils.live_metrics import should_allow_live
+from utils.audit import append as audit_append
+from utils.health import start_health_server
+
+# =============================================================================
+# Crypto bucket guard (BTC, ETH, LINK, BNB)
+# =============================================================================
+# Canoniques (profiles.yaml)
+CRYPTO_CANON = {"BTCUSD", "ETHUSD", "LINKUSD", "BNBUSD"}
+# Noms Broker/MT5 (positions_get renvoie souvent les noms broker)
+CRYPTO_REAL  = {"BTCUSD", "ETHUSD", "LNKUSD", "BNBUSD"}
+
+def _is_crypto_canon(s: str) -> bool:
+    return (s or "").upper() in CRYPTO_CANON
+
+def _is_crypto_real(s: str) -> bool:
+    return (s or "").upper() in CRYPTO_REAL
+
+def _to_canon(s_real: str) -> str:
+    """Map broker symbol -> canonical profiles.yaml symbol."""
+    s = (s_real or "").upper()
+    if s == "LNKUSD":
+        return "LINKUSD"
+    return s
+# =============================================================================
+# Helpers symbol mapping
+# =============================================================================
+def canon_to_broker(sym: str) -> str:
+    """Map symbol canonique (profiles.yaml) -> symbole broker MT5."""
+    s = (sym or "").upper()
+    if s == "LINKUSD":
+        return "LNKUSD"   # mapping confirmé chez ton broker
+    return s
+
+def broker_to_canon(sym: str) -> str:
+    s = (sym or "").upper()
+    if s == "LNKUSD":
+        return "LINKUSD"
+    return s
+def _crypto_bucket_risk_used(mt5_mod, get_profile) -> float:
+    """
+    Exposition déjà utilisée par des positions crypto ouvertes.
+    1) Essaie le risque réel (distance SL × pip_value × lot / equity)
+    2) Sinon fallback: somme des risk_per_trade paramétrés
+    Retourne un ratio d'equity (ex: 0.012 = 1.2%)
+    """
+    used = 0.0
+    try:
+        poss = mt5_mod.positions_get() or []
+        # equity pour normalisation
+        try:
+            ai = mt5_mod.account_info()
+            equity = float(getattr(ai, "equity", 0.0) or 0.0)
+        except Exception:
+            equity = 0.0
+        for p in poss:
+            s_real = str(getattr(p, "symbol", "") or "").upper()
+            if not _is_crypto_real(s_real):
+                continue
+            s_canon = _to_canon(s_real)
+            prof = get_profile(s_canon) or {}
+            inst = (prof.get("instrument") or {})
+            point = float(inst.get("point") or 0.0)
+            pip_value = float(inst.get("pip_value") or 0.0)
+            price_open = getattr(p, "price_open", None)
+            sl = getattr(p, "sl", None)
+            vol = getattr(p, "volume", None)
+            risk_ratio = None
+            try:
+                if equity > 0 and price_open and sl and vol and point and pip_value:
+                    dist_pts = abs(float(price_open) - float(sl)) / max(point, 1e-12)
+                    risk_ccy = dist_pts * pip_value * float(vol)
+                    risk_ratio = max(0.0, risk_ccy / equity)
+            except Exception:
+                risk_ratio = None
+            if risk_ratio is None:
+                r = float(((prof.get("risk") or {}).get("risk_per_trade") or 0.0))
+                used += r
+            else:
+                used += risk_ratio
+    except Exception:
+        pass
+    return float(used)
+
+# =============================================================================
+# Telegram: résolution auto d’un "sender" + long-polling des callbacks
+# =============================================================================
+def _load_tg_cfg():
+    path = os.path.join("config", "config.yaml")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except Exception:
+        data = {}
+    tg = data.get("telegram") or {}
+    token = tg.get("token") or tg.get("bot_token")
+    chat_id = tg.get("chat_id")
+    return token, chat_id
+
+def _send_buttons_direct(text: str, buttons, *, kind: str = "trade_validation") -> bool:
+    """Envoi inline-keys direct via l’API Telegram si le wrapper n’expose pas les boutons."""
+    try:
+        token, chat_id = _load_tg_cfg()
+        if not (token and chat_id):
+            return False
+        kb = {
+            "inline_keyboard": [[
+                {"text": b.get("text", "?"), "callback_data": b.get("callback_data", "")}
+                for b in buttons
+            ]]
+        }
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "reply_markup": json.dumps(kb, ensure_ascii=False),
+            "disable_web_page_preview": True,
+        }
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, data=payload, timeout=10)
+        return True
+    except Exception:
+        return False
+
+def _resolve_tg_sender() -> Optional[Callable[..., Any]]:
+    """
+    Retourne un callable de signature souple (text[, kind][, force]) vers utils.telegram_client.
+    Essaye différentes fonctions / une classe TelegramClient / tout callable public.
+    """
+    try:
+        mod = importlib.import_module("utils.telegram_client")
+    except Exception:
+        return None
+
+    prefer = [
+        "_tg", "_t", "send_message", "send", "notify",
+        "push", "post", "send_text", "send_telegram",
+        "message", "publish"
+    ]
+    for name in prefer:
+        obj = getattr(mod, name, None)
+        if callable(obj):
+            return obj
+
+    cls = getattr(mod, "TelegramClient", None)
+    if cls:
+        try:
+            inst = cls()
+            for m in ("send_message", "send", "__call__"):
+                meth = getattr(inst, m, None)
+                if callable(meth):
+                    return meth
+        except Exception:
+            pass
+
+    for name, obj in vars(mod).items():
+        if not name.startswith("_") and callable(obj):
+            return obj
+    return None
+
+def _call_sender(fn, text: str, kind: str, force: bool) -> None:
+    """Appelle fn avec les bons kwargs si possible, sinon en positionnel."""
+    try:
+        params = set(inspect.signature(fn).parameters)
+    except Exception:
+        params = set()
+
+    # argument message
+    if "text" in params:
+        kwargs = {"text": text}
+    elif "message" in params:
+        kwargs = {"message": text}
+    elif "msg" in params:
+        kwargs = {"msg": text}
+    elif "content" in params:
+        kwargs = {"content": text}
+    else:
+        fn(text)
+        return
+
+    # options si supportées
+    if "kind" in params:
+        kwargs["kind"] = kind
+    if "force" in params:
+        kwargs["force"] = force
+    if "cfg" in params:
+        kwargs["cfg"] = None
+
+    fn(**kwargs)
+
+_SEND_TG_FN = _resolve_tg_sender()
+
+def _send_tg(text: str, kind: str = "status", force: bool = False) -> bool:
+    """Envoi rapide via utils.telegram_client si dispo. Retourne True si tentative effectuée."""
+    if _SEND_TG_FN is None:
+        return False
+    try:
+        _call_sender(_SEND_TG_FN, text, kind, force)
+        return True
+    except Exception:
+        try:
+            _SEND_TG_FN(text)  # dernier recours
+            return True
+        except Exception:
+            return False
+
+def _load_tg_token_chat() -> Tuple[Optional[str], Optional[int]]:
+    """Lit token/chat_id depuis config/config.yaml pour le long-polling callback."""
+    try:
+        with open(os.path.join("config", "config.yaml"), encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        tg = cfg.get("telegram") or {}
+        token = tg.get("token") or tg.get("bot_token")
+        chat_id = tg.get("chat_id")
+        return token, chat_id
+    except Exception:
+        return None, None
+
+# Registry d’orchestrateurs (pour retrouver l’instance depuis le callback Telegram)
+_ORCH_REGISTRY: Dict[str, "Orchestrator"] = {}
+
+def register_orchestrator_instance(orch: "Orchestrator") -> None:
+    try:
+        _ORCH_REGISTRY[orch.symbol.upper()] = orch
+    except Exception:
+        pass
+
+def get_orchestrator(symbol: str) -> Optional["Orchestrator"]:
+    return _ORCH_REGISTRY.get((symbol or "").upper())
+
+def _tg_callback_longpoll_loop():
+    """
+    Thread daemon: lit les callbacks Telegram (inline keyboard) et déclenche l’exécution.
+    callback_data: 'orch|<SYMBOL>|VALIDATE|<LONG|SHORT>' ou 'orch|<SYMBOL>|REJECT|<LONG|SHORT>'
+    """
+    token, _ = _load_tg_token_chat()
+    if not token:
+        logger.warning("[TG] Token absent → pas de worker callbacks.")
+        return
+
+    API = f"https://api.telegram.org/bot{token}"
+
+    # ⚠️ Evite le conflit webhook/getUpdates
+    try:
+        requests.get(f"{API}/deleteWebhook", timeout=10)
+    except Exception:
+        pass
+
+    # On saute les updates anciens
+    offset = None
+    try:
+        r0 = requests.get(f"{API}/getUpdates", params={"timeout": 1}, timeout=5)
+        if r0.ok and r0.json().get("result"):
+            offset = r0.json()["result"][-1]["update_id"] + 1
+    except Exception:
+        pass
+
+    logger.info("[TG] Callback worker en écoute (long-poll).")
+
+    while True:
+        try:
+            r = requests.get(
+                f"{API}/getUpdates",
+                params={"offset": offset, "timeout": 25, "allowed_updates": ["callback_query"]},
+                timeout=30,
+            )
+            if not r.ok:
+                time.sleep(1.0)
+                continue
+
+            data = r.json()
+            for upd in data.get("result", []):
+                offset = upd["update_id"] + 1
+
+                cq = upd.get("callback_query")
+                if not cq:
+                    continue
+
+                payload = (cq.get("data") or "").strip()
+                logger.info(f"[TG] callback_query reçu: {payload}")
+
+                # Toast visible dans Telegram
+                try:
+                    requests.post(
+                        f"{API}/answerCallbackQuery",
+                        json={"callback_query_id": cq["id"], "text": "Reçu 👍", "show_alert": False},
+                        timeout=5
+                    )
+                except Exception:
+                    pass
+
+                parts = payload.split("|")
+                if len(parts) != 4 or parts[0] != "orch":
+                    continue
+
+                symbol = parts[1].upper()
+                action = parts[2].upper()
+                direction = parts[3].upper()
+
+                orch = get_orchestrator(symbol)
+                if not orch:
+                    _send_tg(f"⚠️ Aucun orchestrateur actif pour {symbol}.", kind="status", force=True)
+                    continue
+
+                if action == "VALIDATE":
+                    try:
+                        loop = asyncio.new_event_loop()
+                        loop.run_until_complete(orch.execute_trade(direction))
+                    except Exception as e:
+                        logger.exception(f"[TG] Erreur exécution trade {symbol} {direction}: {e}")
+                    finally:
+                        try:
+                            loop.close()
+                        except Exception:
+                            pass
+                elif action == "REJECT":
+                    orch._send_telegram(f"✋ Trade {symbol} {direction} rejeté.", kind="status", force=True)
+                    try:
+                        # petit cooldown de rejet si configuré
+                        orch._arm_cooldown(getattr(orch, "_cooldown_after_reject_min", 0), "rejet")
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            logger.warning(f"[TG] loop err: {e}")
+            time.sleep(1.0)
+
+def _start_tg_callback_worker_once():
+    if getattr(_start_tg_callback_worker_once, "_started", False):
+        return
+    th = threading.Thread(target=_tg_callback_longpoll_loop, name="tg-callback-worker", daemon=True)
+    th.start()
+    _start_tg_callback_worker_once._started = True
+    logger.info("[TG] Callback worker démarré.")
+
+def _notify_global_start(symbols_started: List[str]) -> None:
+    """Ping unique au lancement pour tous les symboles démarrés."""
+    try:
+        tz = pytz.timezone("Europe/Zurich")
+        now = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+    except Exception:
+        now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    msg = f"🔔 Empire lancé ({now})\nSymbols: " + ", ".join(symbols_started)
+    ok = _send_tg(msg, kind="startup", force=True)
+    if not ok:
+        logger.warning("[TG] Message de start global non envoyé (sender indisponible).")
+    logger.info(msg)
+
+
+
+def _crypto_bucket_risk_used(get_profile) -> float:
+    """
+    Exposition déjà utilisée par des positions crypto:
+      1) tente d'estimer le risque réel par position (distance SL × lots × valeur du point / equity)
+      2) sinon fallback: somme des risk_per_trade des profils des symboles ouverts
+    Retour: ratio d'equity (ex: 0.012 = 1.2%)
+    """
+    used = 0.0
+    try:
+        poss = _mt5.positions_get() or []
+        # Equity du compte pour normaliser en %
+        equity = None
+        try:
+            ai = _mt5.account_info()
+            equity = float(getattr(ai, "equity", None) or 0.0)
+        except Exception:
+            equity = 0.0
+
+        for p in poss:
+            s_real = str(getattr(p, "symbol", "") or "").upper()
+            if s_real not in CRYPTO_REAL:
+                continue
+            s_canon = _to_canon(s_real) or s_real
+            prof = get_profile(s_canon) or {}
+            inst = (prof.get("instrument") or {})
+            point = float(inst.get("point") or 0.0)
+            pip_value = float(inst.get("pip_value") or 0.0)
+            contract_size = float(inst.get("contract_size") or 1.0)
+
+            price_open = getattr(p, "price_open", None)
+            sl         = getattr(p, "sl", None)
+            vol        = getattr(p, "volume", None)
+
+            risk_ratio = None
+            try:
+                if equity and equity > 0 and price_open and sl and vol and point and pip_value:
+                    # approx: distance en points × valeur du point × lots / equity
+                    dist_pts = abs(float(price_open) - float(sl)) / max(point, 1e-9)
+                    risk_ccy = dist_pts * pip_value * float(vol)
+                    risk_ratio = risk_ccy / equity
+            except Exception:
+                risk_ratio = None
+
+            if risk_ratio is None:
+                # fallback proxy: risk_per_trade du profil
+                r = float(((prof.get("risk") or {}).get("risk_per_trade") or 0.0))
+                used += r
+            else:
+                used += float(max(0.0, risk_ratio))
+    except Exception:
+        pass
+    return float(used)
+
+def _apply_crypto_bucket_guard(symbol_canon: str, planned_risk: float, *, cap: float,
+                               get_profile) -> float:
+    """
+    Retourne un facteur [0..1] à appliquer au volume:
+      - 0.0 : refuse (cap dépassé)
+      - (0,1] : réduit proportionnellement l’exposition
+    """
+    if (symbol_canon or "").upper() not in CRYPTO_CANON:
+        return 1.0
+
+    used = _crypto_bucket_risk_used(get_profile)
+    room = max(0.0, float(cap) - used)
+    if room >= planned_risk:
+        return 1.0
+    if room <= 0.0:
+        return 0.0
+    return room / max(planned_risk, 1e-9)
+
+def _count_open_crypto_positions() -> int:
+    """Nombre de positions ouvertes relevant du bucket crypto (noms broker)."""
+    try:
+        poss = _mt5.positions_get() or []
+        n = 0
+        for p in poss:
+            s_real = str(getattr(p, "symbol", "") or "").upper()
+            if s_real in CRYPTO_REAL:
+                n += 1
+        return n
+    except Exception:
+        return 0
+    
+def _norm(sig: Optional[str]) -> str:
+    """Normalize signal to 'LONG'/'SHORT'/'' ; treat WAIT/None as ''."""
+    s = (sig or "").strip().upper()
+    return s if s in ("LONG", "SHORT") else ""
+
+
+# =============================================================================
+# Orchestrateur
+# =============================================================================
+class Orchestrator:
+    """
+    Orchestrateur multi-timeframe / multi-agents.
+    - Agrège les signaux
+    - Applique seuils (score / confluence / confirmations)
+    - Garde-fous risque (incl. crypto bucket guard)
+    - Fallback ATR pour TP/SL/Lots
+    - Telegram (statuts / rapports ; validation optionnelle)
+    - Auto-optimisation nocturne (overrides.yaml)
+    - Gating anti-spam (min délai, une fois par bougie, plafond/jour)
+
+    Cooldown config (orchestrator.cooldown):
+      enabled: bool
+      after_trade_min: int
+      after_loss_min: int
+      after_win_min: int
+      after_reject_min: int
+      after_streak_n: int
+      after_streak_min: int
+      min_secs_between_trades: int
+      max_trades_per_day: int
+    """
+    import threading
+    _ORCH_LOCKS = {}
+    def _sym_lock(sym: str) -> threading.Lock:
+        lk = _ORCH_LOCKS.get(sym) # type: ignore
+        if lk is None:
+            lk = threading.Lock()
+            _ORCH_LOCKS[sym] = lk # type: ignore
+        return lk
+
+    def __init__(self, symbol: Optional[str] = None, telegram_client=None):
+        # --- Symbol d'abord ---
+        if symbol is None:
+            syms = get_enabled_symbols()
+            if not syms:
+                raise SystemExit("Aucun symbole activé dans profiles.yaml")
+            symbol = syms[0]
+        self.symbol = symbol  # canonique
+        self.telegram_client = telegram_client
+        ori = (self.profile.get("orchestrator") or {})
+        self.dry_run = bool(ori.get("dry_run", False))
+
+        # --- MT5 EN PREMIER ---
+        MT5Client.initialize_if_needed()
+        self.mt5 = MT5Client()
+        try:
+            self.broker_symbol = self.mt5.resolve_symbol_name(self.symbol)
+            self.mt5.ensure_symbol(self.broker_symbol)
+        except Exception as e:
+            logger.warning(f"[MT5] Résolution/ensure symbole a échoué: {e}")
+            self.broker_symbol = self.symbol
+
+        # --- Profil & overrides ---
+        self.profile: Dict[str, Any] = (get_symbol_profile(self.symbol, overrides_path=OVERRIDES_PATH))  # type: ignore
+
+        try:
+            ov_path = os.path.join("config", "overrides.yaml")
+            if os.path.exists(ov_path):
+                with open(ov_path, encoding="utf-8") as f:
+                    ov_all = yaml.safe_load(f) or {}
+                self._apply_overrides_for_symbol(ov_all.get(self.symbol) or {})
+        except Exception as e:
+            logger.warning(f"[OVR] load overrides.yaml: {e}")
+
+        # --- Orchestrator config ---
+        self.ori_cfg: Dict[str, Any] = self.profile.get("orchestrator", {}) or {}
+        self.auto_execute = bool(self.ori_cfg.get("auto_execute", True))
+        self.use_telegram_validation = bool(self.ori_cfg.get("telegram_validation", False))
+        self.status_report_hours = int(self.ori_cfg.get("status_report_hours", 2))
+        self._last_report_ts: Optional[datetime] = None
+
+        weights_cfg = self.ori_cfg.get("agent_weights", {}) or {}
+        self.w_news      = float(weights_cfg.get("news",     0.6))
+        self.w_swing     = float(weights_cfg.get("swing",    0.5))
+        self.w_scalp     = float(weights_cfg.get("scalping", 0.3))
+        self.w_structure = float(weights_cfg.get("structure", 0.6))
+
+        self.votes_required: int = int(self.ori_cfg.get("votes_required", 2))
+        self.min_confluence: int = int(self.ori_cfg.get("min_confluence", 2))
+        self.min_score_for_proposal: float = float(self.ori_cfg.get("min_score_for_proposal", 2.0))
+        self.require_scalping_entry: bool = bool(self.ori_cfg.get("require_scalping_entry", False))
+        self.require_swing_confirm: bool  = bool(self.ori_cfg.get("require_swing_confirm", False))
+
+        mtf = self.ori_cfg.get("multi_timeframes", {}) or {}
+        self.mtf_enabled: bool = bool(mtf.get("enabled", True))
+        self.tfs: List[str] = list(mtf.get("tfs", ["H1", "M15", "M5", "M1"]))
+        self.tf_weights: Dict[str, float] = dict(mtf.get("tf_weights", {}))
+
+        self.timeframes_cfg: Dict[str, Any] = self.ori_cfg.get("timeframes", {})
+        self.proposal_ttl_secs: int = int(self.ori_cfg.get("proposal_ttl_secs", 300))
+        try:
+            tzname = (load_config().get("engine", {}) or {}).get("timezone", "Europe/Zurich")
+            self._tz = pytz.timezone(tzname)
+        except Exception:
+            self._tz = pytz.timezone("Europe/Zurich")
+        # Config globale disponible pour les méthodes internes (ex: daily digest)
+        try:
+            self.cfg = load_config() or {}
+        except Exception:
+            self.cfg = {}
+        # Programmer le digest une seule fois (si multi-symboles, choisis un "primary")
+        self._maybe_schedule_daily_digest()
+        # Health server (une seule fois)
+        if not hasattr(self.__class__, "_health_started"):
+            try:
+                start_health_server(host="0.0.0.0", port=9108)
+                self.__class__._health_started = True
+                logger.info("[Health] /healthz ready on :9108")
+            except Exception as e:
+                logger.warning(f"[Health] failed to start: {e}")
+    def _maybe_schedule_daily_digest(self):
+        try:
+            tg = (self.cfg or {}).get("telegram", {}) or {}
+            if not bool(tg.get("send_daily_digest", False)):
+                return
+            hhmm = str(tg.get("daily_digest_time", "19:00"))
+            hh, mm = [int(x) for x in hhmm.split(":")]
+            from apscheduler.schedulers.background import BackgroundScheduler
+            if not hasattr(self.__class__, "_digest_scheduler"):
+                sched = BackgroundScheduler(timezone=self._tz)
+                sched.start(paused=False)
+                self.__class__._digest_scheduler = sched
+            sched = self.__class__._digest_scheduler
+            # éviter doublons : job id unique
+            job_id = "daily_digest_job"
+            if sched.get_job(job_id) is None:
+                def _job():
+                    # symbols à couvrir : si run multi, injecte-les via config/profiles au besoin
+                    syms = [getattr(self, "symbol", "BTCUSD")]
+                    self._send_telegram("Planification digest…", kind="status", force=False)  # silencieux si filtré
+                    send_daily_digest(self._send_telegram, syms, tz_name="Europe/Zurich") # type: ignore
+
+                sched.add_job(_job, "cron", id=job_id, hour=hh, minute=mm, replace_existing=True)
+        except Exception as e:
+            logger.warning(f"[Digest] schedule failed: {e}")
+
+        # --- Cooldown (anti-overtrading) ---
+        cd = (self.ori_cfg.get("cooldown") or {})
+        self._cooldown_enabled          = bool(cd.get("enabled", True))
+        self._cooldown_after_trade_min  = int(cd.get("after_trade_min", 2))
+        self._cooldown_after_loss_min   = int(cd.get("after_loss_min", 5))
+        self._cooldown_after_win_min    = int(cd.get("after_win_min", 1))
+        self._cooldown_after_reject_min = int(cd.get("after_reject_min", 2))
+        self._cooldown_streak_n         = int(cd.get("after_streak_n", 3))
+        self._cooldown_streak_min       = int(cd.get("after_streak_min", 10))
+        self._cooldown_until: Optional[datetime] = None
+
+        # --- Gating trades (anti-spam) ---
+        self.once_per_candle_tf: Optional[str] = (self.ori_cfg.get("once_per_candle_tf") or None)
+        # ⬇️ désormais lus dans orchestrator.cooldown
+        self._min_secs_between_trades: int = int(cd.get("min_secs_between_trades", 120))
+        self._max_trades_per_day: int      = int(cd.get("max_trades_per_day", 10))
+
+        # Runtime gating state
+        self._last_bar_traded_by_tf: Dict[str, int] = {}   # tf -> bar_id
+        self._last_exec_ts: Optional[datetime] = None
+
+        # Pacing & qualité d'entrée
+        self.min_rr = float(self.ori_cfg.get("min_rr", 1.5))
+
+
+        # --- Scheduler ---
+        self._sched = AsyncIOScheduler(event_loop=loop)
+
+        # --- Risk manager APRES MT5 ---
+        self.risk = RiskManager(self.symbol)
+
+        # --- Cache d'agents & proposition / contexte ---
+        self._agents: Dict[str, Any] = {}
+        self._last_proposal: Optional[Dict[str, Any]] = None
+        self._last_ctx: Optional[Dict[str, Any]] = None  # per_tf_signals / global_signals / indicators / market
+
+        # --- Position Manager ---
+        try:
+            self.pm = PositionManager(self.mt5, self.symbol, self.profile, notifier=self._notify_trade_event)
+            # assure qu’on passe dans manage_open_positions() si le flag est supporté
+            if hasattr(self.pm, "enabled"):
+                self.pm.enabled = True  # type: ignore[attr-defined]
+        except Exception as e:
+            logger.warning(f"[PM] init failed: {e}")
+            self.pm = None
+
+        logger.info(
+            f"[ORCH] {self.symbol} (broker={self.broker_symbol}) "
+            f"votes_required={self.votes_required} tfs={self.tfs} weights={self.tf_weights}"
+        )
+        register_orchestrator_instance(self)
+    # --- Anti-spam local (cooldown + déduplication) ---
+    def _tg_antispam_ok(self, kind: str, text: str) -> bool:
+        """
+        Retourne False si on a déjà envoyé un message identique pour ce 'kind'
+        dans la fenêtre de cooldown (min) définie dans config: orchestrator.anti_spam.cooldown_minutes.
+        """
+        try:
+            cfg = (self.profile.get("orchestrator") or {}).get("anti_spam") or {}
+            cd_min = int(cfg.get("cooldown_minutes", 5))
+        except Exception:
+            cd_min = 5
+        if not hasattr(self, "_tg_cache"):
+            self._tg_cache = {"last_sent_at": {}, "last_hash": {}}
+        cache = self._tg_cache
+        now = datetime.now(timezone.utc).timestamp()
+        last = cache["last_sent_at"].get(kind)
+        if last and now - last < cd_min * 60:
+            h = hash(text)
+            if cache["last_hash"].get(kind) == h:
+                return False
+        cache["last_sent_at"][kind] = now
+        cache["last_hash"][kind] = hash(text)
+        return True
+
+    def _notify_trade_event(self, tag: str, payload: dict) -> None:
+        """
+        Envoie des messages structurés: NEW_TRADE, CLOSE_TRADE,
+        MOVE_BE, TP1_HIT, TRAILING_SL_UPDATE (kind='trade_event').
+        """
+        try:
+            tz = self._tz
+        except Exception:
+            tz = pytz.timezone("Europe/Zurich")
+        ts = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+        sym = payload.get("symbol") or getattr(self, "symbol", "UNKNOWN")
+
+        if tag == "NEW_TRADE":
+            side  = payload.get("side")
+            entry = float(payload.get("entry", 0.0))
+            sl    = float(payload.get("sl", 0.0))
+            tp    = payload.get("tp")
+            lots  = float(payload.get("lots", 0.0))
+            score = payload.get("score")
+            conf  = payload.get("confluence")
+            # Déduire TP1/TP2 via RR si dispo dans profile
+            rr_partials = []
+            try:
+                pm_cfg = ((self.profile.get("trade_manager") or {}).get("partials") or [])
+                rr_partials = [float(x.get("rr")) for x in pm_cfg if x.get("rr") is not None][:2]
+            except Exception:
+                rr_partials = []
+            def rr_to_tp(rr):
+                if rr is None:
+                    return None
+                risk_px = abs(entry - sl)
+                if risk_px <= 0:
+                    return None
+                return entry + rr * risk_px if (side == "LONG") else entry - rr * risk_px
+            tp1 = rr_to_tp(rr_partials[0]) if len(rr_partials) >= 1 else None
+            tp2 = rr_to_tp(rr_partials[1]) if len(rr_partials) >= 2 else None
+            tp1_str = f"{tp1:.2f}" if tp1 is not None else "N/A"
+            tp2_str = f"{tp2:.2f}" if tp2 is not None else "N/A"
+            # RR breakeven (optionnel)
+            try:
+                be_rr = float(((self.profile.get("trade_manager") or {}).get("breakeven") or {}).get("rr", 1.0))
+            except Exception:
+                be_rr = 1.0
+            msg = (
+                f"#NEW_TRADE | {sym} | {side} | entry {entry:.2f} | {lots:.3f} lots | "
+                f"SL {sl:.2f} | TP1 {tp1_str} | TP2 {tp2_str} | BE RR≥{be_rr:.1f} | {ts}"
+            )
+            if score is not None or conf is not None:
+                msg += f" | score {score if score is not None else 'N/A'} / conf {conf if conf is not None else 'N/A'}"
+
+            if self._tg_antispam_ok("trade_event", msg):
+                self._send_telegram(msg, kind="trade_event", force=True)
+
+        elif tag == "CLOSE_TRADE":
+            msg = (f"#CLOSE_TRADE | {sym} | {payload.get('result','N/A')} | "
+                   f"P&L {payload.get('pnl_ccy','0.00')} ({payload.get('pnl_pips','0')} pips) | "
+                   f"durée {payload.get('duration','N/A')} | R:R {payload.get('rr','N/A')} | "
+                   f"MFE {payload.get('mfe','N/A')} | MAE {payload.get('mae','N/A')} | "
+                   f"ticket {payload.get('ticket','?')} | {ts}")
+            if self._tg_antispam_ok("trade_event", msg):
+                self._send_telegram(msg, kind="trade_event", force=True)
+
+        else:
+            # MOVE_BE / TP1_HIT / TRAILING_SL_UPDATE / ERROR etc.
+            detail = payload.get("detail", "")
+            msg = f"#{tag} | {sym} | {detail} | {ts}"
+            if self._tg_antispam_ok("trade_event", msg):
+                self._send_telegram(msg, kind="trade_event", force=True)
+
+    # ---------------- Fenêtre de trading configurable ----------------
+    def _parse_days(self, days_val) -> set:
+        """Accepte ['mon',...], ['lundi',...], [1..7] ou 'weekdays'."""
+        if not days_val:
+            return set()
+        if isinstance(days_val, str):
+            s = days_val.strip().lower()
+            if s in ("weekdays", "ouvrables"):
+                return {1, 2, 3, 4, 5}
+            days_val = [s]
+        out = set()
+        map_en = {"mon":1,"tue":2,"wed":3,"thu":4,"fri":5,"sat":6,"sun":7}
+        map_fr = {"lundi":1,"mardi":2,"mercredi":3,"jeudi":4,"vendredi":5,"samedi":6,"dimanche":7}
+        for d in days_val:
+            if isinstance(d, int):
+                if 1 <= d <= 7:
+                    out.add(d)
+                continue
+            s = str(d).strip().lower()
+            out.add(map_en.get(s[:3], map_fr.get(s, None)))
+        return {x for x in out if x}
+
+    def _is_in_trading_window(self, when: Optional[datetime] = None) -> bool:
+        """Vrai si 'when' est dans la fenêtre de trading définie dans le profil."""
+        tw = (self.ori_cfg.get("trading_window") or {})
+        if not bool(tw.get("enabled", False)):
+            return True  # pas de contrainte
+
+        tzname = tw.get("timezone") or "Europe/Zurich"
+        try:
+            tz = pytz.timezone(tzname)
+        except Exception:
+            tz = self._tz
+
+        if when is None:
+            when = datetime.now(timezone.utc)
+        local_dt = when.astimezone(tz)
+
+        # Jours
+        allowed = self._parse_days(tw.get("days") or tw.get("weekdays"))
+        if allowed and local_dt.isoweekday() not in allowed:
+            return False
+
+        # Heures
+        start_s = str(tw.get("start", "00:00")).strip()
+        end_s   = str(tw.get("end",   "23:59")).strip()
+
+        def _to_sec(hhmm: str) -> int:
+            hh, mm = hhmm.split(":")
+            return int(hh)*3600 + int(mm)*60
+        try:
+            start_sec = _to_sec(start_s)
+            end_sec   = _to_sec(end_s)
+        except Exception:
+            return True  # si parsing foire, on laisse passer
+
+        t = local_dt.hour*3600 + local_dt.minute*60 + local_dt.second
+        if end_sec > start_sec:
+            return start_sec <= t < end_sec
+        else:
+            # fenêtre qui traverse minuit (ex: 22:00-06:00)
+            return t >= start_sec or t < end_sec
+
+    def _is_symbol_profile_active_now(self) -> bool:
+        """
+        Vérifie le planning global du symbole défini dans profiles.yaml:
+        profiles.<SYM>.schedule.active_days / active_hours
+        """
+        try:
+            return bool(is_symbol_active_now(self.symbol))
+        except Exception:
+            return True
+
+    # ---------------------------- Dashboard live ----------------------------
+    def save_signals_to_json(self, symbol: str, global_signals: Dict[str, str]) -> None:
+        """Enregistre les signaux globaux (par agent) pour le dashboard live → data/latest_signals.json."""
+        try:
+            data = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "symbol": symbol,
+                "signals": {
+                    agent: {
+                        "signal": s,
+                        "intensity": None,
+                        "reason": "" if s else "no_signal",
+                    }
+                    for agent, s in (global_signals or {}).items()
+                    if s is not None
+                },
+
+            }
+            os.makedirs("data", exist_ok=True)
+            with open("data/latest_signals.json", "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning(f"[ORCH] Ecriture latest_signals.json échouée: {e}")
+
+    # ---------------------------- RAPPORT PERIODIQUE ----------------------------
+    async def _send_status_report(self):
+        """Rapport court: heure locale, equity/balance, positions ouvertes du symbole, derniers trades."""
+        try:
+            tz = self._tz
+            now_loc = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+
+            # Compte
+            ai = getattr(self.mt5, "get_account_info", lambda: None)()
+            eq = float(getattr(ai, "equity", 0.0) or 0.0) if ai else 0.0
+            bal = float(getattr(ai, "balance", 0.0) or 0.0) if ai else 0.0
+
+            # Positions ouvertes pour ce symbole
+            poss = []
+            try:
+                poss_raw = _mt5.positions_get(symbol=self.broker_symbol) or []
+                for p in poss_raw:
+                    typ = int(getattr(p, "type", 0))  # 0=BUY, 1=SELL
+                    side = "BUY" if typ == 0 else "SELL"
+                    vol  = float(getattr(p, "volume", 0.0) or 0.0)
+                    po   = float(getattr(p, "price_open", 0.0) or 0.0)
+                    sl   = getattr(p, "sl", None)
+                    tp   = getattr(p, "tp", None)
+                    prf  = float(getattr(p, "profit", 0.0) or 0.0)
+                    poss.append(f"{side} {vol:.2f} @ {po:.5f} | SL={sl} TP={tp} | P/L={prf:.2f}")
+            except Exception:
+                pass
+
+            # Trades récents (depuis dernier rapport) dans data/trades_log.csv
+            recent = []
+            try:
+                path = os.path.join("data","trades_log.csv")
+                if os.path.exists(path):
+                    since = self._last_report_ts  # datetime ou None
+                    with open(path, encoding="utf-8") as f:
+                        r = csv.DictReader(f)
+                        rows = [row for row in r if (row.get("symbol","") == self.symbol)]
+                    if since:
+                        def _ok(row):
+                            try:
+                                ts = datetime.fromisoformat(row.get("ts_utc",""))
+                                return ts > since
+                            except Exception:
+                                return False
+                        rows = [row for row in rows if _ok(row)]
+                    for row in rows[-5:]:
+                        recent.append(
+                            f"{row.get('side')} lots={row.get('lots')} ret={row.get('retcode')} ticket={row.get('ticket')}"
+                        )
+            except Exception:
+                pass
+
+            lines = [
+                f"🧭 Rapport {self.symbol} — {now_loc}",
+                f"Equity={eq:.2f} | Balance={bal:.2f}",
+                f"Positions ouvertes ({len(poss)}):" if poss else "Positions ouvertes: 0",
+            ]
+            lines += (poss[:5] if poss else [])
+            if recent:
+                lines.append("Derniers trades:")
+                lines += recent
+            msg = "\n".join(lines)
+
+            if not self._tg_quiet():
+                self._send_telegram(msg, kind="status", force=False)
+
+        except Exception as e:
+            logger.warning(f"[REPORT] {self.symbol} erreur: {e}")
+        finally:
+            try:
+                self._last_report_ts = datetime.now(timezone.utc)
+            except Exception:
+                pass
+                # ---------------------------- DIGEST QUOTIDIEN ----------------------------
+    def _send_daily_digest(self):
+        """Résumé quotidien Europe/Zurich basé sur reports/audit_trades.jsonl."""
+        try:
+            tz = ZoneInfo("Europe/Zurich")
+            ymd = datetime.now(tz).strftime("%Y-%m-%d")
+            d = daily_digest_for(ymd)
+            msg = format_digest_message(d, ymd)
+            self._send_telegram(msg, kind="status", force=True)
+        except Exception as e:
+            self._send_telegram(f"[DIGEST] erreur: {e}", kind="status", force=False)
+
+
+    # ---------------------------- Cooldown ----------------------------
+    def _cooldown_active(self) -> bool:
+        """Retourne True si on est en période de cooldown ; purge l’état si expiré."""
+        if not self._cooldown_enabled or not self._cooldown_until:
+            return False
+        now = datetime.now(timezone.utc)
+        if now < self._cooldown_until:
+            return True
+        # expiré -> on nettoie
+        self._cooldown_until = None
+        return False
+
+    def _arm_cooldown(self, minutes: int, reason: str = "") -> None:
+        """Démarre un cooldown de N minutes (safe si désactivé ou N<=0)."""
+        try:
+            if not self._cooldown_enabled or int(minutes) <= 0:
+                return
+            self._cooldown_until = datetime.now(timezone.utc) + timedelta(minutes=int(minutes))
+            left = int(minutes)
+            if reason:
+                self._send_telegram(f"⏸️ Cooldown {self.symbol}: {left} min ({reason}).", kind="status")
+            else:
+                self._send_telegram(f"⏸️ Cooldown {self.symbol}: {left} min.", kind="status")
+        except Exception:
+            pass
+
+    # ---------------------------- Timeframe & gating helpers ----------------------------
+    def _tf_to_minutes(self, tf: str) -> Optional[int]:
+        m = {"M1":1,"M5":5,"M15":15,"M30":30,"H1":60,"H4":240,"D1":1440}
+        return m.get(str(tf).upper())
+
+    def _current_bar_id(self, timeframe: str) -> Optional[int]:
+        """Identifiant stable de la bougie courante pour `timeframe`."""
+        try:
+            tfm = self._tf_to_minutes(timeframe)
+            if not tfm:
+                return None
+
+            # 1) via MT5 (précis)
+            try:
+                if hasattr(self.mt5, "get_rates"):
+                    rates = self.mt5.get_rates(self.broker_symbol, timeframe, count=1)
+                    if rates:
+                        last = rates[-1]
+                        t = last.get("time") if isinstance(last, dict) else getattr(last, "time", None)
+                        if t:
+                            return int(t)  # epoch seconds
+            except Exception:
+                pass
+
+            # 2) fallback: bucketiser maintenant
+            now_utc = datetime.now(timezone.utc)
+            minutes = (now_utc.minute // tfm) * tfm
+            anchor = now_utc.replace(minute=minutes, second=0, microsecond=0)
+            return int(anchor.timestamp())
+        except Exception:
+            return None
+
+    def _trades_today_count(self) -> int:
+        """
+        Nombre de trades LOGGÉS aujourd'hui pour CE symbole (via data/trades_log.csv, colonne ok=True).
+        """
+        try:
+            path = os.path.join("data", "trades_log.csv")
+            if not os.path.exists(path):
+                return 0
+
+            tz = self._tz
+            today_local = datetime.now(tz).date()
+            n = 0
+            with open(path, encoding="utf-8") as f:
+                r = csv.DictReader(f)
+                for row in r:
+                    if (row.get("symbol") or "") != self.symbol:
+                        continue
+                    if str(row.get("ok","")).lower() not in ("true","1","yes"):
+                        continue
+                    ts = row.get("ts_utc")
+                    if not ts:
+                        continue
+                    try:
+                        dt_utc = datetime.fromisoformat(ts).astimezone(timezone.utc)
+                        dt_loc = dt_utc.astimezone(tz)
+                        if dt_loc.date() == today_local:
+                            n += 1
+                    except Exception:
+                        continue
+            return n
+        except Exception:
+            return 0
+
+    def _trade_gate_ok(self) -> Tuple[bool, str]:
+        """
+        Garde-fous anti-spam :
+          - cooldown actif
+          - min_secs_between_trades
+          - once_per_candle_tf
+          - max_trades_per_day
+        Retourne (ok, pourquoi_si_refus).
+        """
+        if self._cooldown_active():
+            return False, "cooldown actif"
+
+        now = datetime.now(timezone.utc)
+
+        # délai min entre deux exécutions
+        if self._last_exec_ts:
+            dt = (now - self._last_exec_ts).total_seconds()
+            if dt < max(0, self._min_secs_between_trades):
+                return False, f"délai min {self._min_secs_between_trades}s non écoulé ({int(dt)}s)"
+
+        # une seule exécution par bougie (si activé)
+        if self.once_per_candle_tf:
+            cur_bar = self._current_bar_id(self.once_per_candle_tf)
+            if cur_bar is not None:
+                last_bar = self._last_bar_traded_by_tf.get(self.once_per_candle_tf)
+                if last_bar == cur_bar:
+                    return False, f"une exécution déjà faite sur la bougie {self.once_per_candle_tf}"
+
+
+        # max trades par jour (basé sur le journal CSV)
+        trades_today = self._trades_today_count()
+        if trades_today >= max(1, self._max_trades_per_day):
+            return False, f"max trades/jour atteint ({self._max_trades_per_day})"
+
+        return True, ""
+
+    # ---------------------------- Propositions & snapshots (analytics) ----------------------------
+    def _log_proposal_csv(self, side, price, sl, tp, lots, score, confluence, ttl_sec, expired=False, executed=False):
+        try:
+            path = os.path.join("data", "proposals_log.csv")
+            fields = ["ts_utc","symbol","side","price","sl","tp","lots","score","confluence","ttl_sec","expired","executed"]
+            os.makedirs("data", exist_ok=True)
+            file_exists = os.path.exists(path)
+            row = {
+                "ts_utc": datetime.now(timezone.utc).isoformat(),
+                "symbol": self.symbol, "side": side,
+                "price": float(price) if price is not None else None,
+                "sl": float(sl) if sl is not None else None,
+                "tp": float(tp) if tp is not None else None,
+                "lots": float(lots) if lots is not None else None,
+                "score": float(score) if score is not None else None,
+                "confluence": int(confluence) if confluence is not None else None,
+                "ttl_sec": int(ttl_sec) if ttl_sec is not None else None,
+                "expired": bool(expired), "executed": bool(executed),
+            }
+            with open(path, "a", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=fields)
+                if not file_exists: w.writeheader()
+                w.writerow(row)
+        except Exception as e:
+            logger.warning(f"[LOG] proposals_log.csv erreur: {e}")
+
+    def _log_agents_snapshot_jsonl(self, per_tf_signals, global_signals, indicators, market, context="executed"):
+        """Écrit un snapshot JSONL (une ligne JSON) pour analyse post-trade."""
+        try:
+            os.makedirs("data", exist_ok=True)
+            rec = {
+                "ts_utc": datetime.now(timezone.utc).isoformat(),
+                "symbol": self.symbol,
+                "context": context,
+                "per_tf_signals": per_tf_signals or {},
+                "global_signals": global_signals or {},
+                "indicators": {k: (float(v) if isinstance(v, (int, float)) else v)
+                               for k, v in (indicators or {}).items()},
+                "market": market or {},
+            }
+            with open(os.path.join("data", "agents_snap.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.warning(f"[LOG] agents_snap.jsonl erreur: {e}")
+
+    # ---------------------------- ENVOI PROPOSITION / AUTO ----------------------------
+    async def _send_validation_proposal(
+        self,
+        msg: str,
+        direction: str,
+        price: float,
+        sl: float,
+        tp: float,
+        lots: float,
+        score_agr: float,
+        confluence: int
+    ):
+        """Stocke la proposition; si auto_execute, on lance; sinon on envoie les boutons Telegram."""
+        now_utc = datetime.now(timezone.utc)
+        expires_at = now_utc + timedelta(seconds=self.proposal_ttl_secs)
+
+        # fenêtre de trading (planning global + fenêtre orchestrator)
+        if not self._is_symbol_profile_active_now():
+            logger.info(f"[SCHEDULE] {self.symbol} désactivé → pas d’envoi.")
+            return
+        if not self._is_in_trading_window():
+            logger.info(f"[WINDOW] {self.symbol} hors fenêtre → pas d’envoi.")
+            return
+
+
+        self._last_proposal = {
+            "symbol": self.symbol,
+            "side": direction,
+            "entry": float(price),
+            "sl": float(sl),
+            "tp": float(tp),
+            "lots": float(lots),
+            "score": float(score_agr),
+            "confluence": int(confluence),
+            "timestamp": now_utc.isoformat(),
+            "expires_at": expires_at.isoformat(),
+        }
+
+        # On log la proposition (non exécutée pour l’instant)
+        self._log_proposal_csv(direction, price, sl, tp, lots, score_agr, confluence, self.proposal_ttl_secs, expired=False, executed=False)
+
+        # Snapshot "proposed"
+        try:
+            self._log_agents_snapshot_jsonl(
+                (self._last_ctx or {}).get("per_tf_signals"),
+                (self._last_ctx or {}).get("global_signals"),
+                (self._last_ctx or {}).get("indicators"),
+                (self._last_ctx or {}).get("market"),
+                context="proposed"
+            )
+        except Exception:
+            pass
+
+        # Auto-exécution demandée ?
+        if getattr(self, "auto_execute", True) and not getattr(self, "use_telegram_validation", False):
+            await self.execute_trade(direction)
+            return
+
+        # Sinon: envoi avec boutons
+        ttl_min = max(1, self.proposal_ttl_secs // 60)
+        msg = f"{msg}\n⏳ Expire dans ~{ttl_min} min"
+        buttons = [
+            {"text": "✅ Valider", "callback_data": f"orch|{self.symbol}|VALIDATE|{direction}"},
+            {"text": "❌ Rejeter", "callback_data": f"orch|{self.symbol}|REJECT|{direction}"},
+        ]
+        try:
+            if self.telegram_client and hasattr(self.telegram_client, "send_message"):
+                send_fn = self.telegram_client.send_message
+                if asyncio.iscoroutinefunction(send_fn):
+                    await send_fn(msg, buttons=buttons, kind="trade_validation", force=True)
+                else:
+                    send_fn(msg, buttons=buttons, kind="trade_validation", force=True)
+                return
+        except Exception as e:
+            logger.warning(f"[TG] Envoi interactif échoué: {e}")
+        if _send_buttons_direct(msg, buttons, kind="trade_validation"):
+            return
+        self._send_telegram(msg, kind="proposal", force=True)
+
+    # ---------------------------- EXÉCUTION ----------------------------
+    def execute_trade(self, signal: str):
+        symbol = payload["symbol"] # pyright: ignore[reportUndefinedVariable]
+        # --------- GATING QUALITÉ (backtests/rapports récents) ----------
+        try:
+            # thresholds par défaut + overrides.yaml éventuels (self.ori_cfg)
+            th = load_thresholds_for(symbol, overrides={"GLOBAL": (self.ori_cfg.get("gating_thresholds") or {})})
+            ok, reason, metrics = should_allow_trade(symbol, thresholds=th, report_dir="reports/backtests")
+            if not ok:
+                self._send_telegram(f"[GATING] {symbol}: rejet exécution ({reason}) | {metrics}", kind="status", force=True)
+                return False
+        except Exception as e:
+            # en cas de souci de lecture, on loggue mais on n'empêche pas
+            self._send_telegram(f"[GATING] {symbol}: erreur gating ({e})", kind="status", force=False)
+        # ---------------------------------------------------------------
+
+            # Re-vérifie la fenêtre au moment de l’exécution
+            if not self._is_symbol_profile_active_now():
+                self._send_telegram(
+                    f"⏳ Fenêtre fermée pour {self.symbol} (planning profiles.schedule).",
+                    kind="status", force=True
+                )
+                return False
+            if not self._is_in_trading_window():
+                self._send_telegram(
+                    f"⏳ Fenêtre fermée pour {self.symbol} (orchestrator.trading_window).",
+                    kind="status", force=True
+                )
+                return False
+
+
+            sig = (signal or "").upper().strip()
+            if sig not in ("LONG", "SHORT"):
+                raise ValueError("Signal invalide")
+
+            if not self._last_proposal or self._last_proposal.get("side") != sig:
+                logger.error("[EXEC] Aucun payload compatible en mémoire.")
+                self._send_telegram("⚠️ Aucun trade prêt à exécuter.", kind="status")
+                return False
+
+            # --- TTL ---
+            try:
+                exp = self._last_proposal.get("expires_at")
+                if exp:
+                    exp_dt = datetime.fromisoformat(exp)
+                    now_dt = datetime.now(timezone.utc)
+                    if now_dt > exp_dt:
+                        # log l’expiration
+                        self._log_proposal_csv(
+                            self._last_proposal.get("side"),
+                            self._last_proposal.get("entry"),
+                            self._last_proposal.get("sl"),
+                            self._last_proposal.get("tp"),
+                            self._last_proposal.get("lots"),
+                            self._last_proposal.get("score"),
+                            self._last_proposal.get("confluence"),
+                            self.proposal_ttl_secs,
+                            expired=True,
+                            executed=False
+                        )
+                        self._send_telegram(
+                            f"⌛ Proposition expirée pour {self.symbol} → rejet automatique.",
+                            kind="status", force=True
+                        )
+                        return False
+            except Exception:
+                pass
+
+            p = self._last_proposal
+            symbol = p["symbol"]          # canonique
+            broker_symbol = canon_to_broker(symbol) or self.broker_symbol
+            entry = float(p.get("entry", 0.0))
+            lots = float(p["lots"])
+            sl = float(p["sl"])
+            tp = float(p["tp"])
+            action = "BUY" if sig == "LONG" else "SELL"
+
+            # --- Soft cap crypto bucket (safety à l’exécution) ---
+            orch_cfg   = (self.profile.get("orchestrator") or {})
+            crypto_cfg = (orch_cfg.get("crypto_bucket") or {})
+            if bool(crypto_cfg.get("enabled", True)):
+                cap        = float(crypto_cfg.get("cap", 0.02))
+                min_factor = float(crypto_cfg.get("min_factor", 0.33))
+                 # override cap par phase (overrides.yaml)
+                try:
+                    cap_override = float((self.ori_cfg.get("crypto_bucket_cap_override") or 0.0))
+                    if cap_override > 0:
+                        cap = cap_override
+                except Exception:
+                    pass
+                prof = get_symbol_profile(symbol, overrides_path=OVERRIDES_PATH)  # type: ignore
+                planned_risk = float(((prof.get("risk") or {}).get("risk_per_trade") or 0.0))
+
+                factor = _apply_crypto_bucket_guard(symbol, planned_risk,
+                                                    cap=cap, get_profile=get_symbol_profile)
+
+                if factor <= 0.0:
+                    self._send_telegram(f"[GUARD] {symbol}: crypto bucket plein → exécution annulée.",
+                                        kind="status", force=True)
+                    return False
+
+                lots = float(lots) * factor
+                if factor < min_factor:
+                    self._send_telegram(f"[GUARD] {symbol}: facteur {factor:.2f} trop faible → exécution annulée.",
+                                        kind="status", force=True)
+                    return False
+                
+                # Limite de positions ouvertes simultanées dans le bucket
+                try:
+                    max_open = int(crypto_cfg.get("max_open", 2))
+                except Exception:
+                    max_open = 2
+                cur_open = _count_open_crypto_positions()
+                if cur_open >= max_open:
+                    self._send_telegram(
+                        f"[GUARD] {symbol}: {cur_open} positions crypto déjà ouvertes (max {max_open}) → exécution annulée.",
+                        kind="status", force=True
+                    )
+                    return False
+            # ------------------------------------------------------
+
+            # --- Gating anti-spam (toutes conditions locales) ---
+            ok_gate, why = self._trade_gate_ok()
+            if not ok_gate:
+                self._send_telegram(f"⛔ Gate {self.symbol}: {why} → exécution annulée.", kind="status", force=True)
+                return False
+            # --------- NEWS FREEZE (fenêtre autour des news majeures) ---------
+            orch_cfg = (self.profile.get("orchestrator") or {})
+            news_cfg = (orch_cfg.get("news_filter") or {})
+            if bool(news_cfg.get("enabled", True)):
+                csv_path = str(news_cfg.get("csv_path", "data/news_calendar.csv"))
+                win_before = int(news_cfg.get("window_before_min", 15))
+                win_after  = int(news_cfg.get("window_after_min", 15))
+                impacts    = news_cfg.get("impacts", ["High"])
+                # fenêtres manuelles forcées via overrides (isoformat local)
+                manual = []
+                for rng in (news_cfg.get("manual_freezes") or []):
+                    if isinstance(rng, dict) and rng.get("start") and rng.get("end"):
+                        manual.append((rng["start"], rng["end"]))
+                frozen, why = is_frozen_now(
+                    symbol=symbol,
+                    profile=self.profile,
+                    news_csv=csv_path,
+                    window_before_min=win_before,
+                    window_after_min=win_after,
+                    impacts=impacts,
+                    manual_freezes=manual
+                )
+                if frozen:
+                    self._send_telegram(f"[NEWS] Freeze actif: {why} → exécution annulée.", kind="status", force=True)
+                    return False
+            # ------------------------------------------------------------------
+            # --------- LIVE GUARD (PF/HitRate 7j sur audit) ----------
+            try:
+                live_cfg = (self.profile.get("orchestrator") or {}).get("live_guard") or {}
+                if bool(live_cfg.get("enabled", True)):
+                    ok, reason, m = should_allow_live(
+                        symbol=symbol,
+                        thresholds={
+                            "pf_min_live": live_cfg.get("pf_min_live", 1.10),
+                            "hit_min_live": live_cfg.get("hit_min_live", 0.45),
+                            "min_trades_live": live_cfg.get("min_trades_live", 10),
+                            "lookback_days": live_cfg.get("lookback_days", 7),
+                        }
+                    )
+                    if not ok:
+                        self._send_telegram(
+                            f"[LIVE GUARD] {symbol}: rejet exécution ({reason}) | metrics={m}",
+                            kind="status", force=True
+                        )
+                        return False
+            except Exception as e:
+                self._send_telegram(f"[LIVE GUARD] erreur: {e}", kind="status", force=False)
+            # --------- DRY RUN : pas d'envoi MT5, juste notification + audit ----------
+            if getattr(self, "dry_run", False):
+                msg = (f"#NEW_TRADE_SIM | {symbol} | {side} | entry={entry} | vol={volume} | " # type: ignore
+                       f"SL={sl} | TP1={tp1} | TP2={tp2} | score={score} | confluences={','.join(confluences)[:120]}") # type: ignore
+                self._send_telegram(msg, kind="status", force=True)
+                audit_append("NEW_TRADE_SIM", {
+                    "symbol": symbol,
+                    "side": side, # type: ignore
+                    "entry": entry,
+                    "volume": volume, # type: ignore
+                    "sl": sl,
+                    "tp1": tp1, # type: ignore
+                    "tp2": tp2, # pyright: ignore[reportUndefinedVariable]
+                    "score": score, # type: ignore
+                    "meta": {"dry_run": True}
+                })
+                return True
+            # --------------------------------------------------------------------------
+
+            # --- Envoi ordre ---
+            result = self.mt5.place_order(broker_symbol, action, lots, price=None, sl=sl, tp=tp)
+            ok = bool(result) and int(result.get("retcode", -1)) == getattr(mt5, "TRADE_RETCODE_DONE", 10009) # type: ignore
+
+            # --- Log CSV exécution ---
+            self._log_trade_execution(self._last_proposal or {
+                "symbol": symbol, "side": sig, "entry": None, "sl": sl, "tp": tp, "lots": lots
+            }, result, ok)
+
+            if ok:
+                # mémorise la bougie pour le TF de gating
+                if self.once_per_candle_tf:
+                    try:
+                        bar_id = self._current_bar_id(self.once_per_candle_tf)
+                        if bar_id is not None:
+                            self._last_bar_traded_by_tf[self.once_per_candle_tf] = bar_id
+                    except Exception:
+                        pass
+
+                # met à jour l'horodatage de dernière exécution
+                self._last_exec_ts = datetime.now(timezone.utc)
+
+                # cooldown post-trade
+                self._arm_cooldown(self._cooldown_after_trade_min, "post-trade")
+
+                # log agents snapshot pour l’analyse post-trade
+                try:
+                    ctx = self._last_ctx or {}
+                    self._log_agents_snapshot_jsonl(
+                        ctx.get("per_tf_signals"), ctx.get("global_signals"),
+                        ctx.get("indicators"), ctx.get("market"),
+                        context="executed"
+                    )
+                except Exception:
+                    pass
+
+                self._send_telegram(
+                    f"🚀 Trade {sig} exécuté sur {symbol} | lots={lots:.3f}", kind="status", force=True
+                )
+                self._notify_trade_event("NEW_TRADE", {
+                    "symbol": symbol,
+                    "side": sig,
+                    "entry": entry,
+                    "sl": sl,
+                    "tp": tp,
+                    "lots": lots,
+                    "score": locals().get("score_agr"),
+                    "confluence": locals().get("confluence"),
+                })
+                return True
+            else:
+                self._send_telegram(
+                    f"❌ Échec exécution trade {sig} sur {symbol} | retcode={result.get('retcode') if result else 'None'}",
+                    kind="status",
+                    force=True,
+                )
+                return False
+
+        except Exception as e:
+            logger.exception(f"[EXEC] Erreur exécution trade: {e}")
+            self._send_telegram(f"❌ Erreur exécution: {e}", kind="status", force=True)
+            return False
+
+    # ---------------------------- PUBLIC API ----------------------------
+    async def start(self):
+        interval_seconds = int(self.timeframes_cfg.get("orchestrator", 60))
+        job_id = f"orch_{self.symbol}"
+
+        # Nettoyage d’anciens jobs, si existent
+        for jid in (job_id, f"report_{self.symbol}", f"autoopt_{self.symbol}", f"pm_{self.symbol}"):
+            try:
+                self.scheduler.remove_job(jid)
+            except Exception:
+                pass
+
+        # Boucle principale de décision
+        self.scheduler.add_job(
+            self._run_agents_and_decide,
+            "interval",
+            seconds=interval_seconds,
+            id=job_id,
+            replace_existing=True,
+        )
+
+        # Rapport toutes les N heures (2h par défaut via status_report_hours)
+        try:
+            self.scheduler.add_job(
+                self._send_status_report,
+                "interval",
+                hours=max(1, self.status_report_hours),
+                id=f"report_{self.symbol}",
+                replace_existing=True,
+            )
+        except Exception as e:
+            logger.warning(f"[REPORT] schedule fail: {e}")
+
+        # Auto-optimisation (ex. 21:05)
+        try:
+            self.scheduler.add_job(
+                self._auto_optimize_job,
+                "cron",
+                hour=21,
+                minute=5,
+                id=f"autoopt_{self.symbol}",
+                replace_existing=True,
+            )
+        except Exception as e:
+            logger.warning(f"[AUTO-OPT] schedule fail: {e}")
+
+        # Gestion des positions ouvertes (BE/partials/trailing)
+        pm_secs = int((self.profile.get("position_manager") or {}).get("interval_secs", 20))
+        try:
+            if self.pm and hasattr(self.pm, "manage_open_positions"):
+                self.scheduler.add_job(
+                    self.pm.manage_open_positions,
+                    "interval",
+                    seconds=pm_secs,
+                    id=f"pm_{self.symbol}",
+                    replace_existing=True,
+                )
+        except Exception as e:
+            logger.warning(f"[PM] schedule fail: {e}")
+
+        # Démarrage scheduler (protégé)
+        try:
+            self.scheduler.start()
+        except SchedulerAlreadyRunningError:
+            pass
+
+        logger.info(f"[ORCH] {self.symbol} scheduler démarré ({interval_seconds}s).")
+
+        # Message startup
+        self._send_telegram(
+            f"🚀 [STARTUP] EmpireIA — {self.symbol} prêt. Auto={self.auto_execute} TFs={self.tfs} votes={self.votes_required}",
+            kind="startup",
+            force=True,
+        )
+
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            self.scheduler.shutdown(wait=False)
+
+    async def run(self):
+        """Compatibilité avec ancien main.py"""
+        await self.start()
+
+    # ---------------------------- CORE ORCHESTRATION ----------------------------
+    def _today_pnl_currency(self) -> float:
+        """Somme du PnL réalisé aujourd’hui (timezone profil) pour CE symbole (broker)."""
+        try:
+            tz = self._tz
+            now = datetime.now(tz)
+            start = tz.localize(datetime(now.year, now.month, now.day, 0, 0, 0)).astimezone(timezone.utc)
+            end   = tz.localize(datetime(now.year, now.month, now.day, 23, 59, 59)).astimezone(timezone.utc)
+            deals = _mt5.history_deals_get(start, end) or []
+            total = 0.0
+            for d in deals:
+                if getattr(d, "symbol", "") == self.broker_symbol:
+                    total += float(getattr(d, "profit", 0.0) or 0.0)
+            return float(total)
+        except Exception:
+            return 0.0
+
+    def _current_losing_streak(self, max_scan: int = 200) -> int:
+        """Compte la streak de trades perdants consécutifs la PLUS récente pour CE symbole."""
+        try:
+            tz = self._tz
+            end = datetime.now(tz).astimezone(timezone.utc)
+            start = (datetime.now(tz) - timedelta(days=14)).astimezone(timezone.utc)
+            deals = _mt5.history_deals_get(start, end) or []
+            deals = sorted([d for d in deals if getattr(d, "symbol", "") == self.broker_symbol],
+                           key=lambda x: getattr(x, "time", 0), reverse=True)[:max_scan]
+            streak = 0
+            for d in deals:
+                profit = float(getattr(d, "profit", 0.0) or 0.0)
+                if profit < 0:
+                    streak += 1
+                elif profit > 0:
+                    break
+                else:
+                    break
+            return streak
+        except Exception:
+            return 0
+
+    async def _run_agents_and_decide(self):
+        # === Cooldown guard ==========================================================
+        if self._cooldown_active():
+            try:
+                secs = int((self._cooldown_until - datetime.now(timezone.utc)).total_seconds()) if self._cooldown_until else 0
+                mins = max(0, (secs + 59) // 60)
+                logger.info(f"[COOLDOWN] {self.symbol} actif ~{mins} min → skip cycle.")
+            except Exception:
+                pass
+            return
+        # ============================================================================
+
+        # calcule les inputs nécessaires au RiskManager
+        try:
+            equity_start = float(((self.profile.get("account") or {}).get("equity_start") or 100000.0))  # type: ignore
+        except Exception:
+            equity_start = 100000.0
+
+        pnl_today_ccy = self._today_pnl_currency()                      # P/L réalisé aujourd’hui (ce symbole)
+        daily_loss_pct = pnl_today_ccy / max(equity_start, 1e-9)        # ex: -0.012 = -1.2%
+        consec_losses = int(self._current_losing_streak())              # série de pertes consécutives
+
+        # appelle la méthode nouvelle signature (2 args), sinon fallback ancienne (0 arg)
+        stop = False
+        try:
+            stop = bool(self.risk.is_daily_limit_reached(daily_loss_pct, consec_losses))  # type: ignore
+        except TypeError:
+            stop = bool(self.risk.is_daily_limit_reached())  # type: ignore
+        except Exception as e:
+            logger.warning(f"[RISK] Guard check failed: {e}")
+            stop = False
+
+        if stop:
+            self._arm_cooldown(self._cooldown_after_loss_min, "risk-guard")
+            self._send_telegram(
+                f"⛔ Limites risque atteintes ({self.symbol}) – daily={daily_loss_pct:.2%}, streak={consec_losses}. Pause des entrées.",
+                kind="status", force=True
+            )
+            return
+
+        # --- Cooldown suite à série de pertes (configurable) ---
+        if self._cooldown_enabled and self._cooldown_streak_n > 0 and consec_losses >= self._cooldown_streak_n:
+            self._cooldown_until = datetime.now(timezone.utc) + timedelta(minutes=self._cooldown_streak_min)
+            logger.info(f"[COOLDOWN] {self.symbol} → pause {self._cooldown_streak_min} min (streak={consec_losses}).")
+            self._send_telegram(
+                f"⏸️ Cooldown {self.symbol} {self._cooldown_streak_min} min (streak={consec_losses}).",
+                kind="status"
+            )
+            return
+
+        try:
+            # Snapshot régulier d’equity pour suivi du DD/P&L
+            self._log_equity_snapshot()
+
+            symbol = self.symbol
+
+            # 1) Planning profiles.yaml (on priorise le planning par symbole)
+            if not self._is_symbol_profile_active_now():
+                logger.info(f"[SCHEDULE] {symbol} désactivé selon profiles.schedule → pas d'action.")
+                return
+
+            # 2) Fenêtre orchestrator (optionnelle, fine-tuning intra-jour par profil)
+            if not self._is_in_trading_window():
+                logger.info(f"[WINDOW] {symbol} hors fenêtre orchestrator.trading_window → pas d'action.")
+                return
+
+
+
+            # 1) Collecte des signaux agents + indicateurs (+ hints SL/TP/PRICE)
+            per_tf_signals, global_signals, indicators, market = self._gather_agent_signals(symbol)
+
+            # Sauvegarde pour dashboard live
+            self.save_signals_to_json(symbol, global_signals)
+
+            # Prix courant & contexte
+            price = market.get("price")
+
+            # Fallback prix robuste
+            if price is None:
+                try:
+                    price = self.mt5.get_last_price(symbol, side="BUY")
+                except Exception:
+                    price = None
+
+            if price is None:
+                logger.info(f"[{symbol}] Pas de prix (tick & fallback indisponibles) → skip.")
+                return
+
+            # 2) Agrégation → direction/score/confluence
+            direction, score_agr, confluence, _details = self._compute_aggregate_direction(per_tf_signals, global_signals)
+
+            # 3) Fast-tracks
+            tech_signals = per_tf_signals.get("technical", {})
+            news_dir = _norm(global_signals.get("news") if global_signals else None)
+            tech_majority_long = sum(1 for sig in tech_signals.values() if _norm(sig) == "LONG")
+            tech_majority_short = sum(1 for sig in tech_signals.values() if _norm(sig) == "SHORT")
+
+            if tech_majority_long >= 4 and news_dir == "LONG":
+                direction = "LONG"; score_agr = max(score_agr, 2.1); confluence = max(confluence, 2)
+            elif tech_majority_short >= 4 and news_dir == "SHORT":
+                direction = "SHORT"; score_agr = max(score_agr, 2.1); confluence = max(confluence, 2)
+            else:
+                has_tech_dir = any(_norm(sig) in ("LONG", "SHORT") for sig in tech_signals.values())
+                swing_dir = _norm(global_signals.get("swing") if global_signals else None)
+                if not has_tech_dir and swing_dir and swing_dir == news_dir and swing_dir in ("LONG", "SHORT"):
+                    direction = swing_dir; score_agr = max(score_agr, 1.9); confluence = max(confluence, 2)
+
+            # 4) Conditions minimales
+            reasons: List[str] = []
+            # Blocage macro autour des news
+            if indicators.get("MACRO_BLOCK"):
+                reasons.append("macro_block")
+
+            if direction not in ("LONG", "SHORT"):
+                reasons.append("direction_indeterminee")
+            if score_agr < self.min_score_for_proposal:
+                reasons.append(f"score({score_agr:.2f})<min({self.min_score_for_proposal:.2f})")
+            if confluence < self.min_confluence:
+                reasons.append(f"confluence({confluence})<min({self.min_confluence})")
+
+            swing_sig = _norm(global_signals.get("swing") if global_signals else None)
+            scalping_sig = _norm(global_signals.get("scalping") if global_signals else None)
+            if self.require_swing_confirm and swing_sig != direction:
+                reasons.append("swing_non_confirme")
+            if self.require_scalping_entry and scalping_sig != direction:
+                reasons.append("scalping_non_confirme")
+
+            # 5) SL/TP/Lots
+            sl = float(indicators.get("CANDIDATE_SL")) if indicators.get("CANDIDATE_SL") is not None else None
+            tp = float(indicators.get("CANDIDATE_TP")) if indicators.get("CANDIDATE_TP") is not None else None
+            price_hint = float(indicators.get("CANDIDATE_PRICE")) if indicators.get("CANDIDATE_PRICE") is not None else None
+            if price_hint:
+                price = price_hint
+
+            lots = None
+            atr = indicators.get("ATR_H1") or indicators.get("ATR_M30")
+            if direction in ("LONG", "SHORT"):
+                if atr is None:
+                    atr = self._compute_atr(symbol, timeframe="H1") or self._compute_atr(symbol, timeframe="M30")
+
+                # Fallback ATR si manque SL/TP
+                if atr:
+                    mul_sl = float(self.ori_cfg.get("atr_sl_mult", 1.5))
+                    mul_tp = float(self.ori_cfg.get("atr_tp_mult", 2.5))
+                    if sl is None or tp is None:
+                        if direction == "LONG":
+                            sl = price - mul_sl * atr if sl is None else sl
+                            tp = price + mul_tp * atr if tp is None else tp
+                        else:
+                            sl = price + mul_sl * atr if sl is None else sl
+                            tp = price - mul_tp * atr if tp is None else tp
+
+                # --- Normalisation SL/TP (anti-inversion / distance mini) ---
+                try:
+                    pt = float((self.profile.get("instrument", {}) or {}).get("point", 0.01))
+                except Exception:
+                    pt = 0.01
+                mul_sl = float(self.ori_cfg.get("atr_sl_mult", 1.5))
+                mul_tp = float(self.ori_cfg.get("atr_tp_mult", 2.5))
+                # Distance minimale: max(10% ATR, 50 points broker)
+                est_atr = float(atr) if atr is not None else (pt * 200.0)  # heuristique si ATR manquant
+                min_pts = max(est_atr * 0.10, pt * 50.0)
+
+                def ensure_min_distance(p, s, t, side):
+                    if side == "LONG":
+                        if s is None or s >= p - min_pts:
+                            s = p - mul_sl * (atr or pt * 200)
+                        if t is None or t <= p + min_pts:
+                            t = p + mul_tp * (atr or pt * 200)
+                    else:
+                        if s is None or s <= p + min_pts:
+                            s = p + mul_sl * (atr or pt * 200)
+                        if t is None or t >= p - min_pts:
+                            t = p - mul_tp * (atr or pt * 200)
+                    # enforce distances mini finales
+                    if abs(p - s) < min_pts:
+                        s = p - min_pts if side == "LONG" else p + min_pts
+                    if abs(t - p) < min_pts:
+                        t = p + min_pts if side == "LONG" else p - min_pts
+                    return s, t
+
+                if direction in ("LONG", "SHORT") and price is not None:
+                    sl, tp = ensure_min_distance(price, sl, tp, direction)
+
+                # Calcul lots si possible
+                if (lots is None or lots <= 0) and sl is not None:
+                    equity = market.get("equity")
+                    if equity is None:
+                        get_eq = getattr(self.risk, "get_equity", None)
+                        if callable(get_eq):
+                            try:
+                                equity = float(get_eq())
+                            except Exception:
+                                equity = None
+                    if equity is None:
+                        equity = float(self.profile.get("account", {}).get("equity_start", 100000.0))
+
+                    stop_distance_points = abs(price - sl) / max(
+                        float(self.profile.get("instrument", {}).get("point", 0.01)), 1e-9
+                    )
+                    lots = self.risk.compute_position_size(
+                        equity=equity, stop_distance_points=stop_distance_points
+                    )
+                    if lots is None or lots <= 0:
+                        reasons.append("lot<=0")
+
+            # --- RR minimum (override min_rr) ---
+            try:
+                min_rr = float((self.ori_cfg.get("min_rr") or 0.0))
+            except Exception:
+                min_rr = 0.0
+            if min_rr > 0 and sl is not None and tp is not None and price is not None and direction in ("LONG","SHORT"):
+                rr = ((tp - price) / max(price - sl, 1e-9)) if direction == "LONG" else ((price - tp) / max(sl - price, 1e-9))
+                if rr < min_rr:
+                    reasons.append(f"rr({rr:.2f})<min_rr({min_rr:.2f})")
+
+            if _is_crypto_canon(symbol) and bool(cb_cfg.get("enabled", True)): # pyright: ignore[reportUndefinedVariable]
+                # Limite de positions simultanées
+                open_crypto = _count_open_crypto_positions(self.mt5_mod) # type: ignore
+                max_open = int(cb_cfg.get("max_open", 2)) # pyright: ignore[reportUndefinedVariable]
+                if open_crypto >= max_open:
+                    self._send_telegram(f"⛔ Crypto cap: {open_crypto} positions déjà ouvertes (max {max_open}) → skip", kind="status", force=False)
+                    return None  # rejette la proposition
+
+                # Cap d'exposition
+                cap = float(cb_cfg.get("cap", 0.02)) # pyright: ignore[reportUndefinedVariable]
+                # override via overrides.yaml → self.ori_cfg déjà chargée en init
+                try:
+                    cap_override = float(self.ori_cfg.get("crypto_bucket_cap_override") or 0.0)
+                    if cap_override > 0:
+                        cap = cap_override
+                except Exception:
+                    pass
+                used = _crypto_bucket_risk_used(self.mt5_mod, self.get_profile)
+                room = max(0.0, cap - used)
+
+                # risque prévu pour le trade courant (approx comme dans _crypto_bucket_risk_used)
+                inst = (self.profile.get("instrument") or {})
+                point = float(inst.get("point") or 0.0)
+                pip_value = float(inst.get("pip_value") or 0.0)
+                ai = self.mt5_mod.account_info()
+                equity = float(getattr(ai, "equity", 0.0) or 0.0)
+                risk_ratio_planned = 0.0
+                try:
+                    if equity > 0 and point > 0 and pip_value > 0 and sl and entry and lots: # type: ignore
+                        dist_pts = abs(float(entry) - float(sl)) / point # type: ignore
+                        risk_ccy = dist_pts * pip_value * float(lots)
+                        risk_ratio_planned = risk_ccy / equity
+                except Exception:
+                    risk_ratio_planned = 0.0
+
+                if risk_ratio_planned > 0 and room < risk_ratio_planned:
+                    factor = room / risk_ratio_planned if risk_ratio_planned > 0 else 0.0
+                    min_factor = float(cb_cfg.get("min_factor", 0.33)) # pyright: ignore[reportUndefinedVariable]
+                    if factor < min_factor:
+                        self._send_telegram(f"⚠️ Crypto cap room insuffisant (room={room:.4f}) → skip", kind="status", force=False)
+                        return None
+                    adj_lots = max(0.0, float(lots) * float(factor))
+                    lots = adj_lots
+
+            # 7) Décision : auto ou validation
+            if reasons:
+                logger.info(f"[RISK] Conditions non remplies → pas d'action. Raison: {', '.join(reasons)}")
+                return
+
+            # conserve un contexte pour snapshot si exécution/proposition
+            self._last_ctx = {
+                "per_tf_signals": per_tf_signals,
+                "global_signals": global_signals,
+                "indicators": indicators,
+                "market": market,
+            }
+
+            if direction in ("LONG", "SHORT"):
+                missing = []
+                if sl is None: missing.append("SL")
+                if tp is None: missing.append("TP")
+                if lots is None or lots <= 0: missing.append("lots")
+                if missing:
+                    logger.info(f"[RISK] Skip. Manque: {missing} | equity={market.get('equity')} | price={price}")
+                    return
+
+                msg = (
+                    f"📢 Proposition {symbol} → {direction}\n"
+                    f"Prix: {price:.2f}\n"
+                    f"SL: {sl:.2f} | TP: {tp:.2f}\n"
+                    f"Lots: {lots:.3f}\n"
+                    f"Score: {score_agr:.2f} | Confluence: {confluence}"
+                )
+
+                if self.auto_execute and not self.use_telegram_validation:
+                    # préparer payload et exécuter directement
+                    self._last_proposal = {
+                        "symbol": self.symbol,
+                        "side": direction,
+                        "entry": float(price),
+                        "sl": float(sl),
+                        "tp": float(tp),
+                        "lots": float(lots),
+                        "score": float(score_agr),
+                        "confluence": int(confluence),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=self.proposal_ttl_secs)).isoformat(),
+                    }
+                    # log proposal comme exécutée (la tentative va suivre)
+                    self._log_proposal_csv(direction, price, sl, tp, lots, score_agr, confluence, self.proposal_ttl_secs, expired=False, executed=True)
+
+                    # Snapshot "proposed" (même si auto)
+                    try:
+                        self._log_agents_snapshot_jsonl(
+                            per_tf_signals, global_signals, indicators, market, context="proposed"
+                        )
+                    except Exception:
+                        pass
+
+                    await self.execute_trade(direction)
+                else:
+                    # Snapshot "proposed"
+                    try:
+                        self._log_agents_snapshot_jsonl(
+                            per_tf_signals, global_signals, indicators, market, context="proposed"
+                        )
+                    except Exception:
+                        pass
+
+                    await self._send_validation_proposal(
+                        msg, direction, price, sl, tp, lots, score_agr, confluence
+                    )
+            else:
+                logger.info(f"[{symbol}] Direction non établie → pas d'action.")
+
+        except Exception as e:
+            logger.exception(f"[ORCH] Erreur {self.symbol}: {e}")
+
+    # ---------------------------- Helpers ----------------------------
+    def _send_telegram(self, text: str, kind: str = "status", force: bool = False,
+                       buttons: Optional[List[Dict[str, str]]] = None):
+        """Envoi Telegram unifié."""
+        try:
+            if self.telegram_client and hasattr(self.telegram_client, "send_message"):
+                self.telegram_client.send_message(text, kind=kind, force=force, buttons=buttons)
+                return
+        except Exception as e:
+            logger.warning(f"[TG] Envoi via telegram_client échoué: {e}")
+
+        if not _send_tg(text, kind=kind, force=force):
+            logger.warning("[TG] Aucun sender Telegram disponible.")
+    def _tg_quiet(self) -> bool:
+        try:
+            cfg = load_config() or {}
+            tg = cfg.get("telegram") or {}
+            return bool(tg.get("send_trade_validation_only", False))
+        except Exception:
+            return False
+
+    def _safe_float(self, v: Any) -> Optional[float]:
+        try:
+            if v is None:
+                return None
+            f = float(v)
+            if pd.isna(f):
+                return None
+            return f
+        except Exception:
+            return None
+
+    def _gather_agent_signals(
+        self, symbol: str
+    ) -> Tuple[Dict[str, Dict[str, str]], Dict[str, str], Dict[str, float], Dict[str, Any]]:
+        """
+        Récupère les signaux par agent/TF + signaux globaux + indicateurs + contexte de marché.
+        """
+        # --- Contexte marché ---
+        price = self._get_last_price(symbol)
+        equity = None
+        try:
+            if hasattr(self.mt5, "get_account_info"):
+                ai = self.mt5.get_account_info()
+                if ai and hasattr(ai, "equity"):
+                    equity = float(ai.equity)
+        except Exception:
+            pass
+
+        agents_cfg = (self.profile.get("agents") or {})
+
+        def agent_enabled(name: str) -> bool:
+            try:
+                cfg = agents_cfg.get(name) or {}
+                return bool(cfg.get("enabled", True))
+            except Exception:
+                return True
+
+        per_tf_signals: Dict[str, Dict[str, str]] = {
+            "technical": {},
+            "scalping": {},
+            "swing": {},
+            "structure": {},     # Price Action (BOS/CHoCH/FBO/AMD via StructureAgent/ScalpingAgent)
+            "fundamental": {},
+            "sentiment": {},
+        }
+
+        global_signals: Dict[str, str] = {}
+        indicators: Dict[str, float] = {}
+        market: Dict[str, Any] = {"price": price, "equity": equity}
+
+        pref_tfs = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"]
+
+        tech_details: Dict[str, Dict[str, float]] = {}
+        scalp_details: Dict[str, Dict[str, float]] = {}
+        swing_details: Dict[str, Dict[str, float]] = {}
+        structure_details: Dict[str, Dict[str, float]] = {}
+
+        # --- Loader dynamique ---
+        def load_agent(module_name: str, class_name: str):
+            try:
+                mod = importlib.import_module(f"agents.{module_name}")
+                cls = getattr(mod, class_name, None)
+                if cls is None:
+                    logger.warning(f"[AGENT] Classe introuvable: agents.{module_name}.{class_name}")
+                    return None
+
+                init = getattr(cls, "__init__", None)
+                if init is None:
+                    return cls()
+
+                sig = inspect.signature(init)
+                accepted = set(sig.parameters.keys())
+
+                params = {}
+                if "symbol" in accepted:
+                    params["symbol"] = symbol
+                for k in ("mt5", "client", "mt5_client"):
+                    if k in accepted:
+                        params[k] = self.mt5
+                        break
+                for k in ("profile", "cfg", "config", "conf"):
+                    if k in accepted:
+                        params[k] = self.profile
+                        break
+
+                return cls(**params)
+            except Exception as e:
+                logger.warning(f"[AGENT] Chargement agents.{module_name}.{class_name} a échoué: {e}")
+                return None
+
+        # --- Runner générique ---
+        def call_agent(agent, timeframe: Optional[str] = None) -> Optional[Dict[str, Any]]:
+            if agent is None:
+                return None
+
+            try:
+                if timeframe and hasattr(agent, "params") and isinstance(getattr(agent, "params"), dict):
+                    agent.params["timeframe"] = timeframe
+            except Exception:
+                pass
+
+            candidates = [
+                "generate_signal", "execute",
+                "run", "analyze", "analyse",
+                "get_signal", "get_signals",
+                "evaluate", "compute", "predict",
+                "decide", "decision",
+                "signal_tf", "get_tf_signal", "signal_for",
+                "step", "process", "call", "__call__",
+                "signal",
+            ]
+            last_err = None
+
+            for name in candidates:
+                fn = getattr(agent, name, None)
+
+                if fn is not None and not callable(fn) and name == "signal":
+                    try:
+                        sig = str(fn).strip().upper()
+                        return {"signal": sig}
+                    except Exception as e:
+                        last_err = e
+                        continue
+
+                if not callable(fn):
+                    continue
+
+                try:
+                    res = None
+                    if timeframe is not None and hasattr(fn, "__code__") and "timeframe" in getattr(fn, "__code__", ()).co_varnames:
+                        res = fn(timeframe=timeframe)
+                    else:
+                        try:
+                            res = fn()
+                        except TypeError:
+                            res = fn(timeframe)
+
+                    if isinstance(res, dict):
+                        return res
+                    if isinstance(res, (list, tuple)) and res and isinstance(res[0], dict):
+                        return res[0]
+                    if isinstance(res, str):
+                        return {"signal": res}
+                except Exception as e:
+                    last_err = e
+                    continue
+
+            return {"error": f"Aucune méthode compatible trouvée. Dernière erreur: {last_err}"}
+
+        def store_details(bucket: Dict[str, Dict[str, float]], tf: str, out: Dict[str, Any]):
+            sl = self._safe_float(out.get("sl"))
+            tp = self._safe_float(out.get("tp"))
+            pr = self._safe_float(out.get("price"))
+            if sl is None and tp is None and pr is None:
+                return
+            bucket[tf] = {}
+            if sl is not None:
+                bucket[tf]["sl"] = sl
+            if tp is not None:
+                bucket[tf]["tp"] = tp
+            if pr is not None:
+                bucket[tf]["price"] = pr
+
+        def pick_candidate(*buckets: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+            for bucket in buckets:
+                for tf in pref_tfs:
+                    d = bucket.get(tf)
+                    if not d:
+                        continue
+                    cand = {}
+                    if "price" in d:
+                        cand["CANDIDATE_PRICE"] = d["price"]
+                    if "sl" in d:
+                        cand["CANDIDATE_SL"] = d["sl"]
+                    if "tp" in d:
+                        cand["CANDIDATE_TP"] = d["tp"]
+                    if cand:
+                        return cand
+            return {}
+
+        # 1) Technical
+        technical = load_agent("technical", "TechnicalAgent") if agent_enabled("technical") else None
+        if technical:
+            for tf in self.tfs:
+                out = call_agent(technical, timeframe=tf)
+                if isinstance(out, dict):
+                    per_tf_signals["technical"][tf] = _norm(out.get("signal"))
+                    for k in ("ATR_H1", "ATR_M30", f"ATR_{tf}"):
+                        if k in out and isinstance(out[k], (int, float)):
+                            indicators[k] = float(out[k])
+                    store_details(tech_details, tf, out)
+        else:
+            logger.info("[AGENTS] Technical désactivé via profile.")
+
+        # 2) Scalping
+        scalping = load_agent("scalping", "ScalpingAgent") if agent_enabled("scalping") else None
+        if scalping:
+            for tf in self.tfs:
+                out = call_agent(scalping, timeframe=tf)
+                if isinstance(out, dict):
+                    per_tf_signals["scalping"][tf] = _norm(out.get("signal"))
+                    store_details(scalp_details, tf, out)
+        else:
+            logger.info("[AGENTS] Scalping désactivé via profile.")
+
+        # 3) Swing
+        swing = load_agent("swing", "SwingAgent") if agent_enabled("swing") else None
+        swing_votes = {"LONG": 0, "SHORT": 0}
+        if swing:
+            for tf in self.tfs:
+                out = call_agent(swing, timeframe=tf)
+                if isinstance(out, dict):
+                    s = _norm(out.get("signal"))
+                    if s:
+                        per_tf_signals["swing"][tf] = s
+                        swing_votes[s] += 1
+                    store_details(swing_details, tf, out)
+            if swing_votes["LONG"] > swing_votes["SHORT"]:
+                global_signals["swing"] = "LONG"
+            elif swing_votes["SHORT"] > swing_votes["LONG"]:
+                global_signals["swing"] = "SHORT"
+        else:
+            logger.info("[AGENTS] Swing désactivé via profile.")
+
+        # 3.5) Structure (BOS/CHoCH/FBO/AMD)
+        structure = load_agent("structure", "StructureAgent") if agent_enabled("structure") else None
+        structure_votes = {"LONG": 0, "SHORT": 0}
+        if structure:
+            for tf in self.tfs:
+                out = call_agent(structure, timeframe=tf)
+                if isinstance(out, dict):
+                    s = _norm(out.get("signal"))
+                    if s:
+                        per_tf_signals["structure"][tf] = s
+                        structure_votes[s] += 1
+                    store_details(structure_details, tf, out)
+            if structure_votes["LONG"] > structure_votes["SHORT"]:
+                global_signals["structure"] = "LONG"
+            elif structure_votes["SHORT"] > structure_votes["LONG"]:
+                global_signals["structure"] = "SHORT"
+        else:
+            logger.info("[AGENTS] Structure désactivé via profile.")
+
+        # 4) News
+        news = load_agent("news", "NewsAgent") if agent_enabled("news") else None
+        if news:
+            s = ""
+            out_g = call_agent(news, timeframe=None)
+            if isinstance(out_g, dict):
+                s = _norm(out_g.get("signal"))
+            if s:
+                global_signals["news"] = s
+            if "news" not in global_signals:
+                votes = {"LONG": 0, "SHORT": 0}
+                for tf in self.tfs:
+                    out = call_agent(news, timeframe=tf)
+                    if isinstance(out, dict):
+                        s = _norm(out.get("signal"))
+                        if s:
+                            votes[s] += 1
+                if votes["LONG"] > votes["SHORT"]:
+                    global_signals["news"] = "LONG"
+                elif votes["SHORT"] > votes["LONG"]:
+                    global_signals["news"] = "SHORT"
+        else:
+            logger.info("[AGENTS] News désactivé via profile.")
+
+        # 5) Sentiment
+        sentiment = load_agent("sentiment", "SentimentAgent") if agent_enabled("sentiment") else None
+        if sentiment:
+            out_g = call_agent(sentiment, timeframe=None)
+            if isinstance(out_g, dict):
+                s = _norm(out_g.get("signal"))
+                if s:
+                    global_signals["sentiment"] = s
+            if "sentiment" not in global_signals:
+                votes = {"LONG": 0, "SHORT": 0}
+                for tf in self.tfs:
+                    out = call_agent(sentiment, timeframe=tf)
+                    if isinstance(out, dict):
+                        s = _norm(out.get("signal"))
+                        if s:
+                            votes[s] += 1
+                if votes["LONG"] > votes["SHORT"]:
+                    global_signals["sentiment"] = "LONG"
+                elif votes["SHORT"] > votes["LONG"]:
+                    global_signals["sentiment"] = "SHORT"
+        else:
+            logger.info("[AGENTS] Sentiment désactivé via profile.")
+
+        # 6) Fundamental
+        fundamental = load_agent("fundamental", "FundamentalAgent") if agent_enabled("fundamental") else None
+        if fundamental:
+            votes = {"LONG": 0, "SHORT": 0}
+            for tf in self.tfs:
+                out = call_agent(fundamental, timeframe=tf)
+                if isinstance(out, dict):
+                    s = _norm(out.get("signal"))
+                    if s:
+                        per_tf_signals["fundamental"][tf] = s
+                        votes[s] += 1
+            if votes["LONG"] == 0 and votes["SHORT"] == 0:
+                out_g = call_agent(fundamental, timeframe=None)
+                if isinstance(out_g, dict):
+                    s = _norm(out_g.get("signal"))
+                    if s:
+                        global_signals["fundamental"] = s
+        else:
+            logger.info("[AGENTS] Fundamental désactivé via profile.")
+
+        # 7) Macro (blocage news + biais)
+        macro = load_agent("macro", "MacroAgent") if agent_enabled("macro") else None
+        if macro:
+            out_g = call_agent(macro, timeframe=None)
+            if isinstance(out_g, dict):
+                # blocage (indicateur)
+                if bool(out_g.get("block")):
+                    indicators["MACRO_BLOCK"] = 1.0
+                s = _norm(out_g.get("signal"))
+                if s:
+                    # injecte comme 'fundamental' global
+                    global_signals["fundamental"] = s
+        else:
+            logger.info("[AGENTS] Macro désactivé via profile.")
+
+        # Nettoyage: enlever les agents vides pour la confluence
+        per_tf_signals = {k: v for k, v in per_tf_signals.items() if any(_norm(s) for s in v.values())}
+
+        # Choix d’un candidat SL/TP/PRICE (scalping > structure > technical > swing)
+        candidate = pick_candidate(scalp_details, structure_details, tech_details, swing_details)
+        indicators.update(candidate)
+
+        # ATR de base si manquants
+        if "ATR_H1" not in indicators:
+            atr_h1 = self._compute_atr(symbol, timeframe="H1")
+            if atr_h1:
+                indicators["ATR_H1"] = atr_h1
+        if "ATR_M30" not in indicators:
+            atr_m30 = self._compute_atr(symbol, timeframe="M30")
+            if atr_m30:
+                indicators["ATR_M30"] = atr_m30
+
+        return per_tf_signals, global_signals, indicators, market
+
+    def _compute_aggregate_direction(
+        self,
+        per_tf_signals: Dict[str, Dict[str, str]],
+        global_signals: Dict[str, str],
+    ) -> Tuple[str, float, int, Dict[str, Any]]:
+        """Calcule direction, score agrégé et confluence."""
+        tf_w = self.tf_weights or {}
+
+        def w(tf: str) -> float:
+            return float(tf_w.get(tf, 1.0))
+
+        score_long = 0.0
+        score_short = 0.0
+        confluence = 0
+
+        for _, tf_map in per_tf_signals.items():
+            longs = sum(w(tf) for tf, sig in tf_map.items() if _norm(sig) == "LONG")
+            shorts = sum(w(tf) for tf, sig in tf_map.items() if _norm(sig) == "SHORT")
+            if longs > shorts:
+                score_long += longs - shorts
+                confluence += 1
+            elif shorts > longs:
+                score_short += shorts - longs
+                confluence += 1
+
+        news_dir = _norm(global_signals.get("news") if global_signals else None)
+        if news_dir == "LONG":
+            score_long += self.w_news; confluence += 1
+        elif news_dir == "SHORT":
+            score_short += self.w_news; confluence += 1
+
+        swing_dir = _norm(global_signals.get("swing") if global_signals else None)
+        if swing_dir == "LONG":
+            score_long += self.w_swing
+        elif swing_dir == "SHORT":
+            score_short += self.w_swing
+
+        scalping_dir = _norm(global_signals.get("scalping") if global_signals else None)
+        if scalping_dir == "LONG":
+            score_long += self.w_scalp
+        elif scalping_dir == "SHORT":
+            score_short += self.w_scalp
+
+        structure_dir = _norm(global_signals.get("structure") if global_signals else None)
+        if structure_dir == "LONG":
+            score_long += self.w_structure
+        elif structure_dir == "SHORT":
+            score_short += self.w_structure
+
+        direction = "LONG" if score_long > score_short else ("SHORT" if score_short > score_long else "")
+        score_agr = max(score_long, score_short)
+        details: Dict[str, Any] = {}
+        return direction, float(score_agr), int(confluence), details
+    def _count_open_crypto_positions(mt5_mod) -> int:
+        try:
+            poss = mt5_mod.positions_get() or []
+            return sum(1 for p in poss if _is_crypto_real(str(getattr(p, "symbol", "")) or ""))
+        except Exception:
+            return 0
+    # ---------------------------- Market helpers ----------------------------
+    def _deep_merge(self, base: dict, extra: dict) -> dict:
+        for k, v in (extra or {}).items():
+            if isinstance(v, dict) and isinstance(base.get(k), dict):
+                base[k] = self._deep_merge(base[k], v)
+            else:
+                base[k] = v
+        return base
+
+    def _apply_overrides_for_symbol(self, ov: dict) -> None:
+        if not ov:
+            return
+        self.profile = self._deep_merge(self.profile or {}, ov)
+        # refresh snapshots sans supposer que les attributs existent déjà
+        self.ori_cfg = dict(self.profile.get("orchestrator") or {})
+        self.votes_required = int(self.ori_cfg.get("votes_required", getattr(self, "votes_required", 1)))
+        self.min_confluence = int(self.ori_cfg.get("min_confluence", getattr(self, "min_confluence", 1)))
+        self.min_score_for_proposal = float(
+            self.ori_cfg.get("min_score_for_proposal", getattr(self, "min_score_for_proposal", 2.0))
+        )
+
+    def _get_last_price(self, symbol: str) -> Optional[float]:
+        """Récupère un prix récent (tick si dispo, sinon close M1) avec quelques retries."""
+        try:
+            broker = canon_to_broker(symbol) if symbol else self.broker_symbol
+
+            # S'assure du symbole coté
+            try:
+                if hasattr(self.mt5, "ensure_symbol"):
+                    self.mt5.ensure_symbol(broker)
+            except Exception:
+                pass
+
+            # 1) Tick (mid si bid/ask, sinon last)
+            if hasattr(self.mt5, "get_tick"):
+                for _ in range(3):
+                    tick = self.mt5.get_tick(broker)
+                    if tick:
+                        val = None
+                        if isinstance(tick, dict):
+                            bid = tick.get("bid"); ask = tick.get("ask"); last = tick.get("last")
+                        else:
+                            bid = getattr(tick, "bid", None); ask = getattr(tick, "ask", None); last = getattr(tick, "last", None)
+                        if bid is not None and ask is not None:
+                            val = (float(bid) + float(ask)) / 2.0
+                        elif last is not None:
+                            val = float(last)
+                        if val:
+                            return val
+                    time.sleep(0.1)
+
+
+            # 2) Fallback M1
+            if hasattr(self.mt5, "get_rates"):
+                for _ in range(5):
+                    rates = self.mt5.get_rates(broker, "M1", count=1)
+                    if rates:
+                        last = rates[-1]
+                        if isinstance(last, dict) and "close" in last:
+                            return float(last["close"])
+                        if hasattr(last, "close"):
+                            return float(last.close)
+                    time.sleep(0.1)
+
+            return None
+        except Exception:
+            return None
+
+    def _compute_atr(self, symbol: str, timeframe: str = "H1", period: int = 14) -> Optional[float]:
+        """Calcul ATR simple depuis données MT5 si disponibles."""
+        try:
+            if not hasattr(self.mt5, "get_rates"):
+                return None
+            broker = canon_to_broker(symbol) if symbol else self.broker_symbol
+            bars = self.mt5.get_rates(broker, timeframe, count=period + 2)
+            if not bars or len(bars) < period + 2:
+                return None
+
+            df = pd.DataFrame(bars)
+            if not all(c in df.columns for c in ("high", "low", "close")):
+                return None
+
+            high_low = df["high"] - df["low"]
+            high_close = (df["high"] - df["close"].shift()).abs()
+            low_close = (df["low"] - df["close"].shift()).abs()
+            tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            atr = tr.rolling(window=period).mean().iloc[-1]
+            if pd.isna(atr):
+                return None
+            return float(atr)
+        except Exception:
+            return None
+
+    def _log_trade_execution(self, payload: dict, result: dict | None, ok: bool) -> None:
+        """
+        Append une ligne dans data/trades_log.csv à chaque tentative d'ordre.
+        Colonnes: ts_utc, symbol, side, lots, entry, sl, tp, retcode, ok, ticket, reqid
+        """
+        try:
+            os.makedirs("data", exist_ok=True)
+            path = os.path.join("data", "trades_log.csv")
+            fields = [
+                "ts_utc","symbol","side","lots","entry","sl","tp",
+                "retcode","ok","ticket","reqid"
+            ]
+            out = {
+                "ts_utc": datetime.now(timezone.utc).isoformat(),
+                "symbol": (payload or {}).get("symbol"),
+                "side":   (payload or {}).get("side"),
+                "lots":   float((payload or {}).get("lots", 0) or 0),
+                "entry":  float((payload or {}).get("entry", 0) or 0),
+                "sl":     float((payload or {}).get("sl", 0) or 0),
+                "tp":     float((payload or {}).get("tp", 0) or 0),
+                "retcode": (result or {}).get("retcode"),
+                "ok":     bool(ok),
+                "ticket": (result or {}).get("order") or (result or {}).get("deal"),
+                "reqid":  (result or {}).get("request_id"),
+            }
+            file_exists = os.path.exists(path)
+            with open(path, "a", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=fields)
+                if not file_exists:
+                    w.writeheader()
+                w.writerow(out)
+        except Exception as e:
+            logger.warning(f"[LOG] trades_log.csv erreur: {e}")
+
+    def _log_equity_snapshot(self) -> None:
+        """Append un snapshot equity dans data/equity_log.csv à chaque cycle."""
+        try:
+            ai = getattr(self.mt5, "get_account_info", lambda: None)()
+            if not ai:
+                return
+            os.makedirs("data", exist_ok=True)
+            path = os.path.join("data", "equity_log.csv")
+            fields = ["ts_utc","balance","equity","margin","free_margin"]
+
+            row = {
+                "ts_utc":     datetime.now(timezone.utc).isoformat(),
+                "balance":    float(getattr(ai, "balance", 0.0) or 0.0),
+                "equity":     float(getattr(ai, "equity", 0.0) or 0.0),
+                "margin":     float(getattr(ai, "margin", 0.0) or 0.0),
+                "free_margin":float(getattr(ai, "margin_free", 0.0) or 0.0),
+            }
+            file_exists = os.path.exists(path)
+            with open(path, "a", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=fields)
+                if not file_exists:
+                    w.writeheader()
+                w.writerow(row)
+        except Exception as e:
+            logger.warning(f"[LOG] equity_log.csv erreur: {e}")
+
+    # ---------------------------- Auto-optimisation nocturne ----------------------------
+    async def _auto_optimize_job(self):
+        """
+        1) sync MT5 deals -> data/deals_history.csv
+        2) run tuner -> proposals/profiles_patch.yaml
+        3) si patch pour ce symbole: clamp + write to config/overrides.yaml + reload
+        + sécurité : ne rien faire s'il y a des positions ouvertes sur ce symbole
+        """
+        try:
+            # sécurité: ne pas modifier si position ouverte sur ce symbole
+            try:
+                poss = _mt5.positions_get(symbol=self.broker_symbol) or []
+                if poss:
+                    return
+            except Exception:
+                pass
+
+            # Lancer synchronisation + tuner si présents
+            try:
+                if os.path.exists(os.path.join("utils", "sync_history.py")):
+                    subprocess.run([sys.executable, os.path.join("utils","sync_history.py")], check=False)
+            except Exception:
+                pass
+            try:
+                if os.path.exists(os.path.join("utils", "param_tuner.py")):
+                    subprocess.run([sys.executable, os.path.join("utils","param_tuner.py")], check=False)
+            except Exception:
+                pass
+
+            ppath = os.path.join("proposals", "profiles_patch.yaml")
+            if not os.path.exists(ppath):
+                return
+
+            with open(ppath, encoding="utf-8") as f:
+                patch_all = yaml.safe_load(f) or {}
+            patch_sym = patch_all.get(self.symbol)
+            if not patch_sym:
+                return
+
+            # garde-fous: clamp des valeurs sensibles
+            o = (patch_sym.get("orchestrator") or {})
+            if "min_score_for_proposal" in o:
+                o["min_score_for_proposal"] = float(min(3.0, max(1.4, float(o["min_score_for_proposal"]))))
+
+            if "atr_sl_mult" in o:
+                o["atr_sl_mult"] = float(min(3.0, max(1.0, float(o["atr_sl_mult"]))))
+
+            if "atr_tp_mult" in o:
+                o["atr_tp_mult"] = float(min(4.0, max(1.5, float(o["atr_tp_mult"]))))
+
+            if "votes_required" in o:
+                try:
+                    o["votes_required"] = int(min(3, max(1, int(o["votes_required"]))))
+                except Exception:
+                    o.pop("votes_required", None)
+
+            # écrire/merge dans config/overrides.yaml
+            ov_path = os.path.join("config", "overrides.yaml")
+            cur = {}
+            if os.path.exists(ov_path):
+                with open(ov_path, encoding="utf-8") as f:
+                    cur = yaml.safe_load(f) or {}
+            cur.setdefault(self.symbol, {}).setdefault("orchestrator", {}).update(o)
+
+            os.makedirs("config", exist_ok=True)
+            with open(ov_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(cur, f, allow_unicode=True, sort_keys=False)
+
+            # recharger en mémoire
+            self._apply_overrides_for_symbol(cur.get(self.symbol) or {})
+            self._send_telegram(f"🛠️ Auto-opt: overrides appliqués pour {self.symbol}: {list(o.keys())}",
+                                kind="status", force=True)
+        except Exception as e:
+            logger.warning(f"[AUTO-OPT] job failed: {e}")
+
+
+# =============================================================================
+# Multi-symbol runner
+# =============================================================================
+async def run_for_symbols(symbols: List[str]):
+    orchs: List[Orchestrator] = []
+    started: List[str] = []
+    for sym in symbols:
+        try:
+            o = Orchestrator(sym)
+            # force depuis CLI si présent
+            try:
+                import builtins as _bi
+                if getattr(_bi, "__EMPIRE_DRY_RUN__", False):
+                    o.dry_run = True
+            except Exception:
+                pass
+            orchs.append(o)
+            started.append(sym)
+        except Exception as e:
+            logger.error(f"[ORCH] Skip {sym}: {e}")
+
+    if started:
+        _notify_global_start(started)
+        # Ne démarre le worker qu'en cas de validation Telegram requise
+        needs_cb = any(getattr(o, "use_telegram_validation", False) and not getattr(o, "auto_execute", True) for o in orchs)
+        if needs_cb:
+            _start_tg_callback_worker_once()
+
+    tasks = [o.start() for o in orchs]  # coroutines
+    await asyncio.gather(*tasks)
+
+    if __name__ == "__main__":
+        try:
+            start_health_server(host="0.0.0.0", port=9108)
+            logger.info("[/healthz] ready on :9108")
+        except Exception as e:
+            logger.warning(f"[health] start failed: {e}")
+        # 1) Charger .env / .env.local (sans écraser les env existants)
+        load_dotenv_env("config/.env", extra_paths=("config/.env.local",), overwrite=False)
+        # 2) Valider la présence des secrets essentiels (on tolère l'absence en mode dry)
+        try:
+            get_required("MT5_LOGIN","MT5_PASSWORD","MT5_SERVER","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID")
+        except RuntimeError as e:
+            # En démo/dry-run, on peut logguer un warning et continuer
+            logger.warning(f"[CONFIG] Secrets incomplets: {e}")
+        import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--symbols", nargs="*", help="Liste des symboles à lancer")
+    parser.add_argument("--dry-run", action="store_true", help="N'envoie aucun ordre MT5 (simulation/notification seulement)")
+    # ... votre parser
+    parser.add_argument(
+        "--overrides",
+        type=str,
+        default=None,
+        help="Chemin du fichier overrides (ex: config/presets/overrides.demo.yaml)"
+    )
+    args = parser.parse_args()
+
+    # variable globale lisible partout
+    OVERRIDES_PATH = args.overrides
+
+    args = parser.parse_args()
+
+    syms = args.symbols if args.symbols else get_enabled_symbols()
+    if not syms:
+        raise SystemExit("Aucun symbole à lancer. Renseignez enabled_symbols dans profiles.yaml ou utilisez --symbols.")
+    logger.info(f"Lancement Orchestrator en parallèle pour: {syms}")
+    dry = bool(getattr(args, "dry_run", False))
+    # astuce simple: mémoriser dans une globale pour que run_for_symbols la lise
+    import builtins as _bi
+    _bi.__EMPIRE_DRY_RUN__ = dry # type: ignore
+    start_health_server(host="0.0.0.0", port=9108)
+    if _mt5 is None:
+        logger.warning("[MT5] module non disponible — mode démo/dry-run recommandé")
+
+    asyncio.run(run_for_symbols(syms))

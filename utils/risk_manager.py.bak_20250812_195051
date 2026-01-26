@@ -1,0 +1,132 @@
+from dataclasses import dataclass
+from datetime import datetime, date
+from typing import Optional, List, Dict
+import math
+
+@dataclass
+class RiskConfig:
+    # Backward-compat
+    risk_per_trade: float = 0.01
+    max_daily_loss: float = 0.05
+    max_consecutive_losses: int = 3
+
+    # New config
+    daily_goal_mode: str = "auto"  # "auto"|"fixed"
+    monthly_goal_chf_by_phase: Optional[Dict[str, float]] = None
+    trading_days_per_month: int = 22
+
+    tiers: Optional[List[Dict]] = None
+    allow_multiple_positions: bool = True
+    max_parallel_positions: int = 2
+
+    compounding: Optional[Dict] = None  # {mode:"weekly"/"daily"/"off", day_of_week:"MON"}
+
+class RiskManager:
+    def __init__(self, equity: float, cfg: RiskConfig):
+        self.equity = float(equity or 0.0)
+        self.cfg = cfg
+        self.current_date = date.today()
+        self.daily_pnl = 0.0
+        self.consecutive_losses = 0
+        self.open_positions_count = 0
+        self._tier_cache = None
+        self._phase_name = None
+        self._daily_goal_chf = 0.0
+        self._recompute_goals()
+
+    # ===== Tier & goals =====
+    def _pick_tier(self):
+        tiers = self.cfg.tiers or []
+        for t in tiers:
+            if self.equity >= t["equity_min"] and self.equity < t["equity_max"]:
+                return t
+        return tiers[-1] if tiers else {"risk_per_trade_pct": self.cfg.risk_per_trade,
+                                       "max_daily_loss_pct": self.cfg.max_daily_loss * 100,
+                                       "max_parallel_positions": self.cfg.max_parallel_positions}
+
+    def _phase_from_tier(self):
+        if not self._tier_cache:
+            return "phase1"
+        return self._tier_cache.get("name", "phase1")
+
+    def _recompute_goals(self):
+        self._tier_cache = self._pick_tier()
+        self._phase_name = self._phase_from_tier()
+        monthly_map = self.cfg.monthly_goal_chf_by_phase or {}
+        monthly_goal = monthly_map.get(self._phase_name, 0.0)
+        if self._phase_name == "phase1" and monthly_map.get("phase1_max", None):
+            # simple heuristique: si equity proche limite haute, prendre l'objectif haut
+            if self.equity > (self._tier_cache["equity_max"] * 0.7):
+                monthly_goal = max(monthly_goal, monthly_map["phase1_max"])
+        # Objectif journalier
+        if self.cfg.daily_goal_mode == "auto":
+            self._daily_goal_chf = float(monthly_goal) / max(1, int(self.cfg.trading_days_per_month))
+        else:
+            self._daily_goal_chf = float(monthly_goal)  # interprété comme "fixe" si fourni ainsi
+
+    def _reset_if_new_day(self):
+        today = date.today()
+        if today != self.current_date:
+            self.current_date = today
+            self.daily_pnl = 0.0
+            self.consecutive_losses = 0
+            self.open_positions_count = 0
+            self._recompute_goals()
+
+    # ===== Public API =====
+    def can_trade(self) -> bool:
+        self._reset_if_new_day()
+        t = self._tier_cache or self._pick_tier()
+        max_daily_loss_abs = (t["max_daily_loss_pct"] / 100.0) * self.equity
+        # kill-switchs
+        if self.daily_pnl >= self._daily_goal_chf:
+            return False
+        if self.daily_pnl <= -max_daily_loss_abs:
+            return False
+        if self.consecutive_losses >= self.cfg.max_consecutive_losses:
+            return False
+        if not self.cfg.allow_multiple_positions and self.open_positions_count > 0:
+            return False
+        if self.open_positions_count >= int(t.get("max_parallel_positions", self.cfg.max_parallel_positions)):
+            return False
+        return True
+
+    def calc_lot_by_sl(self, sl_distance_price: float, value_per_point_for_1lot: float) -> float:
+        """
+        sl_distance_price : distance SL en unités de prix (ex: 120_000 - 119_500 = 500)
+        value_per_point_for_1lot : valeur d'1 point pour 1 lot (dérivé de symbol_info)
+        """
+        self._reset_if_new_day()
+        t = self._tier_cache or self._pick_tier()
+        risk_budget_abs = (t["risk_per_trade_pct"] / 100.0) * self.equity
+        per_lot_risk = abs(sl_distance_price) * float(value_per_point_for_1lot)
+        if per_lot_risk <= 0:
+            return 0.0
+        lots = risk_budget_abs / per_lot_risk
+        # clamp sensé (évite lots ridicules/énormes)
+        return max(0.01, round(lots, 2))
+
+    # 🔧 à appeler quand une position s'ouvre/se ferme (si tu veux suivre le parallélisme)
+    def on_position_opened(self):
+        self.open_positions_count += 1
+
+    def on_position_closed(self, pnl_chf: float):
+        self.open_positions_count = max(0, self.open_positions_count - 1)
+        self.daily_pnl += float(pnl_chf)
+        if pnl_chf < 0:
+            self.consecutive_losses += 1
+        else:
+            self.consecutive_losses = 0
+        # Recalibrage hebdo/journalier simple (compounding)
+        mode = (self.cfg.compounding or {}).get("mode", "weekly")
+        if mode == "daily":
+            self.equity += float(pnl_chf)
+            self._recompute_goals()
+        elif mode == "weekly":
+            # tu peux déplacer ce recalcul côté orchestrateur chaque lundi
+            pass
+
+    # 🔧 si ton orchestrateur peut mettre à jour l’équité en live
+    def update_equity(self, equity_now: float):
+        self.equity = float(equity_now)
+        self._recompute_goals()

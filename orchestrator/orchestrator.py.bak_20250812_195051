@@ -1,0 +1,947 @@
+import sys
+import os
+import yaml
+import traceback
+import pkgutil
+import importlib
+from pathlib import Path
+from datetime import datetime, timedelta
+import asyncio
+
+import pandas as pd  # anti-spam & time handling
+import MetaTrader5 as mt5
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from prometheus_client import Counter, Gauge, start_http_server
+
+from utils.telegram_client import send_telegram_message
+from utils.logger import logger
+from utils.telegram_client_async import AsyncTelegramClient
+from reporting.reporter import Reporter
+from utils.mt5_client import MT5Client
+from utils.risk_manager import RiskManager, RiskConfig
+from utils.config import load_config, save_config, reload_global_config
+
+# Optimisation & backtest réaliste
+from optimization.optimizer import optimize_agent
+from backtest.agent_backtest import AgentBacktester
+
+# === Prometheus metrics ===
+trade_counter = Counter('trade_executed_total', 'Nombre de trades exécutés', ['agent'])
+drawdown_gauge = Gauge('drawdown_max', 'Drawdown maximum')
+start_http_server(8000)
+
+ROOT = Path(__file__).resolve().parents[1]
+CONFIG_PATH = ROOT / "config" / "config.yaml"
+
+
+class Orchestrator:
+    def __init__(self, cfg_path: str = str(CONFIG_PATH), telegram_client: AsyncTelegramClient | None = None):
+        # Charge la config
+        with open(cfg_path, encoding="utf-8") as f:
+            self.cfg = yaml.safe_load(f) or {}
+
+        # MT5 client (init + login)
+        self.mt5_client = MT5Client(cfg_path)
+
+        # Equity live via MT5
+        acc = mt5.account_info()
+        equity = float(getattr(acc, "equity", 0.0) or 0.0)
+
+        # === RISK MANAGER — pris depuis le YAML (tiers, % etc.) ===
+        risk_cfg = self._build_risk_config_from_yaml(equity, self.cfg.get("risk", {}) or {})
+        self.risk_manager = RiskManager(equity=equity, cfg=risk_cfg)
+        self._apply_runtime_risk_flags(self.cfg.get("risk", {}) or {})
+
+        # Charge dynamiquement les agents
+        self.agents = self._load_agents(self.cfg)
+
+        # Scheduler TZ Zurich
+        from pytz import timezone
+        self.scheduler = AsyncIOScheduler(timezone=timezone('Europe/Zurich'))
+
+        # Telegram
+        self.telegram_client = telegram_client
+        self.last_signals: list[str | None] = []   # "LONG"/"SHORT"/None
+        self.pending_order: dict | None = None     # ordre en attente de validation (dict)
+
+        # 🔒 Anti-spam / réactivité
+        self._last_proposal_time: pd.Timestamp | None = None
+        self._last_proposal_payload: dict | None = None
+        self._last_bar_sent_by_tf: dict[str, pd.Timestamp] = {}
+        self.anti_spam = (self.cfg.get("orchestrator", {}).get("anti_spam") or {})
+
+        # 🎯 Position policy (empilement, plafonds, sens opposés, etc.)
+        self.position_policy = (self.cfg.get("orchestrator", {}).get("position_policy") or {})
+
+        # Lien croisé pour callback bouton
+        if self.telegram_client is not None:
+            self.telegram_client.orchestrator = self
+
+        logger.info("Orchestrator initialisé.")
+
+    # ----------------- RISK helpers (YAML → RiskConfig) -----------------
+    def _select_risk_tier(self, equity: float, tiers: list[dict]) -> dict | None:
+        if not tiers:
+            return None
+        for t in tiers:
+            try:
+                emin = float(t.get("equity_min", -float("inf")))
+                emax = float(t.get("equity_max", float("inf")))
+                if emin <= equity < emax:
+                    return t
+            except Exception:
+                continue
+        # fallback dernier/1er
+        return tiers[-1] or tiers[0]
+
+    def _build_risk_config_from_yaml(self, equity: float, risk_yaml: dict) -> RiskConfig:
+        """
+        Traduit la section YAML:
+          - tiers[].risk_per_trade_pct / max_daily_loss_pct  (→ décimaux)
+          - max_consecutive_losses
+        en RiskConfig attendu par RiskManager.
+        """
+        tiers = risk_yaml.get("tiers") or []
+        chosen = self._select_risk_tier(equity, tiers) if tiers else None
+
+        # valeurs par défaut si rien dans YAML
+        if not chosen:
+            rpt_pct = float(risk_yaml.get("risk_per_trade_pct", 1.0))  # %
+            mdl_pct = float(risk_yaml.get("max_daily_loss_pct", 2.0))  # %
+        else:
+            rpt_pct = float(chosen.get("risk_per_trade_pct", risk_yaml.get("risk_per_trade_pct", 1.0)))
+            mdl_pct = float(chosen.get("max_daily_loss_pct", risk_yaml.get("max_daily_loss_pct", 2.0)))
+
+        max_consec = int(risk_yaml.get("max_consecutive_losses", 3))
+
+        # conversion % → décimaux pour RiskConfig
+        cfg = RiskConfig(
+            risk_per_trade=max(0.0, rpt_pct) / 100.0,
+            max_daily_loss=max(0.0, mdl_pct) / 100.0,
+            max_consecutive_losses=max(0, max_consec),
+        )
+
+        # log lisible
+        tier_name = (chosen or {}).get("name", "default")
+        logger.info(f"[RISK] Tier='{tier_name}' equity={equity:.2f}  "
+                    f"risk/trade={cfg.risk_per_trade:.4f}  maxDailyLoss={cfg.max_daily_loss:.4f}  "
+                    f"maxConsecLoss={cfg.max_consecutive_losses}")
+
+        return cfg
+
+    def _apply_runtime_risk_flags(self, risk_yaml: dict):
+        """
+        Pousse dans le RiskManager les limites runtime si elles existent côté classe.
+        (Tolérant : n'échoue pas si attributs manquent)
+        """
+        try:
+            if hasattr(self.risk_manager, "allow_multiple_positions"):
+                self.risk_manager.allow_multiple_positions = bool(risk_yaml.get("allow_multiple_positions", True))
+            if hasattr(self.risk_manager, "max_parallel_positions"):
+                # priorité au tier courant sinon top-level
+                tiers = risk_yaml.get("tiers") or []
+                acc = mt5.account_info()
+                eq = float(getattr(acc, "equity", 0.0) or 0.0)
+                chosen = self._select_risk_tier(eq, tiers) if tiers else None
+                mpp = (chosen or {}).get("max_parallel_positions", risk_yaml.get("max_parallel_positions", 2))
+                self.risk_manager.max_parallel_positions = int(mpp)
+        except Exception as e:
+            logger.warning(f"[RISK] Impossible d'appliquer les flags runtime: {e}")
+
+        # Daily goal auto (si la classe le supporte)
+        try:
+            if risk_yaml.get("daily_goal_mode", "").lower() == "auto":
+                trading_days = int(risk_yaml.get("trading_days_per_month", 22))
+                # essaie d'utiliser le nom du tier pour matcher monthly_goal_chf_by_phase
+                tiers = risk_yaml.get("tiers") or []
+                acc = mt5.account_info()
+                eq = float(getattr(acc, "equity", 0.0) or 0.0)
+                chosen = self._select_risk_tier(eq, tiers) if tiers else None
+                phase_name = (chosen or {}).get("name", "phase1")
+                monthly_map = risk_yaml.get("monthly_goal_chf_by_phase", {}) or {}
+                monthly_goal = float(monthly_map.get(phase_name, monthly_map.get("phase1", 0)))
+                if monthly_goal > 0 and hasattr(self.risk_manager, "set_daily_goal"):
+                    daily_goal = monthly_goal / max(1, trading_days)
+                    self.risk_manager.set_daily_goal(daily_goal)
+                    logger.info(f"[RISK] Daily goal auto appliqué: {daily_goal:.2f} (CHF/jour)")
+        except Exception as e:
+            logger.warning(f"[RISK] Daily goal auto non appliqué: {e}")
+
+    # ---------------- Utilities ----------------
+    async def _safe_send(self, msg, buttons=None, timeout=6, kind=None, force: bool = False):
+        """Envoi Telegram non bloquant avec timeout + typage (filtrage côté client)."""
+        if not self.telegram_client:
+            return
+        try:
+            await asyncio.wait_for(
+                self.telegram_client.send_message(msg, buttons=buttons, kind=kind, force=force),
+                timeout=timeout
+            )
+        except Exception as e:
+            logger.warning(f"[TELEGRAM] envoi non bloquant échoué : {e}")
+
+    async def _notify_startup(self):
+        """
+        Envoie 'empire lancer' au démarrage :
+        1) async (force=True pour bypass le filtre),
+        2) sync (fallback API Telegram), même si l’async semble OK.
+        """
+        msg = "empire lancer"
+        any_sent = False
+
+        # 1) Async — force=True -> pas de filtre côté client
+        try:
+            await self._safe_send(msg, kind=None, force=True)
+            logger.info("[STARTUP] Telegram async envoyé (force).")
+            any_sent = True
+        except Exception as e:
+            logger.warning(f"[STARTUP] Async send échec: {e}")
+
+        # 2) Sync — envoie direct via utils.telegram_client
+        try:
+            send_telegram_message(msg)
+            logger.info("[STARTUP] Telegram sync envoyé.")
+            any_sent = True
+        except Exception as e2:
+            logger.error(f"[STARTUP] Sync send échec: {e2}")
+
+        if not any_sent:
+            logger.error("[STARTUP] Aucun message Telegram n'a pu être envoyé.")
+
+    # Helper: retrouver un agent par nom de classe
+    def _get_agent(self, class_name: str):
+        for a in self.agents:
+            if a.__class__.__name__ == class_name:
+                return a
+        return None
+
+    # -------- Anti-spam helpers (réactif) --------
+    def _has_open_position_same_symbol(self, symbol: str) -> bool:
+        try:
+            pos = mt5.positions_get(symbol=symbol)
+            return bool(pos and len(pos) > 0)
+        except Exception:
+            return False
+
+    def _open_positions_count(self) -> int:
+        try:
+            pos = mt5.positions_get()
+            return len(pos) if pos is not None else 0
+        except Exception:
+            return 0
+
+    def _open_positions_counts(self, symbol: str):
+        """Retourne {'LONG': n_long, 'SHORT': n_short} pour le symbole."""
+        counts = {"LONG": 0, "SHORT": 0}
+        try:
+            pos = mt5.positions_get(symbol=symbol) or []
+            for p in pos:
+                # 0=BUY, 1=SELL (MT5)
+                if int(p.type) == mt5.POSITION_TYPE_BUY:
+                    counts["LONG"] += 1
+                elif int(p.type) == mt5.POSITION_TYPE_SELL:
+                    counts["SHORT"] += 1
+        except Exception:
+            pass
+        return counts
+
+    def _position_policy_allows(self, payload: dict) -> bool:
+        """Valide l’empilement/opposition/quotas avant d’envoyer une proposition."""
+        pol = self.position_policy or {}
+        side = payload["side"]            # "LONG" ou "SHORT"
+
+        # Valeurs par défaut sûres
+        max_total = int(pol.get("max_open_total", 3))
+        max_per_side = int(pol.get("max_open_per_side", 3))
+        allow_opposite = bool(pol.get("allow_opposite", True))
+        allow_stacking = bool(pol.get("allow_stacking", True))
+
+        counts = self._open_positions_counts(payload["symbol"])
+        total_open = counts["LONG"] + counts["SHORT"]
+
+        if total_open >= max_total:
+            logger.info(f"[POLICY] Rejet: total_open={total_open} >= max_total={max_total}.")
+            return False
+
+        if not allow_stacking and counts[side] > 0:
+            logger.info(f"[POLICY] Rejet: stacking {side} désactivé (déjà {counts[side]}).")
+            return False
+
+        if counts[side] >= max_per_side:
+            logger.info(f"[POLICY] Rejet: {side} déjà {counts[side]} >= max_per_side={max_per_side}.")
+            return False
+
+        if not allow_opposite:
+            other = "SHORT" if side == "LONG" else "LONG"
+            if counts[other] > 0:
+                logger.info(f"[POLICY] Rejet: positions {other} ouvertes et allow_opposite=False.")
+                return False
+
+        return True
+
+    def _last_completed_bar_time(self, symbol: str, timeframe):
+        """Lit les 2 dernières barres et renvoie l'heure de la dernière clôturée."""
+        try:
+            rates = self.mt5_client.copy_rates(symbol, timeframe, 2)
+            if rates is not None and len(rates) >= 2:
+                t = int(rates[-1]['time'])
+                return pd.to_datetime(t, unit='s')
+        except Exception:
+            pass
+        return None
+
+    def _should_notify_trade(self, payload: dict) -> bool:
+        anti = self.anti_spam
+        if not anti:
+            return True
+
+        now = pd.Timestamp.utcnow()
+        symbol = payload["symbol"]
+        tf = payload.get("timeframe", "H1")
+        price = float(payload["price"])
+        conf = float(payload.get("confidence", 0.0))
+
+        # 1) Une seule proposition par bougie (si activé)
+        if anti.get("per_bar_only", False):
+            last_bar = self._last_completed_bar_time(symbol, tf)
+            if last_bar is not None:
+                last_sent_bar = self._last_bar_sent_by_tf.get(tf)
+                if last_sent_bar is not None and last_bar <= last_sent_bar:
+                    return False
+
+        # 2) Cooldown court avec exceptions réactives (prix/confiance)
+        cd_min = int(anti.get("cooldown_minutes", 5))
+        if cd_min > 0 and self._last_proposal_time is not None:
+            if now - self._last_proposal_time < pd.Timedelta(minutes=cd_min):
+                last = self._last_proposal_payload or {}
+                last_price = float(last.get("price", price))
+                last_conf = float(last.get("confidence", 0.0))
+
+                bps_thresh = float(anti.get("price_delta_bps", 2.0))      # 2 bps = 0.02%
+                conf_thresh = float(anti.get("confidence_delta", 0.03))   # +0.03
+
+                moved_bps = abs(price - last_price) / max(1e-12, last_price) * 10_000
+                conf_diff = abs(conf - last_conf)
+
+                if moved_bps < bps_thresh and conf_diff < conf_thresh:
+                    return False
+
+        # 3) Optionnel : ignorer si déjà en position
+        if anti.get("avoid_if_open_position", False) and self._has_open_position_same_symbol(symbol):
+            return False
+
+        return True
+
+    def _mark_notified(self, payload: dict):
+        tf = payload.get("timeframe", "H1")
+        last_bar = self._last_completed_bar_time(payload["symbol"], tf)
+        if last_bar is not None:
+            self._last_bar_sent_by_tf[tf] = last_bar
+        self._last_proposal_time = pd.Timestamp.utcnow()
+        self._last_proposal_payload = payload
+
+    # ------------- Dynamic agent loading -------------
+    def _load_agents(self, cfg):
+        """
+        Charge dynamiquement les modules de /agents/ dont le nom figure
+        dans cfg['agents'] et instancie la classe qui expose (execute + generate_signal).
+        """
+        instances = []
+        import agents
+
+        enabled_agents = set(cfg.get("agents", []))
+        modules_disponibles = [m for _, m, _ in pkgutil.iter_modules(agents.__path__)]
+        logger.info(f"Agents YAML (enabled): {sorted(list(enabled_agents))}")
+        logger.info(f"Modules trouvés dans /agents: {sorted(modules_disponibles)}")
+
+        if not enabled_agents:
+            logger.warning("Aucun agent listé dans YAML -> section 'agents:' vide.")
+            return instances
+
+        for _, module_name, _ in pkgutil.iter_modules(agents.__path__):
+            if module_name not in enabled_agents:
+                continue
+
+            agent_key = f"{module_name}_agent"
+            params = cfg.get(agent_key, {}).get("params", {})
+
+            try:
+                module = importlib.import_module(f"agents.{module_name}")
+            except Exception as e:
+                logger.error(f"Impossible d'importer agents.{module_name}: {e}")
+                continue
+
+            loaded_cls = None
+            for attr in dir(module):
+                cls = getattr(module, attr)
+                if (
+                    isinstance(cls, type)
+                    and hasattr(cls, 'execute')
+                    and hasattr(cls, 'generate_signal')
+                ):
+                    loaded_cls = cls
+                    break
+
+            if not loaded_cls:
+                logger.error(f"Aucune classe compatible (execute + generate_signal) dans agents.{module_name}")
+                continue
+
+            try:
+                instance = loaded_cls(cfg=cfg, params=params)
+            except TypeError:
+                instance = loaded_cls(cfg=cfg)
+            except Exception as e:
+                logger.error(f"Echec d'instanciation pour {module_name}: {e}")
+                continue
+
+            instances.append(instance)
+
+        logger.info(f"Loaded agents: {[a.__class__.__name__ for a in instances]}")
+        if not instances:
+            logger.warning("Aucun agent n'a été instancié. Vérifie la cohérence YAML <-> noms de fichiers dans /agents.")
+        return instances
+
+    # ---------------- Scheduling ----------------
+    def _schedule_jobs(self):
+        tf_cfg = self.cfg.get('timeframes', {}) or {}
+        interval = int(tf_cfg.get("orchestrator", 60))
+
+        # Job principal : 1 instance max, coalescence, grâce
+        self.scheduler.add_job(
+            func=self._run_agents_and_decide,
+            trigger='interval',
+            seconds=interval,
+            id="MasterVote",
+            coalesce=True,
+            misfire_grace_time=15,
+            max_instances=1,
+        )
+
+        # Backtest horaire (silencieux) — moteur réaliste
+        self.scheduler.add_job(
+            func=self._run_backtest_agent,
+            trigger='cron',
+            minute=0,
+            id='hourly_backtest',
+            replace_existing=True
+        )
+
+        # Rebalance hebdo (actualise equity -> RiskManager)
+        self.scheduler.add_job(
+            func=self._weekly_rebalance,
+            trigger='cron',
+            day_of_week='mon',
+            hour=0, minute=5,
+            id='weekly_rebalance',
+            replace_existing=True
+        )
+
+        # Digest News quotidien (11:00 Europe/Zurich)
+        news_cfg = (self.cfg.get("news") or {})
+        digest_cfg = (news_cfg.get("digest") or {})
+        if digest_cfg.get("enabled", True):
+            time_str = digest_cfg.get("time", "11:00")
+            try:
+                hour, minute = map(int, time_str.split(":"))
+            except Exception:
+                hour, minute = 11, 0  # fallback sûr
+            from pytz import timezone
+            tzname = digest_cfg.get("timezone", "Europe/Zurich")
+            self.scheduler.add_job(
+                func=self.send_news_digest,
+                trigger='cron',
+                hour=hour,
+                minute=minute,
+                timezone=timezone(tzname),
+                id='news_digest',
+                replace_existing=True,
+                name='Daily News Digest'
+            )
+
+        # 🔁 Optimisation nocturne (Optuna) + reload config
+        opt_cfg = (self.cfg.get("optimization") or {})
+        if opt_cfg.get("enabled", True):
+            self.scheduler.add_job(
+                func=self._nightly_backtest_and_optimize,
+                trigger='cron',
+                hour=1, minute=15,
+                id='nightly_optimize',
+                replace_existing=True
+            )
+
+        logger.info(f"Scheduler ready. Jobs: {self.scheduler.get_jobs()}")
+
+    # ---------------- Blackout fondamental ----------------
+    def _is_fundamental_blackout_now(self) -> bool:
+        """Respecte le flag config; si désactivé -> pas de blackout."""
+        fb = (self.cfg.get("fundamental") or {}).get("blackout", {}) or {}
+        if not fb.get("enabled", False):
+            return False
+        try:
+            fund = self._get_agent("FundamentalAgent")
+            if fund and hasattr(fund, "trading_blackout"):
+                return bool(fund.trading_blackout(datetime.utcnow()))
+        except Exception:
+            logger.warning("Échec du check blackout news (on continue).")
+        return False
+
+    # ---------------- Multi‑TF helpers ----------------
+    def _generate_signal_for_tf(self, agent, tf: str):
+        """
+        Essaie d'abord generate_signal_for_tf(tf) si présent,
+        sinon force le param timeframe (temporairement) puis appelle generate_signal().
+        """
+        # 1) méthode dédiée ?
+        if hasattr(agent, "generate_signal_for_tf"):
+            sig = agent.generate_signal_for_tf(tf)
+            if isinstance(sig, dict):
+                sig.setdefault("timeframe", tf)
+            return sig
+
+        # 2) fallback : patch param puis restore
+        old_params = getattr(agent, "params", None)
+        restored = False
+        try:
+            if isinstance(old_params, dict):
+                agent.params = dict(old_params)  # shallow copy
+                agent.params["timeframe"] = tf
+                restored = True
+            sig = agent.generate_signal()
+            if isinstance(sig, dict):
+                sig.setdefault("timeframe", tf)
+            return sig
+        finally:
+            if restored:
+                agent.params = old_params
+
+    # ---------------- Payload builder (multi‑TF aware) ----------------
+    def _best_signal_payload(self, signals, side_preferred):
+        """
+        Choisit le meilleur signal du côté majoritaire :
+        - priorité agent (Technical > Swing > Scalping)
+        - poids TF (cfg.multi_timeframes.tf_weights)
+        - confiance
+        - SL/TP requis
+        """
+        priority_agents = ["TechnicalAgent", "SwingAgent", "ScalpingAgent"]
+        tf_weights = (self.cfg.get("multi_timeframes", {}) or {}).get("tf_weights", {})
+
+        best = None
+        best_score = -1e9
+
+        for key, sig in signals.items():
+            if not isinstance(sig, dict) or sig.get("signal") != side_preferred:
+                continue
+            sl, tp = sig.get("sl"), sig.get("tp")
+            if sl is None or tp is None:
+                continue
+
+            # key = "Agent@TF" si multi-TF, sinon "Agent"
+            if "@" in key:
+                agent_name, tf = key.split("@", 1)
+            else:
+                agent_name = key
+                tf = sig.get("timeframe", "H1")
+
+            agent_rank = (len(priority_agents) - priority_agents.index(agent_name)) if agent_name in priority_agents else 0
+            tf_w = float(tf_weights.get(tf, 1.0))
+            conf = float(sig.get("confidence", 0.6))
+
+            score = agent_rank * 10.0 + tf_w * 5.0 + conf
+
+            if score > best_score:
+                price = sig.get("price")
+                if price is None:
+                    tick = mt5.symbol_info_tick(self.cfg.get("symbol", "BTCUSD"))
+                    if tick is None:
+                        continue
+                    price = float(tick.ask if side_preferred == "LONG" else tick.bid)
+                best = {
+                    "agent": agent_name,
+                    "symbol": self.cfg.get("symbol", "BTCUSD"),
+                    "side": side_preferred,
+                    "price": float(price),
+                    "sl": float(tp if side_preferred == "SHORT" and sl == tp else sl),
+                    "tp": float(tp),
+                    "timeframe": tf,
+                    "confidence": conf,
+                }
+                best_score = score
+
+        return best
+
+    # ---------------- Main run loop (multi‑TF) ----------------
+    async def _run_agents_and_decide(self):
+        signals = {}
+        logger.debug("=== Début exécution Orchestrator (multi-TF) ===")
+
+        # 🔕 Blackout news (seulement si activé dans la config)
+        if self._is_fundamental_blackout_now():
+            logger.info("Blackout news (high impact) — on bloque la proposition de trade.")
+            return None
+
+        # Multi‑TF config (sans M15)
+        mtf_cfg = (self.cfg.get("multi_timeframes") or {})
+        if mtf_cfg.get("enabled", False):
+            tf_list = list(mtf_cfg.get("tfs", ["D1", "H4", "H1", "M30", "M5", "M1"]))
+        else:
+            tf_list = ["H1"]
+
+        # 1) Collecte des signaux agent x TF
+        for agent in self.agents:
+            agent_name = agent.__class__.__name__
+            for tf in tf_list:
+                try:
+                    sig = self._generate_signal_for_tf(agent, tf)
+                    key = f"{agent_name}@{tf}"
+                    signals[key] = sig
+                    logger.info(f"[{key}] -> {sig}")
+                except Exception:
+                    logger.error(f"Agent {agent_name} TF {tf} failed: {traceback.format_exc()}")
+
+        # 2) Comptage des votes pondérés
+        votes = {"LONG": 0.0, "SHORT": 0.0}
+        tf_weights = (self.cfg.get("multi_timeframes", {}) or {}).get("tf_weights", {})
+        for k, s in signals.items():
+            if isinstance(s, dict):
+                tf = s.get("timeframe", "H1")
+                w = float(tf_weights.get(tf, 1.0))
+                if s.get("signal") == "LONG":
+                    votes["LONG"] += w
+                elif s.get("signal") == "SHORT":
+                    votes["SHORT"] += w
+
+        logger.debug(f"Votes pondérés → LONG: {votes['LONG']:.2f} | SHORT: {votes['SHORT']:.2f}")
+
+        # 3) Seuil de décision (votes_required flottant accepté)
+        votes_required = float(self.cfg.get("orchestrator", {}).get("votes_required", 2))
+        master_signal = None
+        if votes["LONG"] >= votes_required and votes["LONG"] > votes["SHORT"]:
+            master_signal = "LONG"
+        elif votes["SHORT"] >= votes_required and votes["SHORT"] > votes["LONG"]:
+            master_signal = "SHORT"
+
+        logger.debug(f"Signal maître retenu : {master_signal}")
+        self.last_signals.append(master_signal)
+
+        # 4) Construction de la proposition + filtres (risque + policy + anti-spam)
+        if master_signal in ("LONG", "SHORT"):
+            payload = self._best_signal_payload(signals, master_signal)
+            if not payload:
+                logger.info("Signal maître trouvé mais aucun payload exploitable (price/sl/tp manquants).")
+                return master_signal
+
+            # MAJ compteur positions pour RiskManager (si utilisé en interne)
+            try:
+                if hasattr(self.risk_manager, "open_positions_count"):
+                    self.risk_manager.open_positions_count = self._open_positions_count()
+            except Exception:
+                pass
+
+            # ✅ Risk check global (kill-switch, drawdown, etc.) avant push
+            ok, reason = self._can_trade_with_reason()
+            if not ok:
+                logger.info(f"[RISK] Conditions non remplies → pas d'envoi Telegram. Raison: {reason}")
+                return master_signal
+
+            # ✅ Position policy (plafonds/stack/opposé)
+            if not self._position_policy_allows(payload):
+                logger.info("[POLICY] Conditions de pile/limites non respectées → pas d’envoi.")
+                return master_signal
+
+            # ✅ Anti-spam / réactivité
+            if not self._should_notify_trade(payload):
+                logger.info("Signal filtré (anti-spam / pas assez de nouveauté).")
+                return master_signal
+
+            self.pending_order = payload
+
+            if self.telegram_client:
+                side = payload["side"]
+                symb = payload["symbol"]
+                price = payload["price"]
+                sl = payload["sl"]
+                tp = payload["tp"]
+                tf = payload["timeframe"]
+                conf = payload["confidence"]
+                button = [{
+                    "text": f"✅ Valider trade {side}",
+                    "callback_data": f"validate_trade_{side}"
+                }]
+                msg = (
+                    f"⚡️ <b>[EMPIRE IA] SIGNAL À VALIDER</b>\n"
+                    f"• Symbole: <b>{symb}</b>  | TF: <b>{tf}</b>\n"
+                    f"• Côté: <b>{side}</b>  | Confiance: <b>{conf:.2f}</b>\n"
+                    f"• Prix: <code>{price:.2f}</code>\n"
+                    f"• SL: <code>{sl:.2f}</code>   TP: <code>{tp:.2f}</code>\n\n"
+                    f"Cliquez ci-dessous pour exécuter le trade dimensionné par le Risk Manager."
+                )
+                asyncio.create_task(self._safe_send(msg, buttons=button, kind="trade_validation"))
+                self._mark_notified(payload)
+                logger.info("Signal envoyé avec bouton pour validation.")
+        else:
+            logger.info("Pas de signal maître, pas d'envoi Telegram.")
+        return master_signal
+
+    def _can_trade_with_reason(self):
+        """
+        Essaie d’obtenir une raison lisible du RiskManager.
+        Compatibilité ascendante: si la signature ne supporte pas 'return_reason',
+        on récupère 'last_block_reason' si présent.
+        """
+        try:
+            # certaines implémentations exposent can_trade(return_reason=True)
+            ok, reason = self.risk_manager.can_trade(return_reason=True)  # type: ignore
+            return bool(ok), str(reason or "")
+        except TypeError:
+            try:
+                ok = bool(self.risk_manager.can_trade())
+            except Exception:
+                ok = False
+            reason = ""
+            try:
+                reason = getattr(self.risk_manager, "last_block_reason", "") or ""
+            except Exception:
+                pass
+            return ok, reason
+
+    # ---------------- Execution after validation ----------------
+    async def execute_trade(self, signal):
+        """
+        Appelée par le callback Telegram après validation.
+        Utilise self.pending_order + RiskManager pour calculer la taille.
+        """
+        if not self.pending_order:
+            logger.warning("Aucun ordre pending. Validation ignorée.")
+            return
+
+        # Kill-switch jour / pertes consécutives
+        try:
+            self.risk_manager.reset_if_new_day()
+        except Exception:
+            pass
+
+        ok, reason = self._can_trade_with_reason()
+        if not ok:
+            logger.warning(f"[RISK] Trading suspendu (daily cap / pertes consécutives / autre). Raison: {reason}")
+            return
+
+        payload = self.pending_order
+        symbol = payload["symbol"]
+        side = payload["side"]
+        price = payload["price"]
+        sl = payload["sl"]
+        tp = payload["tp"]
+
+        # Distance SL en unités de prix
+        sl_distance = abs(price - sl)
+        if sl_distance <= 0:
+            logger.error("SL distance non valide, abandon.")
+            return
+
+        # Valeur d'un point pour 1 lot
+        info = mt5.symbol_info(symbol)
+        if info is None or info.trade_tick_size == 0:
+            logger.error("symbol_info indisponible ou tick_size=0.")
+            return
+        value_per_point = info.trade_tick_value / info.trade_tick_size
+
+        # Dimensionnement du lot
+        lots = self.risk_manager.calc_lot_by_sl(sl_distance, value_per_point)
+        if lots <= 0:
+            logger.warning("[RISK] Lot calculé <= 0, pas de trade.")
+            return
+
+        order_type = (mt5.ORDER_TYPE_BUY if side == "LONG" else mt5.ORDER_TYPE_SELL)
+
+        trade_result = self.mt5_client.place_order(
+            symbol=symbol,
+            lot=lots,
+            order_type=order_type,
+            price=None,   # market
+            sl=sl,
+            tp=tp
+        )
+        logger.info(f"Trade exécuté suite à validation Telegram : {trade_result}")
+
+        # métriques + reset pending
+        try:
+            trade_counter.labels(agent=payload.get("agent", "unknown")).inc()
+        except Exception:
+            pass
+
+        # Informe le RiskManager (si la méthode existe)
+        try:
+            if hasattr(self.risk_manager, "on_position_opened"):
+                self.risk_manager.on_position_opened()
+        except Exception:
+            pass
+
+        self.pending_order = None
+
+    # ---------------- Reporting / News / Backtest ----------------
+    async def send_daily_report(self):
+        long_count = self.last_signals.count("LONG")
+        short_count = self.last_signals.count("SHORT")
+        none_count = self.last_signals.count(None)
+
+        tendance = "LONG" if long_count > short_count else "SHORT" if short_count > long_count else "INDÉTERMINÉ"
+
+        report = Reporter().daily_summary()
+        msg = (
+            f"📊 <b>Rapport Quotidien Empire IA — {self.cfg.get('symbol','?')}</b>\n\n"
+            f"Signaux détectés :\n"
+            f" - LONG : {long_count}\n"
+            f" - SHORT : {short_count}\n"
+            f" - Aucun signal : {none_count}\n"
+            f"Tendance globale : <b>{tendance}</b>\n\n"
+            f"Résumé agent : {report}"
+        )
+        asyncio.create_task(self._safe_send(msg))
+
+        if isinstance(report, dict) and 'drawdown' in report:
+            try:
+                drawdown_gauge.set(report['drawdown'])
+            except Exception:
+                pass
+
+        self.last_signals = []
+
+    async def send_news_digest(self):
+        """Agrège les news et envoie un résumé unique."""
+        try:
+            news_agent = self._get_agent("NewsAgent")
+            if not news_agent:
+                return
+
+            items = None
+            if hasattr(news_agent, "fetch_and_score"):
+                items = news_agent.fetch_and_score()
+
+            if not items:
+                sig = news_agent.generate_signal()
+                if isinstance(sig, dict):
+                    ex = sig.get("examples", {})
+                    bulls = (ex.get("bull") or [])[:4]
+                    bears = (ex.get("bear") or [])[:4]
+                    items = [{"title": t, "source": "news"} for t in (bulls + bears)]
+
+            digest_cfg = (self.cfg.get("news") or {}).get("digest", {}) or {}
+            top_n = int(digest_cfg.get("top_n", 8))
+            include_scores = bool(digest_cfg.get("include_scores", True))
+            items = (items or [])[:top_n]
+
+            if not items:
+                return
+
+            lines = ["📰 <b>Digest Crypto</b> — 11:00"]
+            for i, it in enumerate(items, 1):
+                title = it.get("title", "—")
+                src = it.get("source", "")
+                url = it.get("url", "")
+                score = it.get("bull_score", None)
+                if include_scores and score is not None:
+                    lines.append(f"{i}. {title} (<i>{src}</i>) — score: {float(score):.1f}\n{url}")
+                else:
+                    lines.append(f"{i}. {title} (<i>{src}</i>)\n{url}")
+
+            msg = "\n".join(lines)
+            asyncio.create_task(self._safe_send(msg, kind="news_digest"))
+            logger.info("News digest envoyé (11:00).")
+        except Exception:
+            logger.error(f"[NEWS DIGEST] échec : {traceback.format_exc()}")
+
+    async def _run_backtest_agent(self):
+        """
+        Backtest silencieux (horaire) sur le moteur réaliste pour sanity-check (sans Optuna).
+        """
+        try:
+            cfg = load_config(CONFIG_PATH)
+            symbol = cfg.get("symbol", "BTCUSD")
+            bt_cfg = cfg.get("backtest", {}) or {}
+            timeframe = bt_cfg.get("timeframe", "H1")
+
+            end = datetime.utcnow()
+            start = end - timedelta(days=90)
+
+            agents_to_try = ["technical", "scalping", "swing"]
+            for akey in agents_to_try:
+                params = (cfg.get("agents", {}).get(akey, {}) or {}).get("params", {}) if isinstance(cfg.get("agents"), dict) else {}
+                bt = AgentBacktester(
+                    symbol=symbol,
+                    agent_key=akey,
+                    agent_params=params,
+                    start=start,
+                    end=end,
+                    timeframe=timeframe,
+                    spread=bt_cfg.get("spread_points", 25),
+                    slippage=bt_cfg.get("slippage_points", 10),
+                    commission_per_lot=bt_cfg.get("commission_per_lot", 7.0),
+                    risk_config=cfg.get("risk", {}) or {}
+                )
+                res = bt.run()
+                logger.info(f"[Backtest horaire] {akey} net={res.net_return:.2%} mdd={res.max_drawdown:.2%} trades={res.trades}")
+                break  # un seul agent suffit pour le healthcheck
+        except Exception as e:
+            logger.error(f"Erreur lors du backtest agent (horaire): {e}")
+
+    async def _weekly_rebalance(self):
+        try:
+            acc = mt5.account_info()
+            if acc:
+                self.risk_manager.update_equity(float(getattr(acc, "equity", 0.0) or 0.0))
+                # réapplique le tier si equity bouge fortement
+                risk_yaml = self.cfg.get("risk", {}) or {}
+                new_cfg = self._build_risk_config_from_yaml(float(getattr(acc, "equity", 0.0) or 0.0), risk_yaml)
+                self.risk_manager.cfg = new_cfg
+                self._apply_runtime_risk_flags(risk_yaml)
+                logger.info("[RISK] Rebalance hebdo effectué (equity & règles synchronisées).")
+        except Exception as e:
+            logger.warning(f"[RISK] Rebalance hebdo failed: {e}")
+
+    # ---------------- Nightly Optuna + reload ----------------
+    async def _nightly_backtest_and_optimize(self):
+        """
+        Lance l'optimisation Optuna par agent (moteur réaliste) puis recharge la config.
+        Planifiée à 01:15 Europe/Zurich.
+        """
+        try:
+            cfg = load_config(CONFIG_PATH)
+            if not (cfg.get("optimization") or {}).get("enabled", True):
+                logger.info("[Nightly] Optimisation désactivée.")
+                return
+
+            symbol = cfg.get("symbol", "BTCUSD")
+            months = int((cfg.get("optimization") or {}).get("months", 6))
+            n_trials = int((cfg.get("optimization") or {}).get("n_trials", 30))
+            agents_to_opt = (cfg.get("optimization") or {}).get("agents", ["technical", "scalping", "swing"])
+
+            for agent_key in agents_to_opt:
+                try:
+                    logger.info(f"[Nightly] Optimize {agent_key} on {symbol} ({months}m, {n_trials} trials)")
+                    optimize_agent(agent_key=agent_key, symbol=symbol, months=months, n_trials=n_trials)
+                except Exception as e:
+                    logger.exception(f"Nightly optimization failed for {agent_key}: {e}")
+
+            # recharger la config en live
+            reload_global_config(CONFIG_PATH)
+            with open(CONFIG_PATH, encoding="utf-8") as f:
+                self.cfg = yaml.safe_load(f) or {}
+            logger.info("[Nightly] Config reloaded with new params.")
+        except Exception as e:
+            logger.error(f"[Nightly] Routine failed: {e}")
+
+    async def run(self):
+        self._schedule_jobs()
+        self.scheduler.start()
+
+        # ✅ Notification de démarrage
+        await self._notify_startup()
+
+        logger.info("Orchestrator running. Press Ctrl+C to exit.")
+        try:
+            while True:
+                await asyncio.sleep(1)
+        except (KeyboardInterrupt, SystemExit):
+            logger.info("Shutting down scheduler")
+            self.scheduler.shutdown()

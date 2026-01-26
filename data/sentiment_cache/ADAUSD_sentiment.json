@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-12-24T16:47:48.500038+00:00",
+  "symbol": "ADAUSD",
+  "retail": {
+    "long_percentage": 45.0,
+    "short_percentage": 55.0,
+    "source": "simulated"
+  }
+}

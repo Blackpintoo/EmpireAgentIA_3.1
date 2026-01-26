@@ -1,0 +1,809 @@
+# Configuration des symboles tradés
+# Version optimisée - MISE A JOUR 2025-12-30 (Post-Audit Semaine 23-30 Dec)
+# ══════════════════════════════════════════════════════════════════════════════
+# SYMBOLES PROBLEMATIQUES DESACTIVES (Audit 13-24 Dec 2025):
+# - ADAUSD: 72% trades contre-trend, WR 15.9%, Perte -$138,956
+# - USDJPY: 42% trades contre-trend, WR 0%, Perte -$38,912
+# - UK100: WR 0%, Perte -$23,124 (mais score eleve - a revoir)
+# - XAGUSD: Score faible 6.4, WR 0%, Perte -$11,006
+#
+# NOUVEAUX DESACTIVES (Audit 23-30 Dec 2025 - Semaine de Noel):
+# - SOLUSD: WR 15.4%, Perte -$8,728 (94% des pertes de la semaine!)
+# - GBPUSD: WR 0%, Perte -$2,695
+# ══════════════════════════════════════════════════════════════════════════════
+
+enabled_symbols:
+# ══════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION 2025-12-30 - Optimise apres audit semaine Noel
+# 8 symboles actifs, 6 desactives
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NOYAU RENTABLE - 4 SYMBOLES PRINCIPAUX (Optimisation 2026-01-06)
+# Ces symboles sont les seuls actifs jusqu'à PF > 1.3 sur 4 semaines
+# ══════════════════════════════════════════════════════════════════════════════
+
+# INDICES (2) - MOTEURS PRINCIPAUX
+- NAS100        # Nasdaq 100 - Moteur principal (+$14,750 sur 30j)
+- SP500         # S&P 500 - MEILLEUR (WR 61%, stable)
+
+# FOREX (1)
+- AUDUSD        # WR 60%, +$930 - Stable
+
+# MATIERES PREMIERES (1)
+- XAUUSD        # Or - WR 67%, +$173 - OK
+
+# CRYPTOS (2) - Réactivés 2026-01-11 avec fenêtres horaires optimisées
+- BNBUSD        # Binance Coin - Trading fenêtres optimisées semaine/week-end
+- LTCUSD        # Litecoin - Trading fenêtres optimisées semaine/week-end
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SYMBOLES DESACTIVES - Requiert backtest PF > 1.3 avant réactivation
+# ══════════════════════════════════════════════════════════════════════════════
+# - BTCUSD      # ⏸️ PAUSE: A surveiller - faible volume
+# - ETHUSD      # ⏸️ PAUSE: A surveiller
+# - EURUSD      # ⏸️ PAUSE: WR 0% semaine Noel, -$115
+# - USOUSD      # ⏸️ PAUSE: Pas de données suffisantes
+# - SOLUSD      # ⛔ DESACTIVE: WR 15.4%, -$12,353 (78% des pertes!)
+# - GBPUSD      # ⛔ DESACTIVE: WR 0%, -$2,695
+# - ADAUSD      # ⛔ DESACTIVE: 72% contre-trend
+# - USDJPY      # ⛔ DESACTIVE: 42% contre-trend
+# - XAGUSD      # ⛔ DESACTIVE: Score faible 6.40
+# - UK100       # ⛔ DESACTIVE: Pertes importantes
+
+profiles:
+  BTCUSD:
+    symbol: BTCUSD
+    enabled: false   # ⏸️ PAUSE 2026-01-06: Concentration sur noyau rentable
+    account:
+      equity_start: 1000
+    instrument:
+      broker_symbol: BTCUSD
+      contract_size: 1.0
+      digits: 2
+      point: 0.01
+      pip_value: 0.01    # CORRIGÉ: était 1.0, causait "crypto bucket plein" erroné
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      # Configuration optimisée 2025-12-24 - Position Manager moins agressif
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.5           # AUGMENTÉ 1.0→1.5 - Évite fermetures prématurées
+          offset_points: 0.0
+        partials:
+          - rr: 1.5         # AUGMENTÉ 1.0→1.5
+            close_frac: 0.3  # RÉDUIT 0.5→0.3 - Garde plus de position
+          - rr: 2.5         # AUGMENTÉ 2.0→2.5
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 2.0     # AUGMENTÉ 1.8→2.0
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 2.0     # AUGMENTÉ 1.6→2.0 - Trail moins serré
+          lock_rr: 0.5      # AUGMENTÉ 0.3→0.5
+      crypto_bucket:
+        enabled: true
+        cap: 0.02
+        min_factor: 0.33
+        max_open: 2
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
+      sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
+      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
+      macro: {enabled: true}
+
+  ETHUSD:
+    symbol: ETHUSD
+    enabled: false   # ⏸️ PAUSE 2026-01-06: Concentration sur noyau rentable
+    instrument:
+      broker_symbol: ETHUSD
+      contract_size: 1.0
+      digits: 2
+      point: 0.01
+      pip_value: 0.01    # CORRIGÉ: était 1.0
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      # Configuration optimisée 2025-12-24
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.5           # AUGMENTÉ 1.0→1.5
+          offset_points: 0.0
+        partials:
+          - rr: 1.5
+            close_frac: 0.3
+          - rr: 2.5
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 2.0
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 2.0
+          lock_rr: 0.5
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
+      sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
+      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
+      macro: {enabled: true}
+
+  BNBUSD:
+    symbol: BNBUSD
+    enabled: true
+    instrument:
+      broker_symbol: BNBUSD
+      contract_size: 1.0
+      digits: 2
+      point: 0.01
+      pip_value: 0.01    # CORRIGÉ 2025-12-24: était 1.0
+      lot_step: 0.01
+      max_lot: 2.0       # AJOUTÉ 2026-01-18: Limite lots (était 33+ avg, réduit à 2.0)
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
+      sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
+      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
+      macro: {enabled: true}
+
+  LTCUSD:
+    symbol: LTCUSD
+    enabled: true
+    instrument:
+      broker_symbol: LTCUSD
+      contract_size: 1.0
+      digits: 2
+      point: 0.01
+      pip_value: 0.01    # CORRIGÉ 2025-12-24: était 1.0
+      lot_step: 0.01
+      max_lot: 1.0       # RÉDUIT 2026-01-18: 3.0→1.0 (mode ultra-conservateur)
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+      crypto_bucket:
+        enabled: true
+        cap: 0.02
+        min_factor: 0.33
+        max_open: 2
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}
+      sentiment: {enabled: true}
+      fundamental: {enabled: true}
+      macro: {enabled: true}
+
+  XAUUSD:
+    symbol: XAUUSD
+    enabled: true
+    instrument:
+      broker_symbol: XAUUSD
+      contract_size: 100.0
+      digits: 2
+      point: 0.01
+      pip_value: 1.0
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
+      sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
+      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
+      macro: {enabled: true}
+
+  EURUSD:
+    symbol: EURUSD
+    enabled: false   # ⏸️ PAUSE 2026-01-06: WR 0% semaine Noel, concentration sur noyau
+    instrument:
+      broker_symbol: EURUSD
+      contract_size: 100000.0
+      digits: 5
+      point: 1.0e-05
+      pip_value: 1.0         # CORRIGÉ 2025-12-14: était 0.1 - confirmé par broker Vantage
+      lot_step: 0.01
+      max_lot: 0.5          # Limite volume max (2025-12-08)
+    risk:
+      tier: phase1
+      risk_per_trade: 0.005  # Réduit de 1% à 0.5% (2025-12-08)
+      max_daily_loss: 0.015  # Réduit (2025-12-08)
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
+      sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
+      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
+      macro: {enabled: true}
+
+  # ========================================
+  # FOREX PAIRS (PHASE 2)
+  # ========================================
+
+  GBPUSD:
+    symbol: GBPUSD
+    enabled: false   # ⛔ DÉSACTIVÉ: WR 0%, -$2,695
+    instrument:
+      broker_symbol: GBPUSD
+      contract_size: 100000.0
+      digits: 5
+      point: 1.0e-05
+      pip_value: 1.0         # CORRIGÉ 2025-12-14: était 0.1 - confirmé par broker Vantage
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # USDJPY - SYMBOLE PROBLÉMATIQUE - RECONFIGURATION STRICTE (2025-12-13)
+  # Perte de -$220,184 sur période test → Sizing drastiquement réduit
+  # ══════════════════════════════════════════════════════════════════════════
+  USDJPY:
+    symbol: USDJPY
+    enabled: false   # ⛔ DÉSACTIVÉ 2025-12-24: WR 0%, Perte -$38,912
+    instrument:
+      broker_symbol: USDJPY
+      contract_size: 100000.0
+      digits: 3
+      point: 0.001
+      pip_value: 0.64        # CORRIGÉ 2025-12-14: était 0.1 - confirmé par broker Vantage (dépend du taux USD/JPY)
+      lot_step: 0.01
+      max_lot: 0.3            # RÉDUIT 0.5→0.3 (OPTIMISATION 2025-12-13)
+    risk:
+      tier: phase1
+      risk_per_trade: 0.003   # RÉDUIT 0.005→0.003 (OPTIMISATION 2025-12-13)
+      max_daily_loss: 0.01    # RÉDUIT 0.015→0.01 (OPTIMISATION 2025-12-13)
+      max_consec_loss: 2      # RÉDUIT 3→2 - Pause rapide après pertes
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      # Seuils plus stricts pour USDJPY
+      min_score_for_proposal: 8.0   # NOUVEAU - Score minimum plus élevé
+      min_confluence: 5             # NOUVEAU - Plus de confirmation requise
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 0.8             # RÉDUIT 1.0→0.8 - BE plus rapide
+          offset_points: 5.0  # Offset pour sécuriser
+        partials:
+          - rr: 0.8           # RÉDUIT - Prise de profit plus rapide
+            close_frac: 0.5
+          - rr: 1.5
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.2       # RÉDUIT 1.8→1.2 - Trail plus tôt
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.2       # RÉDUIT 1.6→1.2 - Trail plus serré
+          lock_rr: 0.5        # AUGMENTÉ - Lock profit plus tôt
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: false}   # DÉSACTIVÉ - Scalping trop risqué sur JPY
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+
+  AUDUSD:
+    symbol: AUDUSD
+    enabled: true
+    instrument:
+      broker_symbol: AUDUSD
+      contract_size: 100000.0
+      digits: 5
+      point: 1.0e-05
+      pip_value: 1.0         # CORRIGÉ 2025-12-14: était 0.1 - confirmé par broker Vantage
+      lot_step: 0.01
+      max_lot: 0.3          # Limite volume max réduite (2025-12-08) - symbole problématique
+    risk:
+      tier: phase1
+      risk_per_trade: 0.003  # Réduit de 1% à 0.3% (2025-12-08) - symbole problématique
+      max_daily_loss: 0.01   # Réduit (2025-12-08)
+      max_consec_loss: 2     # Réduit (2025-12-08)
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+
+  # ========================================
+  # INDICES - Configuration 2025-12-14
+  # ========================================
+
+  NAS100:
+    symbol: NAS100
+    enabled: true
+    instrument:
+      broker_symbol: NAS100
+      contract_size: 1.0
+      digits: 2
+      point: 0.01
+      pip_value: 0.01        # CORRIGÉ 2025-12-14: était 1.0 - confirmé par broker Vantage
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 2.0
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+
+  SP500:
+    symbol: SP500
+    enabled: true
+    instrument:
+      broker_symbol: SP500
+      contract_size: 1.0      # Confirmé broker Vantage 2025-12-14
+      digits: 2
+      point: 0.01
+      pip_value: 0.01         # Confirmé broker Vantage 2025-12-14
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 2.0
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+
+  UK100:
+    symbol: UK100
+    enabled: false   # ⛔ DÉSACTIVÉ 2025-12-24: WR 0%, Perte -$23,124
+    instrument:
+      broker_symbol: UK100
+      contract_size: 1.0      # Confirmé broker Vantage 2025-12-14
+      digits: 2
+      point: 0.01
+      pip_value: 0.01         # Confirmé broker Vantage 2025-12-14
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 2.0
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+
+  # ========================================
+  # MATIÈRES PREMIÈRES / COMMODITIES - Configuration 2025-12-14
+  # ========================================
+
+  XAGUSD:
+    symbol: XAGUSD
+    enabled: false   # ⛔ DÉSACTIVÉ 2025-12-24: WR 0%, Perte -$11,006
+    instrument:
+      broker_symbol: XAGUSD
+      contract_size: 5000.0
+      digits: 3
+      point: 0.001
+      pip_value: 5.0
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+
+  USOUSD:
+    symbol: USOUSD
+    enabled: false   # ⏸️ PAUSE 2026-01-06: Concentration sur noyau rentable
+    instrument:
+      broker_symbol: USOUSD
+      contract_size: 1000.0   # Confirmé broker Vantage 2025-12-14
+      digits: 2
+      point: 0.01
+      pip_value: 1.0          # Confirmé broker Vantage 2025-12-14 (TickValue)
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+      trading_window:
+        enabled: true
+        sessions:
+          - {start: "08:00", end: "22:00", tz: "Europe/Zurich"}
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}
+      sentiment: {enabled: true}
+      fundamental: {enabled: true}
+      macro: {enabled: true}
+
+  # ========================================
+  # CRYPTOS (PHASE 2)
+  # ========================================
+
+  ADAUSD:
+    symbol: ADAUSD
+    enabled: false   # ⛔ DÉSACTIVÉ 2025-12-24: WR 15.9%, Perte -$138,956
+    instrument:
+      broker_symbol: ADAUSD
+      contract_size: 10000.0   # CORRIGÉ 2025-12-14: était 1.0 - broker utilise 10000 ADA par lot!
+      digits: 4
+      point: 0.0001
+      pip_value: 1.0           # CORRIGÉ 2025-12-14: était 0.0001 - confirmé par broker Vantage
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+      crypto_bucket:
+        enabled: true
+        cap: 0.02
+        min_factor: 0.33
+        max_open: 2
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+
+  SOLUSD:
+    symbol: SOLUSD
+    enabled: false   # ⛔ DÉSACTIVÉ 2026-01-06: WR 15.4%, -$12,353 (78% des pertes!)
+    instrument:
+      broker_symbol: SOLUSD
+      contract_size: 10.0   # CORRIGÉ: était 1.0 - broker utilise 10 SOL par lot!
+      digits: 2
+      point: 0.01
+      pip_value: 0.1        # CORRIGÉ: pip_value = point * contract_size = 0.01 * 10
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+      crypto_bucket:
+        enabled: true
+        cap: 0.02
+        min_factor: 0.33
+        max_open: 2
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}

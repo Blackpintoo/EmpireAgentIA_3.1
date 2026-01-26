@@ -1,0 +1,5 @@
+events:
+  - time_utc: "2025-08-19T12:00:00Z"
+    affects: ["USD"]
+    impact: "high"
+    title: "FOMC Minutes"

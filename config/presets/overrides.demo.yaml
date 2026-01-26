@@ -1,0 +1,50 @@
+GLOBAL:
+  execution:
+    dry_run: true        # VRAIE démo (pas d'ordres live)
+  gating_thresholds:
+    pf_min: 1.30
+    maxdd_max: 0.12
+    expectancy_min: 0.0
+    rr_min: 1.50
+    min_trades: 50       # Semaine 1: souple. (Repassera à 200 ensuite)
+    allow_no_report: true  # Autorise temporairement même sans rapport de backtest
+
+BTCUSD:
+  orchestrator: { auto_execute: true, telegram_validation: false, crypto_bucket: { enabled: true, cap: 0.02, min_factor: 0.35, max_open: 2 } }
+  risk: { risk_per_trade: 0.005 }
+
+ETHUSD:
+  orchestrator: { auto_execute: true, telegram_validation: false, crypto_bucket: { enabled: true, cap: 0.02, min_factor: 0.35, max_open: 2 } }
+  risk: { risk_per_trade: 0.005 }
+
+LNKUSD:
+  orchestrator: { auto_execute: true, telegram_validation: false, crypto_bucket: { enabled: true, cap: 0.02, min_factor: 0.33, max_open: 2 } }
+  risk: { risk_per_trade: 0.005 }
+
+BNBUSD:
+  orchestrator: { auto_execute: true, telegram_validation: false, crypto_bucket: { enabled: true, cap: 0.02, min_factor: 0.33, max_open: 2 } }
+  risk: { risk_per_trade: 0.005 }
+
+XAUUSD:
+  orchestrator:
+    weekend_guard:
+      enabled: true
+      close_day: FRI
+      close_time: "21:40"
+      reopen_day: SUN
+      reopen_time: "22:05"
+      timezone: Europe/Zurich
+      close_positions: true
+  risk: { risk_per_trade: 0.0075 }
+
+EURUSD:
+  orchestrator:
+    weekend_guard:
+      enabled: true
+      close_day: FRI
+      close_time: "21:40"
+      reopen_day: SUN
+      reopen_time: "22:05"
+      timezone: Europe/Zurich
+      close_positions: true
+  risk: { risk_per_trade: 0.0075 }

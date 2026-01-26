@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-12-24T17:13:27.635749+00:00",
+  "symbol": "XAGUSD",
+  "retail": {
+    "long_percentage": 46.0,
+    "short_percentage": 54.0,
+    "source": "simulated"
+  }
+}

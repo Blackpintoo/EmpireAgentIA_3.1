@@ -1,0 +1,14 @@
+Empire Agent IA - Weekly Audit
+Période analysée : 2025-10-05 -> 2025-10-11
+
+Résumé global
+- Trades détectés : 27
+- Exécutions confirmées : 17 (63.0 %)
+
+Détails par symbole
+- BTCUSD: 17/27 exécutions (63.0 %), R/R moyen 1.35 (n=17)
+    · retcode 10009 : 4
+
+Notes
+- Exécutions basées sur retcode 10008/10009 ou flag result.ok.
+- R/R estimé à partir des SL/TP proposés (pas des sorties effectives).

@@ -1,0 +1,27 @@
+{"ts": "2025-10-06T06:12:08", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:12:08", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.05, "result": {"ok": true, "retcode": 10009, "symbol": "BTCUSD", "side": "LONG", "volume": 0.05}}
+{"ts": "2025-10-06T06:13:56", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:13:56", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.05, "result": {"ok": true, "retcode": 10009, "symbol": "BTCUSD", "side": "LONG", "volume": 0.05}}
+{"ts": "2025-10-06T06:16:47", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:16:48", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.05, "result": {"ok": true, "retcode": 10009, "symbol": "BTCUSD", "side": "LONG", "volume": 0.05}}
+{"ts": "2025-10-06T06:17:49", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:17:50", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.2, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:17:50", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.05, "result": {"ok": true, "retcode": 10009, "symbol": "BTCUSD", "side": "LONG", "volume": 0.05}}
+{"ts": "2025-10-06T06:18:34", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:18:35", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.2, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:18:35", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49950.0, "tp": 50100.0, "lots": 0.5, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:18:54", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:19:02", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.2, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:19:03", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49950.0, "tp": 50100.0, "lots": 0.5, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:21:06", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:21:14", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.2, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:21:14", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49950.0, "tp": 50100.0, "lots": 0.5, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:26:58", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:26:59", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.2, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:26:59", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49950.0, "tp": 50100.0, "lots": 0.5, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:27:16", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:27:23", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.2, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:27:24", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49950.0, "tp": 50100.0, "lots": 0.5, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:33:14", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "BUY", "price": null, "sl": 0.0, "tp": 0.0, "lots": 0.01, "result": {"mode": "dry_run"}}
+{"ts": "2025-10-06T06:33:21", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.2, "result": {"ok": true, "deal": 1, "order": 1}}
+{"ts": "2025-10-06T06:33:21", "event": "TRADE_EXEC", "symbol": "BTCUSD", "side": "LONG", "price": 50000.0, "sl": 49950.0, "tp": 50100.0, "lots": 0.5, "result": {"ok": true, "deal": 1, "order": 1}}

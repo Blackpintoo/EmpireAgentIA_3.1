@@ -1,0 +1,4 @@
+# Configuration REAL Empire Agent IA 
+dry_run: false 
+mode: "REAL" 
+log_level: "INFO" 

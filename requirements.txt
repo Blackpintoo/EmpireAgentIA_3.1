@@ -1,0 +1,16 @@
+pandas
+MetaTrader5
+feedparser
+requests
+python-telegram-bot
+pyyaml
+prometheus_client
+six
+pytz
+aiogram>=3.0
+apscheduler
+python-dotenv
+optuna
+textblob
+streamlit
+matplotlib>=3.9

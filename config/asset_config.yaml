@@ -1,0 +1,288 @@
+# PHASE 4 - Configuration par type d'actif
+# Paramètres spécifiques pour FOREX, CRYPTOS, INDICES, MATIÈRES
+
+# ============================================================================
+# CRYPTOS - Trading 24/7, haute volatilité
+# ============================================================================
+CRYPTOS:
+  symbols: [BTCUSD, ETHUSD, BNBUSD, LTCUSD, ADAUSD, SOLUSD]
+
+  trading_sessions:
+    enabled: true
+    # 24/7 mais éviter les périodes de faible liquidité
+    avoid_periods:
+      - {day: "weekend", hours: ["02:00-06:00"]}  # Faible volume weekend nuit
+    preferred_sessions:
+      - {name: "asia_open", hours: ["01:00-03:00"]}
+      - {name: "london_open", hours: ["08:00-10:00"]}
+      - {name: "ny_open", hours: ["14:00-16:00"]}
+      - {name: "overlap_london_ny", hours: ["14:00-17:00"]}  # Plus liquide
+
+  risk_params:
+    risk_per_trade_pct: 0.012  # Légèrement plus élevé (1.2%)
+    max_daily_loss_pct: 2.5
+    max_parallel_positions: 2
+    position_sizing_method: "atr_based"  # ATR important pour cryptos volatils
+
+  spreads_commissions:
+    avg_spread_points: 30  # Spread moyen plus élevé
+    commission_per_lot: 0.0  # Pas de commission, spread inclus
+    slippage_entry: 5
+    slippage_exit: 5
+
+  timeframes:
+    primary: M15
+    secondary: [M5, M30, H1]
+    trend_analysis: [H4, D1]
+    scalping: M1
+    swing: H1
+
+  technical_params:
+    atr_period: 14
+    atr_multiplier_sl: 1.8  # Plus large pour volatilité crypto
+    atr_multiplier_tp: 3.0
+    ema_fast: 12
+    ema_slow: 26
+    rsi_period: 14
+    rsi_overbought: 70
+    rsi_oversold: 30
+
+  filters:
+    min_volume_24h: 1000000  # 1M USD minimum en volume
+    max_spread_pct: 0.15  # 0.15% max
+    volatility_filter: true
+    max_atr_spike: 3.0  # Éviter les pics de volatilité extrêmes
+
+# ============================================================================
+# FOREX - Sessions principales, faible spread
+# ============================================================================
+FOREX:
+  symbols: [EURUSD, GBPUSD, USDJPY, AUDUSD]
+
+  trading_sessions:
+    enabled: true
+    timezone: "Europe/Zurich"
+    sessions:
+      - {name: "tokyo", start: "00:00", end: "09:00", activity: "low"}
+      - {name: "london", start: "08:00", end: "17:00", activity: "high"}
+      - {name: "new_york", start: "14:00", end: "23:00", activity: "high"}
+      - {name: "overlap_london_ny", start: "14:00", end: "17:00", activity: "very_high"}
+    # Éviter trading hors sessions principales
+    blackout_periods:
+      - {hours: ["23:00-01:00"], reason: "low_liquidity"}  # Entre NY et Tokyo
+      - {day: "friday", hours: ["21:00-23:59"], reason: "weekend_close"}
+      - {day: "sunday", hours: ["00:00-23:59"], reason: "weekend"}
+
+  risk_params:
+    risk_per_trade_pct: 0.01  # 1% standard
+    max_daily_loss_pct: 2.0
+    max_parallel_positions: 2
+    position_sizing_method: "fixed_pct"
+
+  spreads_commissions:
+    avg_spread_points: 15  # Spread faible pour majors
+    commission_per_lot: 5.0  # Commission broker
+    slippage_entry: 2
+    slippage_exit: 2
+
+  timeframes:
+    primary: H1
+    secondary: [M30, H4]
+    trend_analysis: [D1, W1]
+    scalping: M5
+    swing: H4
+
+  technical_params:
+    atr_period: 14
+    atr_multiplier_sl: 1.5  # Plus serré pour FOREX
+    atr_multiplier_tp: 2.5
+    ema_fast: 10
+    ema_slow: 50
+    rsi_period: 14
+    rsi_overbought: 65
+    rsi_oversold: 35
+
+  filters:
+    min_atr_pips: 5  # Minimum de mouvement
+    max_spread_pips: 3  # 3 pips max
+    avoid_news_minutes: 15  # Éviter 15 min avant/après news importantes
+
+  # Configuration spécifique par paire
+  pair_specific:
+    EURUSD:
+      preferred_sessions: ["london", "new_york", "overlap_london_ny"]
+      avg_spread_points: 10
+    GBPUSD:
+      preferred_sessions: ["london", "overlap_london_ny"]
+      avg_spread_points: 15
+      atr_multiplier_sl: 1.8  # Plus volatil
+    USDJPY:
+      preferred_sessions: ["tokyo", "overlap_london_ny"]
+      avg_spread_points: 12
+    AUDUSD:
+      preferred_sessions: ["tokyo", "london"]
+      avg_spread_points: 15
+
+# ============================================================================
+# INDICES - Horaires stricts, forte volatilité
+# ============================================================================
+INDICES:
+  symbols: [DJ30, NAS100, GER40]
+
+  trading_sessions:
+    enabled: true
+    timezone: "Europe/Zurich"
+    # Horaires stricts par indice
+    schedules:
+      DJ30:
+        - {name: "us_premarket", start: "13:00", end: "15:30", activity: "medium"}
+        - {name: "us_regular", start: "15:30", end: "22:00", activity: "high"}
+        - {name: "us_afterhours", start: "22:00", end: "23:00", activity: "low"}
+      NAS100:
+        - {name: "us_premarket", start: "13:00", end: "15:30", activity: "medium"}
+        - {name: "us_regular", start: "15:30", end: "22:00", activity: "high"}
+        - {name: "us_afterhours", start: "22:00", end: "23:00", activity: "low"}
+      GER40:
+        - {name: "eu_premarket", start: "07:00", end: "09:00", activity: "medium"}
+        - {name: "eu_regular", start: "09:00", end: "17:30", activity: "high"}
+        - {name: "eu_afterhours", start: "17:30", end: "22:00", activity: "medium"}
+
+  risk_params:
+    risk_per_trade_pct: 0.015  # 1.5% (volatilité élevée)
+    max_daily_loss_pct: 3.0
+    max_parallel_positions: 1  # 1 seul indice à la fois
+    position_sizing_method: "atr_based"
+
+  spreads_commissions:
+    avg_spread_points: 25  # Spread variable selon liquidité
+    commission_per_lot: 8.0
+    slippage_entry: 5
+    slippage_exit: 5
+
+  timeframes:
+    primary: M15
+    secondary: [M5, M30, H1]
+    trend_analysis: [H4, D1]
+    scalping: M1
+    swing: H1
+
+  technical_params:
+    atr_period: 14
+    atr_multiplier_sl: 2.0  # Large pour absorber volatilité
+    atr_multiplier_tp: 3.5
+    ema_fast: 9
+    ema_slow: 21
+    rsi_period: 14
+    rsi_overbought: 70
+    rsi_oversold: 30
+
+  filters:
+    avoid_low_activity: true
+    min_volume_threshold: 500  # Volume minimum
+    max_gap_points: 50  # Éviter gaps trop importants
+
+  # Configuration spécifique par indice
+  index_specific:
+    DJ30:
+      best_hours: ["15:30-22:00"]  # Heures régulières US
+      avg_spread_points: 20
+    NAS100:
+      best_hours: ["15:30-22:00"]
+      avg_spread_points: 25
+      atr_multiplier_sl: 2.2  # Plus volatil
+    GER40:
+      best_hours: ["09:00-17:30"]  # Heures régulières EU
+      avg_spread_points: 20
+
+# ============================================================================
+# MATIÈRES (COMMODITIES) - Or, Argent, Pétrole
+# ============================================================================
+COMMODITIES:
+  symbols: [XAUUSD, XAGUSD, CL-OIL]
+
+  trading_sessions:
+    enabled: true
+    timezone: "Europe/Zurich"
+    # Horaires principaux des matières premières
+    sessions:
+      - {name: "asian", start: "01:00", end: "09:00", activity: "medium"}
+      - {name: "london", start: "08:00", end: "17:00", activity: "high"}
+      - {name: "ny", start: "14:00", end: "21:00", activity: "high"}
+      - {name: "overlap", start: "14:00", end: "17:00", activity: "very_high"}
+    blackout_periods:
+      - {hours: ["21:00-01:00"], reason: "low_liquidity"}
+
+  risk_params:
+    risk_per_trade_pct: 0.012  # 1.2%
+    max_daily_loss_pct: 2.5
+    max_parallel_positions: 2
+    position_sizing_method: "atr_based"
+
+  spreads_commissions:
+    avg_spread_points: 20
+    commission_per_lot: 6.0
+    slippage_entry: 3
+    slippage_exit: 3
+
+  timeframes:
+    primary: M30
+    secondary: [M15, H1, H4]
+    trend_analysis: [D1, W1]
+    scalping: M5
+    swing: H4
+
+  technical_params:
+    atr_period: 14
+    atr_multiplier_sl: 1.6
+    atr_multiplier_tp: 2.8
+    ema_fast: 12
+    ema_slow: 50
+    rsi_period: 14
+    rsi_overbought: 70
+    rsi_oversold: 30
+
+  filters:
+    avoid_news_minutes: 30  # Plus sensible aux news macro
+    min_atr_threshold: 0.5
+
+  # Configuration spécifique par matière
+  commodity_specific:
+    XAUUSD:  # Or
+      preferred_sessions: ["london", "ny", "overlap"]
+      avg_spread_points: 20
+      news_sensitivity: "very_high"  # Très sensible aux news USD
+    XAGUSD:  # Argent
+      preferred_sessions: ["london", "ny", "overlap"]
+      avg_spread_points: 25
+      atr_multiplier_sl: 1.8  # Plus volatil que l'or
+      news_sensitivity: "high"
+    CL-OIL:  # Pétrole (Crude Light)
+      preferred_sessions: ["london", "ny"]
+      avg_spread_points: 30
+      atr_multiplier_sl: 2.0  # Très volatil
+      news_sensitivity: "very_high"
+      avoid_rollover_days: true  # Éviter les jours de rollover
+
+# ============================================================================
+# RÈGLES GLOBALES PAR TYPE
+# ============================================================================
+global_rules:
+  # Corrélations à éviter (ne pas trader simultanément)
+  correlation_groups:
+    - [EURUSD, GBPUSD]  # Corrélés positivement
+    - [XAUUSD, XAGUSD]  # Métaux précieux
+    - [DJ30, NAS100]    # Indices US
+
+  # Exposition max par type
+  max_exposure:
+    CRYPTOS: 0.04   # 4% max du capital
+    FOREX: 0.03     # 3% max
+    INDICES: 0.025  # 2.5% max
+    COMMODITIES: 0.03  # 3% max
+
+  # Priorités d'exécution (si plusieurs signaux)
+  priority_order:
+    - FOREX          # Plus stable, priorité haute
+    - COMMODITIES    # Tendances claires
+    - CRYPTOS        # Volatil mais opportunités
+    - INDICES        # Horaires limités, priorité basse

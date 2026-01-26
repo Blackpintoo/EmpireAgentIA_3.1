@@ -1,0 +1,68 @@
+{
+  "created_at": "2025-08-24T17:33:27.193697",
+  "version": "analytics.v1",
+  "files": {
+    "trades_log.csv": [
+      "ts_utc",
+      "symbol",
+      "side",
+      "lots",
+      "entry",
+      "sl",
+      "tp",
+      "retcode",
+      "ok",
+      "ticket",
+      "reqid",
+      "timeframe_gate",
+      "strategy_tag",
+      "agg_score",
+      "confluence",
+      "news_dir",
+      "swing_dir",
+      "scalp_dir",
+      "structure_dir",
+      "rr_target",
+      "gate_reason",
+      "crypto_bucket_factor",
+      "spread_at_entry",
+      "slippage_pts",
+      "exit_price",
+      "pnl_ccy",
+      "rr_realized",
+      "duration_sec"
+    ],
+    "proposals_log.csv": [
+      "ts_utc",
+      "symbol",
+      "side",
+      "price",
+      "sl",
+      "tp",
+      "lots",
+      "score",
+      "confluence",
+      "ttl_sec",
+      "expired",
+      "executed"
+    ],
+    "pm_log.csv": [
+      "ts_utc",
+      "symbol",
+      "event",
+      "rr_at_event",
+      "new_sl",
+      "new_tp",
+      "lot_remaining",
+      "comment"
+    ],
+    "equity_log.csv": [
+      "ts_utc",
+      "balance",
+      "equity",
+      "margin",
+      "free_margin"
+    ],
+    "agents_snap.jsonl": "json lines"
+  }
+}

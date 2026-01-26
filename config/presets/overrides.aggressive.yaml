@@ -1,0 +1,224 @@
+# config/presets/overrides.aggressive.yaml
+GLOBAL:
+  execution:
+    dry_run: false
+  gating_thresholds:
+    pf_min: 1.05
+    maxdd_max: 0.20
+    expectancy_min: -0.05
+    rr_min: 0.8
+    min_trades: 20
+    allow_no_report: true
+  safety:
+    max_daily_loss: 0.05
+    max_total_drawdown: 0.15
+    mt5_circuit_breaker_retcodes: [10004, 10006, 10021]
+  min_score_for_proposal: 1.0
+  min_confluence: 0
+  require_sl_tp: false
+  once_per_candle_tf: null
+
+BTCUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    votes_required: 2
+    min_confluence: 0
+    min_score_for_proposal: 0.9
+    require_swing_confirm: false
+    require_scalping_entry: false
+    require_sl_tp: false
+    max_trades_per_day: 12
+    cooldown:
+      min_secs_between_trades: 30
+      after_trade_min: 0
+      after_loss_min: 0
+      after_win_min: 0
+      after_reject_min: 0
+      after_streak_n: 999
+      after_streak_min: 0
+    crypto_bucket:
+      enabled: true
+      cap: 0.05
+      min_factor: 0.2
+      max_open: 5
+  risk:
+    risk_per_trade: 0.01
+  agents:
+    smart_money:
+      enabled: true
+      params:
+        timeframe: M15
+        lookback: 360
+        trend_lookback: 90
+    structure:
+      params:
+        min_rr: 1.0
+    scalping:
+      params:
+        min_rr: 1.0
+    swing:
+      params:
+        min_rr: 1.0
+
+ETHUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    votes_required: 2
+    min_confluence: 0
+    min_score_for_proposal: 0.9
+    require_swing_confirm: false
+    require_scalping_entry: false
+    require_sl_tp: false
+    max_trades_per_day: 10
+    cooldown:
+      min_secs_between_trades: 30
+      after_trade_min: 0
+      after_loss_min: 0
+      after_win_min: 0
+      after_reject_min: 0
+      after_streak_n: 999
+      after_streak_min: 0
+    crypto_bucket:
+      enabled: true
+      cap: 0.04
+      min_factor: 0.2
+      max_open: 4
+  risk:
+    risk_per_trade: 0.01
+  agents:
+    smart_money:
+      enabled: true
+    structure:
+      params:
+        min_rr: 1.0
+    scalping:
+      params:
+        min_rr: 1.0
+
+BNBUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    votes_required: 2
+    min_confluence: 0
+    min_score_for_proposal: 0.9
+    require_swing_confirm: false
+    require_scalping_entry: false
+    require_sl_tp: false
+    max_trades_per_day: 8
+    cooldown:
+      min_secs_between_trades: 45
+      after_trade_min: 0
+      after_loss_min: 0
+      after_win_min: 0
+      after_reject_min: 0
+      after_streak_n: 999
+      after_streak_min: 0
+    weekend_guard:
+      enabled: true
+      close_day: FRI
+      close_time: "21:40"
+      reopen_day: SUN
+      reopen_time: "22:05"
+      timezone: Europe/Zurich
+      close_positions: true
+    crypto_bucket:
+      enabled: true
+      cap: 0.04
+      min_factor: 0.2
+      max_open: 3
+  risk:
+    risk_per_trade: 0.01
+  agents:
+    smart_money:
+      enabled: true
+
+LTCUSD:  # Aggressive crypto config
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    votes_required: 2
+    min_confluence: 0
+    min_score_for_proposal: 0.9
+    require_swing_confirm: false
+    require_scalping_entry: false
+    require_sl_tp: false
+    max_trades_per_day: 8
+    cooldown:
+      min_secs_between_trades: 45
+      after_trade_min: 0
+      after_loss_min: 0
+      after_win_min: 0
+      after_reject_min: 0
+      after_streak_n: 999
+      after_streak_min: 0
+    weekend_guard:
+      enabled: true
+      close_day: FRI
+      close_time: "21:40"
+      reopen_day: SUN
+      reopen_time: "22:05"
+      timezone: Europe/Zurich
+      close_positions: true
+    crypto_bucket:
+      enabled: true
+      cap: 0.04
+      min_factor: 0.2
+      max_open: 3
+  risk:
+    risk_per_trade: 0.01
+  agents:
+    smart_money:
+      enabled: true
+
+XAUUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    votes_required: 2
+    min_confluence: 0
+    min_score_for_proposal: 0.95
+    require_swing_confirm: false
+    require_scalping_entry: false
+    require_sl_tp: false
+    max_trades_per_day: 10
+    cooldown:
+      min_secs_between_trades: 45
+      after_trade_min: 0
+      after_loss_min: 0
+      after_win_min: 0
+      after_reject_min: 0
+      after_streak_n: 999
+      after_streak_min: 0
+  risk:
+    risk_per_trade: 0.008
+  agents:
+    smart_money:
+      enabled: true
+
+EURUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    votes_required: 2
+    min_confluence: 0
+    min_score_for_proposal: 0.95
+    require_swing_confirm: false
+    require_scalping_entry: false
+    require_sl_tp: false
+    max_trades_per_day: 10
+    cooldown:
+      min_secs_between_trades: 45
+      after_trade_min: 0
+      after_loss_min: 0
+      after_win_min: 0
+      after_reject_min: 0
+      after_streak_n: 999
+      after_streak_min: 0
+  risk:
+    risk_per_trade: 0.008
+  agents:
+    smart_money:
+      enabled: true

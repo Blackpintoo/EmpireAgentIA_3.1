@@ -1,0 +1,13 @@
+{
+  "timestamp": 1764495187.4917455,
+  "sentiment": {
+    "symbol": "EURUSD",
+    "ticker": "FOREX:EUR",
+    "sentiment_score": 0.103,
+    "relevance_score": 0.178,
+    "category": "NEUTRAL",
+    "articles_count": 50,
+    "timestamp": "2025-11-30T09:33:07.491429+00:00",
+    "error": null
+  }
+}

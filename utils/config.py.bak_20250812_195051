@@ -1,0 +1,25 @@
+# utils/config.py
+from pathlib import Path
+import yaml
+import threading
+
+_config_lock = threading.Lock()
+_GLOBAL_CONFIG = {}
+
+def load_config(path):
+    p = Path(path)
+    with _config_lock:
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        return data
+
+def save_config(cfg: dict, path):
+    p = Path(path)
+    with _config_lock:
+        p.write_text(yaml.safe_dump(cfg, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+def reload_global_config(path):
+    """Si vous avez un cache global quelque part, vous pouvez l’actualiser ici.
+    La plupart du temps, recharger depuis le disque suffit (fait dans l’orchestrateur)."""
+    global _GLOBAL_CONFIG
+    with _config_lock:
+        _GLOBAL_CONFIG = load_config(path)

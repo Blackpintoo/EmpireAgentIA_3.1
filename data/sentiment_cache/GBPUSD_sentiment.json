@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-12-26T15:24:22.720056+00:00",
+  "symbol": "GBPUSD",
+  "retail": {
+    "long_percentage": 37.0,
+    "short_percentage": 63.0,
+    "source": "simulated"
+  }
+}

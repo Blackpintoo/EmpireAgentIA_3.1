@@ -1,0 +1,60 @@
+GLOBAL:
+  execution: { dry_run: false }
+  gating_thresholds:
+    pf_min: 1.30
+    maxdd_max: 0.12
+    expectancy_min: 0.0
+    rr_min: 1.50
+    min_trades: 200
+  live_stops:
+    daily_loss_limit_pct: 0.02
+    max_drawdown_pct: 0.10
+    circuit_breaker: { window_seconds: 60, max_errors: 5 }
+  news_freeze:
+    window_before_min: 15
+    window_after_min: 15
+    impacts: [High]
+    manual: []  # exemple: [["2025-09-06 14:30","NFP USD"]]
+
+BTCUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    crypto_bucket: { cap: 0.02, min_factor: 0.35, max_open: 2 }
+  risk: { risk_per_trade: 0.005 }  # 0.5%
+
+ETHUSD:
+  orchestrator: { auto_execute: true, telegram_validation: false, crypto_bucket: { cap: 0.02, min_factor: 0.35, max_open: 2 } }
+  risk: { risk_per_trade: 0.005 }
+
+LNKUSD:
+  orchestrator: { auto_execute: true, telegram_validation: false, crypto_bucket: { cap: 0.02, min_factor: 0.33, max_open: 2 } }
+  risk: { risk_per_trade: 0.005 }
+
+BNBUSD:
+  orchestrator: { auto_execute: true, telegram_validation: false, crypto_bucket: { cap: 0.02, min_factor: 0.33, max_open: 2 } }
+  risk: { risk_per_trade: 0.005 }
+
+EURUSD:
+  orchestrator:
+    weekend_guard:
+      enabled: true
+      close_day: FRI
+      close_time: "21:40"
+      reopen_day: SUN
+      reopen_time: "22:05"
+      timezone: Europe/Zurich
+      close_positions: true
+  risk: { risk_per_trade: 0.0075 }
+
+XAUUSD:
+  orchestrator:
+    weekend_guard:
+      enabled: true
+      close_day: FRI
+      close_time: "21:40"
+      reopen_day: SUN
+      reopen_time: "22:05"
+      timezone: Europe/Zurich
+      close_positions: true
+  risk: { risk_per_trade: 0.0075 }

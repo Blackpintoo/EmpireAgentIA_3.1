@@ -1,0 +1,150 @@
+# config/presets/overrides.weekend.yaml
+# Week-end Crypto (ultra-agressif) — BTC/LINK 24/7, compounding + garde-fous
+
+BTCUSD:
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    status_report_hours: 2
+
+    # Agrégation & qualité (un peu plus permissif que la semaine)
+    min_rr: 1.35
+    votes_required: 2
+    min_confluence: 1
+    min_score_for_proposal: 1.6
+
+    agent_weights:
+      news: 0.5
+      swing: 0.5
+      scalping: 0.8
+      structure: 0.6
+      smc: 0.6
+    whale_override:
+      enable: true
+      min_trust: 0.6
+      min_signal: 0.55
+      allow_in_vol_spike: true
+      volatility_z_th: 3.5
+
+    multi_timeframes:
+      enabled: true
+      tfs: ["H4", "H1", "M30", "M15", "M5"]
+      tf_weights:
+        D1: 1.2
+        H4: 1.1
+        H1: 1.2
+        M30: 1.0
+        M15: 0.9
+        M5: 0.8
+        M1: 0.7
+
+    # Cadence
+    once_per_candle_tf: "M15"
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 150   # 2min30
+      max_trades_per_day: 20
+      after_trade_min: 1
+      after_win_min: 0
+      after_loss_min: 5
+      after_reject_min: 2
+      after_streak_n: 3
+      after_streak_min: 15
+
+    # Fallback ATR
+    atr_sl_mult: 1.25
+    atr_tp_mult: 2.15
+
+    # 24/7 pour crypto
+    trading_window:
+      enabled: false
+
+    # Bucket d'exposition crypto partagé BTC+LINK
+    crypto_bucket:
+      enabled: true
+      cap: 0.06          # 6% equity cumulé week-end
+      min_factor: 0.20   # si réduction <20% → on annule
+
+    timeframes:
+      orchestrator: 60
+
+  risk:
+    risk_per_trade: 0.014         # 1.4% par trade week-end (agressif)
+    max_consec_losses: 4
+    daily_loss_limit_pct: 0.035   # stop si -3.5% jour
+    dynamic_risk: true
+
+  agents:
+    structure:
+      smc_enabled: true
+      smc_pivot_window: 3
+      smc_fvg_tolerance: 0.05
+      smc_eq_tolerance: 0.02
+
+  interval_secs: 20
+
+LTCUSD:  # Week-end crypto config
+  orchestrator:
+    auto_execute: true
+    telegram_validation: false
+    status_report_hours: 2
+    min_rr: 1.35
+    votes_required: 2
+    min_confluence: 1
+    min_score_for_proposal: 1.6
+    agent_weights:
+      news: 0.5
+      swing: 0.5
+      scalping: 0.8
+      structure: 0.6
+      smc: 0.6
+    whale_override:
+      enable: true
+      min_trust: 0.6
+      min_signal: 0.55
+      allow_in_vol_spike: true
+      volatility_z_th: 3.5
+    multi_timeframes:
+      enabled: true
+      tfs: ["H4", "H1", "M30", "M15", "M5"]
+      tf_weights:
+        H1: 1.2
+        M30: 1.0
+        M15: 0.9
+        M5: 0.8
+    once_per_candle_tf: "M15"
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 150
+      max_trades_per_day: 18
+      after_trade_min: 1
+      after_win_min: 0
+      after_loss_min: 5
+      after_reject_min: 2
+      after_streak_n: 3
+      after_streak_min: 15
+    atr_sl_mult: 1.25
+    atr_tp_mult: 2.15
+    trading_window:
+      enabled: false
+    crypto_bucket:
+      enabled: true
+      cap: 0.06
+      min_factor: 0.20
+    timeframes:
+      orchestrator: 60
+
+  risk:
+    risk_per_trade: 0.0125
+    max_consec_losses: 4
+    daily_loss_limit_pct: 0.035
+    dynamic_risk: true
+
+  agents:
+    structure:
+      smc_enabled: true
+      smc_pivot_window: 4
+      smc_fvg_tolerance: 0.08
+      smc_eq_tolerance: 0.03
+
+  interval_secs: 20

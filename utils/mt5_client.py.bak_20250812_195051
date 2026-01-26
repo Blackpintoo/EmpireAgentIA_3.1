@@ -1,0 +1,282 @@
+import MetaTrader5 as mt5
+import yaml
+import threading
+import time
+from datetime import datetime
+from utils.logger import logger
+
+class MT5Client:
+    """
+    Client MT5 robuste :
+    - Initialisation unique (thread-safe)
+    - Conversion timeframe str -> mt5.TIMEFRAME_*
+    - Helpers fetch/copy_rates avec retours normalisés (ndarray non vide ou [])
+    - place_order avec retries sur REQUOTE/BUSY/PRICE_OFF
+    - Sélection de symbole idempotente au niveau global (évite logs répétés)
+    """
+
+    # Expose (optionnel) quelques constantes courantes
+    TIMEFRAME_M1  = mt5.TIMEFRAME_M1
+    TIMEFRAME_M5  = mt5.TIMEFRAME_M5
+    TIMEFRAME_M15 = mt5.TIMEFRAME_M15
+    TIMEFRAME_M30 = mt5.TIMEFRAME_M30
+    TIMEFRAME_H1  = mt5.TIMEFRAME_H1
+    TIMEFRAME_H4  = mt5.TIMEFRAME_H4
+    TIMEFRAME_D1  = mt5.TIMEFRAME_D1
+
+    # Garde-fou d'init global (évite multiples init/login)
+    _initialized = False
+    _init_lock = threading.Lock()
+
+    # Mémo global des symboles déjà sélectionnés (toutes instances)
+    _selected_global = set()
+    _selected_lock = threading.Lock()
+
+    def __init__(self, cfg_path="config/config.yaml"):
+        self.cfg_path = cfg_path
+        full_cfg = yaml.safe_load(open(cfg_path, encoding="utf-8"))
+        self.mt5_cfg = full_cfg.get("mt5", {}) or {}
+        self.default_symbol = full_cfg.get("symbol")
+        # Mémo par instance (utile mais ne suffit pas si plusieurs instances existent)
+        self._symbol_selected = set()
+
+        # Initialisation (unique)
+        if not self.ensure_initialized():
+            raise ConnectionError("MT5 initialization/login failed")
+
+        # Sélection du symbole par défaut (si défini)
+        if self.default_symbol:
+            self._select_symbol(self.default_symbol)
+
+    def ensure_initialized(self) -> bool:
+        """Initialise MT5 et login une seule fois de manière thread-safe."""
+        if self.__class__._initialized:
+            return True
+        with self.__class__._init_lock:
+            if self.__class__._initialized:
+                return True
+
+            ok = mt5.initialize()
+            if not ok:
+                err = mt5.last_error()
+                logger.error(f"MT5 initialize failed: {err}")
+                return False
+
+            account = self.mt5_cfg.get("account")
+            password = self.mt5_cfg.get("password")
+            server = self.mt5_cfg.get("server")
+            if account and password and server:
+                if not mt5.login(account, password=password, server=server):
+                    err = mt5.last_error()
+                    logger.error(f"MT5 login failed: {err}")
+                    return False
+
+            self.__class__._initialized = True
+            logger.info("MT5 initialized")
+            return True
+
+    # -------------------------------
+    # Timeframe parsing / conversion
+    # -------------------------------
+    @staticmethod
+    def parse_timeframe(tf):
+        """
+        Accepte 'M1','M5','M15','M30','H1','H4','D1','W1','MN1' ou int déjà codé.
+        Retourne mt5.TIMEFRAME_* correspondant ou lève ValueError si inconnu.
+        """
+        if isinstance(tf, int):
+            return tf
+        if not isinstance(tf, str):
+            raise ValueError(f"Timeframe invalide: {tf}")
+
+        key = tf.strip().upper()
+        mapping = {
+            "M1": mt5.TIMEFRAME_M1,
+            "M2": getattr(mt5, "TIMEFRAME_M2", mt5.TIMEFRAME_M1),
+            "M3": getattr(mt5, "TIMEFRAME_M3", mt5.TIMEFRAME_M1),
+            "M4": getattr(mt5, "TIMEFRAME_M4", mt5.TIMEFRAME_M1),
+            "M5": mt5.TIMEFRAME_M5,
+            "M6": getattr(mt5, "TIMEFRAME_M6", mt5.TIMEFRAME_M5),
+            "M10": getattr(mt5, "TIMEFRAME_M10", mt5.TIMEFRAME_M5),
+            "M12": getattr(mt5, "TIMEFRAME_M12", mt5.TIMEFRAME_M5),
+            "M15": mt5.TIMEFRAME_M15,
+            "M20": getattr(mt5, "TIMEFRAME_M20", mt5.TIMEFRAME_M15),
+            "M30": mt5.TIMEFRAME_M30,
+            "H1": mt5.TIMEFRAME_H1,
+            "H2": getattr(mt5, "TIMEFRAME_H2", mt5.TIMEFRAME_H1),
+            "H3": getattr(mt5, "TIMEFRAME_H3", mt5.TIMEFRAME_H1),
+            "H4": mt5.TIMEFRAME_H4,
+            "H6": getattr(mt5, "TIMEFRAME_H6", mt5.TIMEFRAME_H4),
+            "H8": getattr(mt5, "TIMEFRAME_H8", mt5.TIMEFRAME_H4),
+            "H12": getattr(mt5, "TIMEFRAME_H12", mt5.TIMEFRAME_H4),
+            "D1": mt5.TIMEFRAME_D1,
+            "W1": mt5.TIMEFRAME_W1,
+            "MN1": mt5.TIMEFRAME_MN1,
+            "MN": mt5.TIMEFRAME_MN1,
+        }
+        if key not in mapping:
+            raise ValueError(f"Timeframe non supporté: {tf}")
+        return mapping[key]
+
+    # -------------------------------
+    # Helpers symbol / data
+    # -------------------------------
+    def _select_symbol(self, symbol: str):
+        """
+        Sélectionne un symbole une seule fois par process :
+        - Mémo global (toutes instances) pour éviter les logs répétés
+        - Mémo instance (pour éviter les calls inutiles sur la même instance)
+        """
+        if symbol in self._symbol_selected:
+            return True
+
+        with self.__class__._selected_lock:
+            if symbol in self.__class__._selected_global:
+                # Déjà sélectionné ailleurs → pas de re-log
+                self._symbol_selected.add(symbol)
+                return True
+
+            if not mt5.symbol_select(symbol, True):
+                logger.error(f"Failed to select symbol {symbol}")
+                return False
+
+            # On ne log qu'une seule fois par symbole (globalement)
+            logger.info(f"Symbol {symbol} selected for trading")
+            self.__class__._selected_global.add(symbol)
+            self._symbol_selected.add(symbol)
+            return True
+
+    def copy_rates(self, symbol: str, timeframe, count: int = 200):
+        """
+        Copie des rates à partir de la position courante.
+        timeframe : str (ex 'H1') ou mt5.TIMEFRAME_*
+        Retour : ndarray non vide OU [] si pas de données/erreur.
+        """
+        if not self.ensure_initialized():
+            return []
+        self._select_symbol(symbol)
+        tf_code = self.parse_timeframe(timeframe)
+        rates = mt5.copy_rates_from_pos(symbol, tf_code, 0, count)
+        if rates is None:
+            logger.error(f"Failed to copy rates for {symbol} @ {timeframe}")
+            return []
+        try:
+            if hasattr(rates, "size") and rates.size == 0:
+                return []
+            if len(rates) == 0:
+                return []
+        except Exception:
+            pass
+        return rates
+
+    def fetch_ohlc(self, symbol, timeframe, n=1000):
+        """Compatibilité : retourne ndarray (non vide) ou [] si pas de data."""
+        rates = self.copy_rates(symbol, timeframe, n)
+        if rates is None:
+            return []
+        try:
+            if hasattr(rates, "size") and rates.size == 0:
+                return []
+            if len(rates) == 0:
+                return []
+        except Exception:
+            pass
+        return rates
+
+    def copy_rates_range(self, symbol, timeframe, start: datetime, end: datetime):
+        """
+        Retourne les rates (OHLCV) pour une période donnée – timeframe str OK.
+        Retour : ndarray non vide OU [] si pas de données/erreur.
+        """
+        if not self.ensure_initialized():
+            return []
+        self._select_symbol(symbol)
+        tf_code = self.parse_timeframe(timeframe)
+        rates = mt5.copy_rates_range(symbol, tf_code, start, end)
+        if rates is None:
+            logger.error(f"Failed to fetch rates for {symbol} @ {timeframe} (range {start} to {end})")
+            return []
+        try:
+            if hasattr(rates, "size") and rates.size == 0:
+                return []
+            if len(rates) == 0:
+                return []
+        except Exception:
+            pass
+        return rates
+
+    # -------------------------------
+    # Trading
+    # -------------------------------
+    def place_order(self, symbol, lot, order_type, price=None, sl=None, tp=None, retries: int = 2):
+        """
+        Envoi d'ordre au marché (DEAL) avec retries sur REQUOTE/BUSY/PRICE_OFF.
+        order_type : mt5.ORDER_TYPE_BUY / mt5.ORDER_TYPE_SELL
+        """
+        if not self.ensure_initialized():
+            return None
+
+        if not self._select_symbol(symbol):
+            return None
+
+        info = mt5.symbol_info(symbol)
+        if info:
+            step = getattr(info, "volume_step", 0.01) or 0.01
+            vmin = getattr(info, "volume_min", step) or step
+            lot = max(vmin, round(lot / step) * step)
+
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None:
+            logger.error(f"Impossible de récupérer le tick pour {symbol}")
+            return None
+
+        price_val = price if price is not None else (
+            tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
+        )
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": float(lot),
+            "type": order_type,
+            "price": float(price_val),
+            "deviation": 10,
+            "magic": 234000,
+            "comment": "AI-trade",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_IOC
+        }
+        if sl is not None:
+            request["sl"] = float(sl)
+        if tp is not None:
+            request["tp"] = float(tp)
+
+        REQUOTE = getattr(mt5, "TRADE_RETCODE_REQUOTE", 10004)
+        SERVER_BUSY = getattr(mt5, "TRADE_RETCODE_SERVER_BUSY", 10008)
+        CONTEXT_BUSY = getattr(mt5, "TRADE_RETCODE_TRADE_CONTEXT_BUSY", 10009)
+        PRICE_OFF = getattr(mt5, "TRADE_RETCODE_PRICE_OFF", 10021)
+        transient_codes = {REQUOTE, SERVER_BUSY, CONTEXT_BUSY, PRICE_OFF}
+
+        last_err = None
+        for attempt in range(retries + 1):
+            result = mt5.order_send(request)
+            if result is None:
+                last_err = mt5.last_error()
+                logger.error(f"order_send returned None for {symbol}, last_error={last_err}")
+            else:
+                rc = getattr(result, "retcode", None)
+                if rc == mt5.TRADE_RETCODE_DONE:
+                    ticket = getattr(result, 'order', getattr(result, 'deal', 'N/A'))
+                    logger.info(f"Order succeeded: ticket={ticket}")
+                    return result
+                else:
+                    comment = getattr(result, "comment", "")
+                    logger.error(f"Order failed (try {attempt+1}/{retries+1}): retcode={rc}, comment={comment}")
+                    if rc in transient_codes and attempt < retries:
+                        time.sleep(0.8)
+                        continue
+            if attempt < retries:
+                time.sleep(0.2)
+
+        logger.error(f"Order permanently failed for {symbol}. last_error={last_err}")
+        return None

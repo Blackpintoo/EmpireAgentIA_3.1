@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-01-02T12:48:05.410683+00:00",
+  "symbol": "EURUSD",
+  "retail": {
+    "long_percentage": 32.0,
+    "short_percentage": 68.0,
+    "source": "simulated"
+  }
+}

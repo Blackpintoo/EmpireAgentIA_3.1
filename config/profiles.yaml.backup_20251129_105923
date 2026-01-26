@@ -1,0 +1,285 @@
+enabled_symbols:
+- BTCUSD
+- ETHUSD
+- BNBUSD
+- LINKUSD
+- XAUUSD
+- EURUSD
+profiles:
+  BTCUSD:
+    symbol: BTCUSD
+    enabled: true
+    account:
+      equity_start: 1000
+    instrument:
+      broker_symbol: BTCUSD
+      contract_size: 1.0
+      digits: 2
+      point: 0.01
+      pip_value: 1.0
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+      crypto_bucket:
+        enabled: true
+        cap: 0.02
+        min_factor: 0.33
+        max_open: 2
+      position_manager:
+        enabled: true
+        break_even:
+          rr: 1.0
+          offset_points: 0.0
+        partials:
+          - rr: 1.0
+            close_frac: 0.5
+          - rr: 2.0
+            close_frac: 0.3
+        trailing:
+          enabled: true
+          start_rr: 1.8
+          atr_timeframe: M5
+          atr_period: 14
+          atr_mult: 1.6
+          lock_rr: 0.3
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}
+      sentiment: {enabled: true}
+      fundamental: {enabled: true}
+      macro: {enabled: true}
+  ETHUSD:
+    symbol: ETHUSD
+    enabled: true
+    instrument:
+      broker_symbol: ETHUSD
+      contract_size: 1.0
+      digits: 2
+      point: 0.01
+      pip_value: 1.0
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}
+      sentiment: {enabled: true}
+      fundamental: {enabled: true}
+      macro: {enabled: true}
+  BNBUSD:
+    symbol: BNBUSD
+    enabled: true
+    instrument:
+      broker_symbol: BNBUSD
+      contract_size: 1.0
+      digits: 2
+      point: 0.01
+      pip_value: 1.0
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}
+      sentiment: {enabled: true}
+      fundamental: {enabled: true}
+      macro: {enabled: true}
+  LINKUSD:
+    symbol: LINKUSD
+    enabled: true
+    instrument:
+      broker_symbol: LNKUSD
+      contract_size: 1.0
+      digits: 2
+      point: 0.01
+      pip_value: 1.0
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}
+      sentiment: {enabled: true}
+      fundamental: {enabled: true}
+      macro: {enabled: true}
+  XAUUSD:
+    symbol: XAUUSD
+    enabled: true
+    instrument:
+      broker_symbol: XAUUSD
+      contract_size: 100.0
+      digits: 2
+      point: 0.01
+      pip_value: 1.0
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}
+      sentiment: {enabled: true}
+      fundamental: {enabled: true}
+      macro: {enabled: true}
+  EURUSD:
+    symbol: EURUSD
+    enabled: true
+    instrument:
+      broker_symbol: EURUSD
+      contract_size: 100000.0
+      digits: 5
+      point: 1.0e-05
+      pip_value: 0.1
+      lot_step: 0.01
+    risk:
+      tier: phase1
+      risk_per_trade: 0.01
+      max_daily_loss: 0.02
+      max_consec_loss: 3
+    orchestrator:
+      auto_execute: true
+      telegram_validation: false
+    agents:
+      technical: {enabled: true}
+      scalping: {enabled: true}
+      swing: {enabled: true}
+      structure: {enabled: true}
+      smart_money: {enabled: true}
+      news: {enabled: true}
+      sentiment: {enabled: true}
+      fundamental: {enabled: true}
+      macro: {enabled: true}

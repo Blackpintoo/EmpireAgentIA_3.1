@@ -1,0 +1,9 @@
+{
+  "timestamp": "2025-12-24T16:52:11.939278+00:00",
+  "symbol": "USDJPY",
+  "retail": {
+    "long_percentage": 62.0,
+    "short_percentage": 38.0,
+    "source": "simulated"
+  }
+}
