@@ -3,6 +3,7 @@ Application principale du système de trading autonome EmpireAgentIA 3.1
 Lance et gère le système de trading
 """
 
+import sys
 import time
 import logging
 from datetime import datetime
@@ -231,7 +232,6 @@ def main():
     app = TradingApplication(config)
     
     # Choisir le mode
-    import sys
     if len(sys.argv) > 1 and sys.argv[1] == 'demo':
         cycles = int(sys.argv[2]) if len(sys.argv) > 2 else 10
         app.demo_mode(cycles)

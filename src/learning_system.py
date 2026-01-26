@@ -177,20 +177,24 @@ class LearningSystem:
             logger.warning("Modèle pas encore entraîné, utilisation des règles par défaut")
             return 0.5
         
-        features = [
-            indicators.get('RSI', 50),
-            indicators.get('MACD', 0),
-            indicators.get('Trend', 0),
-            indicators.get('close', 100)
-        ]
-        
-        X = np.array([features])
-        X_scaled = self.scaler.transform(X)
-        
-        # Probabilité de succès
-        prob = self.model.predict_proba(X_scaled)[0][1]
-        
-        return prob
+        try:
+            features = [
+                indicators.get('RSI', 50),
+                indicators.get('MACD', 0),
+                indicators.get('Trend', 0),
+                indicators.get('close', 100)
+            ]
+            
+            X = np.array([features])
+            X_scaled = self.scaler.transform(X)
+            
+            # Probabilité de succès
+            prob = self.model.predict_proba(X_scaled)[0][1]
+            
+            return prob
+        except Exception as e:
+            logger.error(f"Erreur lors de la prédiction: {e}")
+            return 0.5
     
     def get_performance_report(self) -> Dict:
         """

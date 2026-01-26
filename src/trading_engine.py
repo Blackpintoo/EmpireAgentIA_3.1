@@ -130,6 +130,9 @@ class TradingEngine:
             'reasons': signal_analysis['reasons']
         }
         
+        # Incrémenter le compteur de positions
+        self.risk_manager.open_positions += 1
+        
         logger.info(f"ACHAT exécuté: {symbol} @ {current_price:.2f}")
         logger.info(f"  Taille: {position_size:.4f}")
         logger.info(f"  Stop Loss: {stop_loss:.2f}")
@@ -167,6 +170,9 @@ class TradingEngine:
         
         self.learning_system.record_trade(trade_data)
         self.risk_manager.record_trade(profit)
+        
+        # Décrémenter le compteur de positions
+        self.risk_manager.open_positions = max(0, self.risk_manager.open_positions - 1)
         
         logger.info(f"VENTE exécutée: {symbol} @ {exit_price:.2f}")
         logger.info(f"  Profit/Perte: {profit:.2f} ({profit_percentage:.2f}%)")
