@@ -160,8 +160,8 @@ LTCUSD:  # Configuration ULTRA-CONSERVATRICE 2026-01-18
       window_after_min: 60             # AUGMENTÉ
     position_limits:
       max_positions: 1                 # RÉDUIT 2→1 (1 seule position)
-      max_volume: 0.01                 # RÉDUIT 0.02→0.01
-      max_net_volume: 0.01             # Maintenu
+      max_volume: 1.0                  # AUGMENTÉ 0.01→1.0 (limite catastrophe 2026-01-26)
+      max_net_volume: 1.0              # Aligné sur max_volume
     live_guard:
       enabled: true
       pf_min_live: 1.50                # AUGMENTÉ 1.20→1.50 (exige PF élevé)
@@ -183,7 +183,7 @@ LTCUSD:  # Configuration ULTRA-CONSERVATRICE 2026-01-18
     atr_tp_mult: 3.5                   # AUGMENTÉ 2.6→3.5 (TP plus ambitieux)
   risk:
     risk_per_trade: 0.002              # RÉDUIT 0.004→0.002 (0.2% par trade)
-    daily_loss_abs: 50                 # RÉDUIT 120→50 (stop journalier serré)
+    daily_loss_abs: 200                # AUGMENTÉ 50→200 (limite catastrophe 2026-01-26)
     max_consec_losses: 2               # RÉDUIT 3→2 (pause après 2 pertes)
     daily_loss_limit_pct: 0.01         # RÉDUIT 0.025→0.01 (1% max/jour)
     dynamic_risk: true
@@ -542,3 +542,47 @@ EURUSD:
       atr_period: 21
       atr_mult: 1.9
       lock_rr: 0.3
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LIMITES DE VOLUME ANTI-CATASTROPHE - 2026-01-26
+# Ajoutées suite aux pertes LTCUSD (-53,100 CHF sur 100 lots) et SP500 (170 lots)
+# ══════════════════════════════════════════════════════════════════════════════
+
+SOLUSD:
+  orchestrator:
+    position_limits:
+      max_volume: 2.0                  # Max 2 lots (limite catastrophe)
+  risk:
+    daily_loss_abs: 300                # Stop journalier 300 CHF
+
+SP500:
+  orchestrator:
+    position_limits:
+      max_volume: 5.0                  # Max 5 lots (était 170 lots!)
+  risk:
+    daily_loss_abs: 500                # Stop journalier 500 CHF
+
+GBPUSD:
+  orchestrator:
+    position_limits:
+      max_volume: 2.0                  # Max 2 lots
+    cooldown:
+      max_trades_per_day: 1            # Max 1 trade/jour (prudence)
+  risk:
+    daily_loss_abs: 100                # Stop journalier 100 CHF
+
+UK100:
+  orchestrator:
+    position_limits:
+      max_volume: 2.0                  # Max 2 lots
+    cooldown:
+      max_trades_per_day: 1            # Max 1 trade/jour (prudence)
+  risk:
+    daily_loss_abs: 100                # Stop journalier 100 CHF
+
+NAS100:
+  orchestrator:
+    position_limits:
+      max_volume: 10.0                 # Max 10 lots
+  risk:
+    daily_loss_abs: 2000               # Stop journalier 2000 CHF
