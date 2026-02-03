@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(sqlite3:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(sort:*)",
+      "Bash(xargs ls:*)",
+      "Bash(timeout 10 python3:*)",
+      "WebSearch",
+      "WebFetch(domain:www.vantagemarkets.com)",
+      "Bash(.venv/Scripts/pip.exe install:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(.venv/Scripts/pip.exe:*)",
+      "Bash(python scripts/check_mt5_connection.py:*)",
+      "Bash(python:*)",
+      "Bash(/mnt/c/EmpireAgentIA_3/.venv/Scripts/python.exe -m pip install:*)",
+      "Bash(/mnt/c/EmpireAgentIA_3/.venv/Scripts/python.exe:*)",
+      "Bash(xargs:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git config:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git rm:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

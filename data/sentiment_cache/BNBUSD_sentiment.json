@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-01-26T17:07:52.930033+00:00",
+  "timestamp": "2026-02-02T07:01:20.500899+00:00",
   "symbol": "BNBUSD",
   "retail": {
-    "long_percentage": 45.0,
-    "short_percentage": 55.0,
+    "long_percentage": 54.0,
+    "short_percentage": 46.0,
     "source": "simulated"
   }
 }
