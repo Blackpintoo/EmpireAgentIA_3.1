@@ -2307,6 +2307,27 @@ class Orchestrator:
             return True
         # --------------------------------------------------------------------------
 
+        # ══════════════════════════════════════════════════════════════════════
+        # (2026-02-04) CRITICAL FIX: Enforce max_volume per-trade limit
+        # AVANT l'envoi de l'ordre, plafonner le volume à la limite configurée
+        # ══════════════════════════════════════════════════════════════════════
+        pos_limits = (self.profile.get("orchestrator") or {}).get("position_limits") or {}
+        max_volume_limit = float(pos_limits.get("max_volume", 0.0) or 0.0)
+
+        if max_volume_limit > 0 and lots > max_volume_limit:
+            logger.warning(
+                f"[RISK] {symbol}: Volume {lots:.2f} dépasse limite max_volume={max_volume_limit:.2f} → plafonné"
+            )
+            self._send_telegram(
+                f"⚠️ [VOLUME LIMIT] {symbol}: Volume plafonné\n"
+                f"Calculé: {lots:.2f} lots\n"
+                f"Limite: {max_volume_limit:.2f} lots\n"
+                f"→ Exécution avec {max_volume_limit:.2f} lots",
+                kind="status", force=True
+            )
+            lots = max_volume_limit
+        # ══════════════════════════════════════════════════════════════════════
+
         # --- Envoi ordre ---
         result = self.mt5.place_order(broker_symbol, action, lots, price=None, sl=sl, tp=tp)
         retcode_val = int(result.get("retcode", -1)) if result else None
