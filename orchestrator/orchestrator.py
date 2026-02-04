@@ -1934,6 +1934,52 @@ class Orchestrator:
         action = "BUY" if sig == "LONG" else "SELL"
 
         # ══════════════════════════════════════════════════════════════════════
+        # (2026-02-04) HOUR FILTER - Bloquer heures non rentables par symbole
+        # Vérifie blocked_hours_utc (blacklist) et allowed_hours_utc (whitelist)
+        # ══════════════════════════════════════════════════════════════════════
+        current_hour_utc = datetime.now(timezone.utc).hour
+        orch_cfg = (self.profile.get("orchestrator") or {})
+
+        blocked_hours = orch_cfg.get("blocked_hours_utc", [])
+        allowed_hours = orch_cfg.get("allowed_hours_utc", None)
+
+        # Mode blacklist: si l'heure est dans blocked_hours
+        if blocked_hours and current_hour_utc in blocked_hours:
+            logger.info(
+                f"[HOUR_FILTER] Trade {symbol} bloqué - heure {current_hour_utc}h UTC dans blocked_hours {blocked_hours}"
+            )
+            self._send_telegram(
+                f"⏰ [HOUR FILTER] {symbol}: Trade bloqué\n"
+                f"Heure actuelle: {current_hour_utc}h UTC\n"
+                f"Heures bloquées: {blocked_hours}\n"
+                f"→ Trade rejeté",
+                kind="status", force=True
+            )
+            return False
+
+        # Mode whitelist: si allowed_hours existe et l'heure n'y est pas
+        if allowed_hours is not None and current_hour_utc not in allowed_hours:
+            logger.info(
+                f"[HOUR_FILTER] Trade {symbol} bloqué - heure {current_hour_utc}h UTC pas dans allowed_hours {allowed_hours}"
+            )
+            self._send_telegram(
+                f"⏰ [HOUR FILTER] {symbol}: Trade bloqué (mode whitelist)\n"
+                f"Heure actuelle: {current_hour_utc}h UTC\n"
+                f"Heures autorisées: {allowed_hours}\n"
+                f"→ Trade rejeté",
+                kind="status", force=True
+            )
+            return False
+
+        # Log si le filtre est passé (pour debug)
+        if blocked_hours or allowed_hours:
+            logger.debug(
+                f"[HOUR_FILTER] {symbol}: heure {current_hour_utc}h UTC autorisée "
+                f"(blocked={blocked_hours}, allowed={allowed_hours})"
+            )
+        # ══════════════════════════════════════════════════════════════════════
+
+        # ══════════════════════════════════════════════════════════════════════
         # HARD FILTERS - Qualité minimum absolue (FIX 2025-12-17)
         # Ces filtres ne peuvent PAS être contournés, même par auto_execute
         # ══════════════════════════════════════════════════════════════════════

@@ -124,6 +124,7 @@ LTCUSD:  # Configuration ULTRA-CONSERVATRICE 2026-01-18
     min_score_for_proposal: 4.0        # AUGMENTÉ 1.3→4.0 (score élevé requis)
     require_scalping_entry: false
     require_swing_confirm: true        # ACTIVÉ - Confirmation swing requise
+    blocked_hours_utc: [7, 14, 17]     # 2026-02-04: Bloquer heures non rentables
     agent_weights:
       swing: 0.8                       # AUGMENTÉ - Prioriser swing
       structure: 0.9                   # AUGMENTÉ - Prioriser structure
@@ -160,7 +161,7 @@ LTCUSD:  # Configuration ULTRA-CONSERVATRICE 2026-01-18
       window_after_min: 60             # AUGMENTÉ
     position_limits:
       max_positions: 1                 # RÉDUIT 2→1 (1 seule position)
-      max_volume: 1.0                  # AUGMENTÉ 0.01→1.0 (limite catastrophe 2026-01-26)
+      max_volume: 1.0                  # Limite max par trade (2026-01-26)
       max_net_volume: 1.0              # Aligné sur max_volume
     live_guard:
       enabled: true
@@ -245,8 +246,9 @@ BNBUSD:
       window_after_min: 45
     position_limits:
       max_positions: 2               # RÉDUIT 4→2 (2026-01-18)
-      max_volume: 0.02               # RÉDUIT 0.06→0.02 (2026-01-18)
+      max_volume: 2.0                # AUGMENTÉ 0.02→2.0 (2026-02-04)
       max_net_volume: 0.01           # RÉDUIT 0.04→0.01 (2026-01-18)
+    blocked_hours_utc: [1, 4]        # 2026-02-04: Bloquer heures non rentables
     live_guard:
       enabled: true
       pf_min_live: 1.20
@@ -349,6 +351,7 @@ BTCUSD:
   orchestrator:
     require_scalping_entry: false      # DÉSACTIVÉ - était bloquant
     require_swing_confirm: false       # DÉSACTIVÉ - était bloquant
+    blocked_hours_utc: [16, 17, 18, 20, 22]  # 2026-02-04: Bloquer heures non rentables
     position_manager:
       enabled: true
       break_even:
@@ -383,7 +386,7 @@ BTCUSD:
       window_after_min: 45
     position_limits:
       max_positions: 6
-      max_volume: 0.08
+      max_volume: 1.0                  # RÉDUIT 0.08→1.0 (2026-02-04)
       max_net_volume: 0.05
     live_guard:
       enabled: true
@@ -551,7 +554,8 @@ EURUSD:
 SOLUSD:
   orchestrator:
     position_limits:
-      max_volume: 2.0                  # Max 2 lots (limite catastrophe)
+      max_volume: 1.0                  # RÉDUIT 2.0→1.0 (2026-02-04)
+    allowed_hours_utc: [13, 23]        # 2026-02-04: WHITELIST - trader uniquement 13h et 23h UTC
   risk:
     daily_loss_abs: 300                # Stop journalier 300 CHF
 
@@ -559,6 +563,7 @@ SP500:
   orchestrator:
     position_limits:
       max_volume: 5.0                  # Max 5 lots (était 170 lots!)
+    blocked_hours_utc: [1, 7, 8, 10, 14, 18, 20, 22]  # 2026-02-04: Bloquer heures non rentables
   risk:
     daily_loss_abs: 500                # Stop journalier 500 CHF
 
@@ -586,3 +591,11 @@ NAS100:
       max_volume: 10.0                 # Max 10 lots
   risk:
     daily_loss_abs: 2000               # Stop journalier 2000 CHF
+
+USDJPY:
+  orchestrator:
+    position_limits:
+      max_volume: 1.0                  # Max 1 lot
+    blocked_hours_utc: [0, 2, 3, 9, 10, 11, 16, 18, 19]  # 2026-02-04: Bloquer heures non rentables
+  risk:
+    daily_loss_abs: 150                # Stop journalier 150 CHF
