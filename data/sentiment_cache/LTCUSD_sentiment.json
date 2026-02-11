@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-02-03T05:03:07.202442+00:00",
+  "timestamp": "2026-02-11T19:53:20.276343+00:00",
   "symbol": "LTCUSD",
   "retail": {
-    "long_percentage": 35.0,
-    "short_percentage": 65.0,
+    "long_percentage": 38.0,
+    "short_percentage": 62.0,
     "source": "simulated"
   }
 }

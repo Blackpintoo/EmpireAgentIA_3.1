@@ -1423,5 +1423,15 @@
     "partials_done": [],
     "be_done": true,
     "trail_active": true
+  },
+  "SP500:766492888": {
+    "partials_done": [],
+    "be_done": true,
+    "trail_active": true
+  },
+  "NAS100:809225290": {
+    "partials_done": [],
+    "be_done": true,
+    "trail_active": true
   }
 }
