@@ -37,9 +37,7 @@ datetime,currency,impact,title,source,url
 2026-02-11 07:30,CNY,Medium,CPI y/y,this,https://www.forexfactory.com/calendar/454-ch-cpi-yy
 2026-02-11 07:30,CNY,Medium,PPI y/y,this,https://www.forexfactory.com/calendar/455-ch-ppi-yy
 2026-02-11 15:00,EUR,Low,Italian Industrial Production m/m,this,https://www.forexfactory.com/calendar/223-it-industrial-production-mm
-2026-02-11 15:03,CNY,Low,M2 Money Supply y/y,this,https://www.forexfactory.com/calendar/476-ch-m2-money-supply-yy
-2026-02-11 15:03,CNY,Low,New Loans,this,https://www.forexfactory.com/calendar/477-ch-new-loans
-2026-02-11 16:34,EUR,Low,German 30-y Bond Auction,this,https://www.forexfactory.com/calendar/541-ge-30-y-bond-auction
+2026-02-11 16:33,EUR,Low,German 30-y Bond Auction,this,https://www.forexfactory.com/calendar/541-ge-30-y-bond-auction
 2026-02-11 19:30,CAD,Low,Building Permits m/m,this,https://www.forexfactory.com/calendar/200-ca-building-permits-mm
 2026-02-11 19:30,USD,High,Average Hourly Earnings m/m,this,https://www.forexfactory.com/calendar/159-us-average-hourly-earnings-mm
 2026-02-11 19:30,USD,High,Non-Farm Employment Change,this,https://www.forexfactory.com/calendar/66-us-non-farm-employment-change
@@ -67,11 +65,11 @@ datetime,currency,impact,title,source,url
 2026-02-12 19:45,CAD,Low,Gov Council Member Rogers Speaks,this,https://www.forexfactory.com/calendar/847-ca-gov-council-member-rogers-speaks
 2026-02-12 20:30,GBP,Low,CB Leading Index m/m,this,https://www.forexfactory.com/calendar/299-uk-cb-leading-index-mm
 2026-02-12 21:00,USD,Low,Existing Home Sales,this,https://www.forexfactory.com/calendar/232-us-existing-home-sales
-2026-02-12 21:00,USD,Low,Mortgage Delinquencies,this,https://www.forexfactory.com/calendar/489-us-mortgage-delinquencies
 2026-02-12 21:30,AUD,Low,CB Leading Index m/m,this,https://www.forexfactory.com/calendar/247-au-cb-leading-index-mm
 2026-02-12 21:30,USD,Low,Natural Gas Storage,this,https://www.forexfactory.com/calendar/26-us-natural-gas-storage
+2026-02-12 23:40,USD,Low,Mortgage Delinquencies,this,https://www.forexfactory.com/calendar/489-us-mortgage-delinquencies
 2026-02-13 00:01,USD,Low,30-y Bond Auction,this,https://www.forexfactory.com/calendar/540-us-30-y-bond-auction
-2026-02-13 01:30,EUR,Low,German Buba President Nagel Speaks,this,https://www.forexfactory.com/calendar/851-ge-buba-president-nagel-speaks
+2026-02-13 02:30,EUR,Low,German Buba President Nagel Speaks,this,https://www.forexfactory.com/calendar/851-ge-buba-president-nagel-speaks
 2026-02-13 03:30,NZD,Low,BusinessNZ Manufacturing Index,this,https://www.forexfactory.com/calendar/149-nz-businessnz-manufacturing-index
 2026-02-13 03:45,NZD,Low,Visitor Arrivals m/m,this,https://www.forexfactory.com/calendar/361-nz-visitor-arrivals-mm
 2026-02-13 06:00,USD,Low,FOMC Member Logan Speaks,this,https://www.forexfactory.com/calendar/890-us-fomc-member-logan-speaks
@@ -80,6 +78,8 @@ datetime,currency,impact,title,source,url
 2026-02-13 08:00,NZD,Low,Inflation Expectations q/q,this,https://www.forexfactory.com/calendar/309-nz-inflation-expectations-qq
 2026-02-13 13:00,EUR,Low,German WPI m/m,this,https://www.forexfactory.com/calendar/291-ge-wpi-mm
 2026-02-13 13:30,CHF,High,CPI m/m,this,https://www.forexfactory.com/calendar/100-sz-cpi-mm
+2026-02-13 15:03,CNY,Low,M2 Money Supply y/y,this,https://www.forexfactory.com/calendar/476-ch-m2-money-supply-yy
+2026-02-13 15:03,CNY,Low,New Loans,this,https://www.forexfactory.com/calendar/477-ch-new-loans
 2026-02-13 16:00,EUR,Low,Flash Employment Change q/q,this,https://www.forexfactory.com/calendar/808-ez-flash-employment-change-qq
 2026-02-13 16:00,EUR,Low,Flash GDP q/q,this,https://www.forexfactory.com/calendar/41-ez-flash-gdp-qq
 2026-02-13 16:00,EUR,Low,Trade Balance,this,https://www.forexfactory.com/calendar/120-ez-trade-balance

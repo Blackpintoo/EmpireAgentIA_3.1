@@ -1,13 +1,23 @@
 {
-  "timestamp": "2026-02-11T20:39:29.569698+00:00",
-  "symbol": "XAUUSD",
+  "timestamp": "2026-02-13T05:19:51.285358+00:00",
+  "symbol": "SP500",
   "signals": {
     "swing": {
-      "signal": "LONG",
+      "signal": "SHORT",
       "intensity": null,
       "reason": ""
     },
     "structure": {
+      "signal": "SHORT",
+      "intensity": null,
+      "reason": ""
+    },
+    "smc": {
+      "signal": "SHORT",
+      "intensity": null,
+      "reason": ""
+    },
+    "news": {
       "signal": "LONG",
       "intensity": null,
       "reason": ""
