@@ -1936,6 +1936,7 @@ class Orchestrator:
         # ══════════════════════════════════════════════════════════════════════
         # (2026-02-04) HOUR FILTER - Bloquer heures non rentables par symbole
         # Vérifie blocked_hours_utc (blacklist) et allowed_hours_utc (whitelist)
+        # (2026-02-11) Logs améliorés avec mode BLACKLIST/WHITELIST explicite
         # ══════════════════════════════════════════════════════════════════════
         current_hour_utc = datetime.now(timezone.utc).hour
         orch_cfg = (self.profile.get("orchestrator") or {})
@@ -1943,13 +1944,16 @@ class Orchestrator:
         blocked_hours = orch_cfg.get("blocked_hours_utc", [])
         allowed_hours = orch_cfg.get("allowed_hours_utc", None)
 
+        # Détection automatique du mode
+        hour_filter_mode = "WHITELIST" if allowed_hours is not None else "BLACKLIST" if blocked_hours else None
+
         # Mode blacklist: si l'heure est dans blocked_hours
         if blocked_hours and current_hour_utc in blocked_hours:
             logger.info(
-                f"[HOUR_FILTER] Trade {symbol} bloqué - heure {current_hour_utc}h UTC dans blocked_hours {blocked_hours}"
+                f"[HOUR_FILTER][BLACKLIST] Trade {symbol} bloqué - heure {current_hour_utc}h UTC dans blocked_hours {blocked_hours}"
             )
             self._send_telegram(
-                f"⏰ [HOUR FILTER] {symbol}: Trade bloqué\n"
+                f"⏰ [HOUR FILTER][BLACKLIST] {symbol}: Trade bloqué\n"
                 f"Heure actuelle: {current_hour_utc}h UTC\n"
                 f"Heures bloquées: {blocked_hours}\n"
                 f"→ Trade rejeté",
@@ -1960,10 +1964,10 @@ class Orchestrator:
         # Mode whitelist: si allowed_hours existe et l'heure n'y est pas
         if allowed_hours is not None and current_hour_utc not in allowed_hours:
             logger.info(
-                f"[HOUR_FILTER] Trade {symbol} bloqué - heure {current_hour_utc}h UTC pas dans allowed_hours {allowed_hours}"
+                f"[HOUR_FILTER][WHITELIST] Trade {symbol} bloqué - heure {current_hour_utc}h UTC pas dans allowed_hours {allowed_hours}"
             )
             self._send_telegram(
-                f"⏰ [HOUR FILTER] {symbol}: Trade bloqué (mode whitelist)\n"
+                f"⏰ [HOUR FILTER][WHITELIST] {symbol}: Trade bloqué\n"
                 f"Heure actuelle: {current_hour_utc}h UTC\n"
                 f"Heures autorisées: {allowed_hours}\n"
                 f"→ Trade rejeté",
@@ -1971,10 +1975,10 @@ class Orchestrator:
             )
             return False
 
-        # Log si le filtre est passé (pour debug)
-        if blocked_hours or allowed_hours:
-            logger.debug(
-                f"[HOUR_FILTER] {symbol}: heure {current_hour_utc}h UTC autorisée "
+        # Log si le filtre est passé (info pour visibilité)
+        if hour_filter_mode:
+            logger.info(
+                f"[HOUR_FILTER][{hour_filter_mode}] {symbol}: heure {current_hour_utc}h UTC autorisée "
                 f"(blocked={blocked_hours}, allowed={allowed_hours})"
             )
         # ══════════════════════════════════════════════════════════════════════

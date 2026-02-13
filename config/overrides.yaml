@@ -124,7 +124,7 @@ LTCUSD:  # Configuration ULTRA-CONSERVATRICE 2026-01-18
     min_score_for_proposal: 4.0        # AUGMENTÉ 1.3→4.0 (score élevé requis)
     require_scalping_entry: false
     require_swing_confirm: true        # ACTIVÉ - Confirmation swing requise
-    blocked_hours_utc: [7, 14, 17]     # 2026-02-04: Bloquer heures non rentables
+    allowed_hours_utc: [8, 18, 22]     # 2026-02-11: WHITELIST - trader uniquement 8h, 18h, 22h UTC
     agent_weights:
       swing: 0.8                       # AUGMENTÉ - Prioriser swing
       structure: 0.9                   # AUGMENTÉ - Prioriser structure
@@ -386,7 +386,7 @@ BTCUSD:
       window_after_min: 45
     position_limits:
       max_positions: 6
-      max_volume: 1.0                  # RÉDUIT 0.08→1.0 (2026-02-04)
+      max_volume: 0.5                  # RÉDUIT 1.0→0.5 (2026-02-11)
       max_net_volume: 0.05
     live_guard:
       enabled: true
@@ -596,6 +596,6 @@ USDJPY:
   orchestrator:
     position_limits:
       max_volume: 1.0                  # Max 1 lot
-    blocked_hours_utc: [0, 2, 3, 9, 10, 11, 16, 18, 19]  # 2026-02-04: Bloquer heures non rentables
+    allowed_hours_utc: [4, 7, 12, 13, 14, 15, 17, 22]  # 2026-02-11: WHITELIST - trader uniquement ces heures UTC
   risk:
     daily_loss_abs: 150                # Stop journalier 150 CHF

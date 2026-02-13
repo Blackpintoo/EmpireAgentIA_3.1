@@ -14,47 +14,46 @@
 
 enabled_symbols:
 # ══════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION 2025-12-30 - Optimise apres audit semaine Noel
-# 8 symboles actifs, 6 desactives
+# CONFIGURATION 2026-02-11 - Réactivation 3 symboles avec filtres heures
+# 9 symboles actifs, 5 désactivés
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NOYAU RENTABLE - 4 SYMBOLES PRINCIPAUX (Optimisation 2026-01-06)
-# Ces symboles sont les seuls actifs jusqu'à PF > 1.3 sur 4 semaines
 # ══════════════════════════════════════════════════════════════════════════════
 
 # INDICES (2) - MOTEURS PRINCIPAUX
 - NAS100        # Nasdaq 100 - Moteur principal (+$14,750 sur 30j)
 - SP500         # S&P 500 - MEILLEUR (WR 61%, stable)
 
-# FOREX (1)
+# FOREX (2)
 - AUDUSD        # WR 60%, +$930 - Stable
+- USDJPY        # Réactivé 2026-02-11 - WHITELIST heures [4,7,12,13,14,15,17,22] UTC
 
 # MATIERES PREMIERES (1)
 - XAUUSD        # Or - WR 67%, +$173 - OK
 
-# CRYPTOS (2) - Réactivés 2026-01-11 avec fenêtres horaires optimisées
-- BNBUSD        # Binance Coin - Trading fenêtres optimisées semaine/week-end
-- LTCUSD        # Litecoin - Trading fenêtres optimisées semaine/week-end
+# CRYPTOS (4) - Avec filtres heures BLACKLIST/WHITELIST
+- BNBUSD        # Binance Coin - BLACKLIST heures [1,4] UTC
+- LTCUSD        # Litecoin - WHITELIST heures [8,18,22] UTC
+- BTCUSD        # Réactivé 2026-02-11 - BLACKLIST heures [16,17,18,20,22] UTC, max 0.5 lot
+- SOLUSD        # Réactivé 2026-02-11 - WHITELIST heures [13,23] UTC
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SYMBOLES DESACTIVES - Requiert backtest PF > 1.3 avant réactivation
 # ══════════════════════════════════════════════════════════════════════════════
-# - BTCUSD      # ⏸️ PAUSE: A surveiller - faible volume
 # - ETHUSD      # ⏸️ PAUSE: A surveiller
 # - EURUSD      # ⏸️ PAUSE: WR 0% semaine Noel, -$115
 # - USOUSD      # ⏸️ PAUSE: Pas de données suffisantes
-# - SOLUSD      # ⛔ DESACTIVE: WR 15.4%, -$12,353 (78% des pertes!)
 # - GBPUSD      # ⛔ DESACTIVE: WR 0%, -$2,695
 # - ADAUSD      # ⛔ DESACTIVE: 72% contre-trend
-# - USDJPY      # ⛔ DESACTIVE: 42% contre-trend
 # - XAGUSD      # ⛔ DESACTIVE: Score faible 6.40
 # - UK100       # ⛔ DESACTIVE: Pertes importantes
 
 profiles:
   BTCUSD:
     symbol: BTCUSD
-    enabled: false   # ⏸️ PAUSE 2026-01-06: Concentration sur noyau rentable
+    enabled: true    # Réactivé 2026-02-11 avec BLACKLIST heures + max_volume 0.5
     account:
       equity_start: 1000
     instrument:
@@ -397,7 +396,7 @@ profiles:
   # ══════════════════════════════════════════════════════════════════════════
   USDJPY:
     symbol: USDJPY
-    enabled: false   # ⛔ DÉSACTIVÉ 2025-12-24: WR 0%, Perte -$38,912
+    enabled: true    # Réactivé 2026-02-11 avec WHITELIST heures [4,7,12,13,14,15,17,22] UTC
     instrument:
       broker_symbol: USDJPY
       contract_size: 100000.0
@@ -763,7 +762,7 @@ profiles:
 
   SOLUSD:
     symbol: SOLUSD
-    enabled: false   # ⛔ DÉSACTIVÉ 2026-01-06: WR 15.4%, -$12,353 (78% des pertes!)
+    enabled: true    # Réactivé 2026-02-11 avec WHITELIST heures [13,23] UTC
     instrument:
       broker_symbol: SOLUSD
       contract_size: 10.0   # CORRIGÉ: était 1.0 - broker utilise 10 SOL par lot!
