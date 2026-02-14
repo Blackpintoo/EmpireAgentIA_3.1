@@ -637,6 +637,18 @@ class PositionManager:
                     "pnl_ccy": f"{pnl:+.2f}", "pnl_pips": f"{pnl_pips:+.1f}",
                     "duration": dur, "rr": "N/A", "mfe": "N/A", "mae": "N/A"
                 })
+
+            # (audit fev2026) Nettoyage positions fantômes dans pm_state
+            cleaned = 0
+            for tk in closed_ids:
+                for key_fmt in [f"{self.symbol_canon}:{tk}", str(tk)]:
+                    if key_fmt in self._state:
+                        del self._state[key_fmt]
+                        cleaned += 1
+            if cleaned > 0:
+                _save_state(self._state)
+                logger.info(f"[PM] Cleaned ghost positions from pm_state: {cleaned} entries for {self.symbol_canon} (tickets: {closed_ids})")
+
         # persister l'état courant
         state = self._load_open_state(); state[self.symbol_canon] = current; self._save_open_state(state)
         try:
