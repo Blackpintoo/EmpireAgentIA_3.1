@@ -801,6 +801,10 @@ class Orchestrator:
         # Cooldown et gating
         self._init_cooldown_and_gating()
 
+        # Agent error monitoring (audit fev2026)
+        self._agent_error_counts: Dict[str, int] = {}
+        self._agent_disabled: set = set()
+
         # Health server (une seule fois)
         if not hasattr(self.__class__, "_health_started"):
             try:
@@ -2754,6 +2758,31 @@ class Orchestrator:
             )
             return
 
+        # (audit fev2026) Floating P&L: vérifier réalisé + flottant
+        if abs_limit > 0:
+            try:
+                floating_pnl = 0.0
+                if mt5:
+                    broker_sym = self.broker_symbol or self.symbol
+                    open_positions = mt5.positions_get(symbol=broker_sym)
+                    if open_positions:
+                        floating_pnl = sum(float(getattr(p, "profit", 0.0) or 0.0) for p in open_positions)
+                total_pnl = pnl_today_ccy + floating_pnl
+                if total_pnl <= -abs(abs_limit):
+                    logger.info("[RISK] %s daily loss (realized+floating) limit reached: realized=%.2f floating=%.2f total=%.2f <= -%.2f",
+                                self.symbol, pnl_today_ccy, floating_pnl, total_pnl, abs_limit)
+                    _record_guard_event(self.symbol, "daily-abs-floating-guard", f"Total {total_pnl:.2f} <= -{abs_limit:.2f}")
+                    self._arm_cooldown(self._cooldown_after_loss_min, "daily-abs-floating-guard")
+                    self._send_telegram(
+                        f"[RISK] Limite journaliere (réalisé+flottant) atteinte ({self.symbol})\n"
+                        f"Réalisé: {pnl_today_ccy:.2f} | Flottant: {floating_pnl:.2f} | Total: {total_pnl:.2f} <= -{abs_limit:.2f}\n"
+                        f"Pause des entrées.",
+                        kind="status", force=True,
+                    )
+                    return
+            except Exception as e:
+                logger.warning(f"[RISK] Floating P&L check failed: {e}")
+
         # appelle la méthode nouvelle signature (2 args), sinon fallback ancienne (0 arg)
         stop = False
         try:
@@ -2844,17 +2873,27 @@ class Orchestrator:
                 enriched_signals = tracker_input or []
             vote_strength = max(float(score_agr), abs(float(tracker_vote_raw)))
 
-            # 3) Fast-tracks
+            # 3) Fast-tracks (audit fev2026: seuil 4→5 TF + confirmation structure/swing)
             tech_signals = per_tf_signals.get("technical", {})
             news_dir = _norm(global_signals.get("news") if global_signals else None)
             tech_majority_long = sum(1 for sig in tech_signals.values() if _norm(sig) == "LONG")
             tech_majority_short = sum(1 for sig in tech_signals.values() if _norm(sig) == "SHORT")
 
-            if tech_majority_long >= 4 and news_dir == "LONG":
-                direction = "LONG"; score_agr = max(score_agr, 2.1); confluence = max(confluence, 2)
-            elif tech_majority_short >= 4 and news_dir == "SHORT":
-                direction = "SHORT"; score_agr = max(score_agr, 2.1); confluence = max(confluence, 2)
-            else:
+            # Confirmation structure OU swing requise pour fast-track
+            structure_dir = _norm(global_signals.get("structure") if global_signals else None)
+            swing_dir_ft = _norm(global_signals.get("swing") if global_signals else None)
+
+            fast_track_validated = False
+            if tech_majority_long >= 5 and news_dir == "LONG":
+                if structure_dir == "LONG" or swing_dir_ft == "LONG":
+                    direction = "LONG"; score_agr = max(score_agr, 2.1); confluence = max(confluence, 2)
+                    fast_track_validated = True
+            elif tech_majority_short >= 5 and news_dir == "SHORT":
+                if structure_dir == "SHORT" or swing_dir_ft == "SHORT":
+                    direction = "SHORT"; score_agr = max(score_agr, 2.1); confluence = max(confluence, 2)
+                    fast_track_validated = True
+
+            if not fast_track_validated:
                 has_tech_dir = any(_norm(sig) in ("LONG", "SHORT") for sig in tech_signals.values())
                 swing_dir = _norm(global_signals.get("swing") if global_signals else None)
                 if not has_tech_dir and swing_dir and swing_dir == news_dir and swing_dir in ("LONG", "SHORT"):
@@ -3617,6 +3656,11 @@ class Orchestrator:
             if agent is None:
                 return None
 
+            # Skip agents désactivés par monitoring erreurs (audit fev2026)
+            agent_name = type(agent).__name__
+            if agent_name in self._agent_disabled:
+                return None
+
             try:
                 if timeframe and hasattr(agent, "params") and isinstance(getattr(agent, "params"), dict):
                     agent.params["timeframe"] = timeframe
@@ -3666,7 +3710,18 @@ class Orchestrator:
                     if isinstance(res, str):
                         return {"signal": res}
                 except Exception as e:
+                    logger.error(f"[AGENT] {agent_name} erreur sur méthode {name}: {e}", exc_info=True)
                     last_err = e
+                    # Monitoring erreurs (audit fev2026)
+                    self._agent_error_counts[agent_name] = self._agent_error_counts.get(agent_name, 0) + 1
+                    if self._agent_error_counts[agent_name] >= 5:
+                        self._agent_disabled.add(agent_name)
+                        logger.error(f"[AGENT] {agent_name} désactivé après {self._agent_error_counts[agent_name]} erreurs")
+                        self._send_telegram(
+                            f"⚠️ [AGENT DISABLED] {agent_name} désactivé pour {self.symbol} "
+                            f"après {self._agent_error_counts[agent_name]} erreurs consécutives",
+                            kind="status", force=True
+                        )
                     continue
 
             return {"error": f"Aucune méthode compatible trouvée. Dernière erreur: {last_err}"}
