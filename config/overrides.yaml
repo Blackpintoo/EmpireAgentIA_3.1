@@ -65,11 +65,11 @@ BTCUSD:
     once_per_candle_tf: "M15"
     cooldown:
       enabled: true
-      min_secs_between_trades: 150   # 2min30
-      max_trades_per_day: 20
+      min_secs_between_trades: 600   # AUGMENTÉ 150→600 (audit fev2026)
+      max_trades_per_day: 8          # RÉDUIT 20→8 (audit fev2026)
       after_trade_min: 1
       after_win_min: 0
-      after_loss_min: 5
+      after_loss_min: 60             # AUGMENTÉ 5→60 (audit fev2026)
       after_reject_min: 2
       after_streak_n: 3
       after_streak_min: 15
@@ -231,10 +231,10 @@ BNBUSD:
     once_per_candle_tf: "M30"
     cooldown:
       enabled: true
-      min_secs_between_trades: 420
+      min_secs_between_trades: 600   # AUGMENTÉ 420→600 (audit fev2026)
       max_trades_per_day: 6
       after_trade_min: 4
-      after_loss_min: 20
+      after_loss_min: 60             # AUGMENTÉ 20→60 (audit fev2026)
       after_win_min: 6
       after_streak_n: 3
       after_streak_min: 25
@@ -320,10 +320,10 @@ XAUUSD:
         lock_rr: 0.3
     cooldown:
       enabled: true
-      min_secs_between_trades: 240
-      max_trades_per_day: 14
+      min_secs_between_trades: 600   # AUGMENTÉ 240→600 (audit fev2026)
+      max_trades_per_day: 8          # RÉDUIT 14→8 (audit fev2026)
       after_trade_min: 3
-      after_loss_min: 10
+      after_loss_min: 60             # AUGMENTÉ 10→60 (audit fev2026)
       after_win_min: 4
       after_streak_n: 3
       after_streak_min: 25
@@ -335,7 +335,7 @@ XAUUSD:
       window_after_min: 30
     position_limits:
       max_positions: 6
-      max_volume: 0.08
+      max_volume: 1.0                # AUGMENTÉ 0.08→1.0 (audit fev2026)
       max_net_volume: 0.05
     live_guard:
       enabled: true
@@ -589,8 +589,23 @@ NAS100:
   orchestrator:
     position_limits:
       max_volume: 10.0                 # Max 10 lots
+    cooldown:                          # AJOUTÉ (audit fev2026)
+      enabled: true
+      min_secs_between_trades: 600
+      max_trades_per_day: 8
+      after_loss_min: 60
   risk:
     daily_loss_abs: 2000               # Stop journalier 2000 CHF
+
+AUDUSD:                                # AJOUTÉ (audit fev2026)
+  orchestrator:
+    position_limits:
+      max_volume: 1.5
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 600
+      max_trades_per_day: 6
+      after_loss_min: 60
 
 USDJPY:
   orchestrator:
