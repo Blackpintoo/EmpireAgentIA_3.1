@@ -89,25 +89,71 @@ class SmartMoneyAgent:
         return float(series.max() - series.min()) <= tolerance
 
     @staticmethod
-    def _detect_imbalance(df: pd.DataFrame) -> Optional[GapInfo]:
-        window = df.tail(max(3, len(df)))
-        for idx in range(len(window) - 3, len(window) - 1):
+    def _compute_atr(df: pd.DataFrame, period: int = 14) -> Optional[float]:
+        """Calcule l'ATR via EWM sur le DataFrame OHLC."""
+        try:
+            if df is None or len(df) < period:
+                return None
+            highs = df["high"].astype(float)
+            lows = df["low"].astype(float)
+            prev_close = df["close"].astype(float).shift(1)
+            tr = pd.concat([
+                (highs - lows).abs(),
+                (highs - prev_close).abs(),
+                (lows - prev_close).abs(),
+            ], axis=1).max(axis=1)
+            atr = float(tr.ewm(span=period, min_periods=period).mean().iloc[-1])
+            return atr if not pd.isna(atr) else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _detect_imbalance(df: pd.DataFrame, atr: Optional[float] = None, min_size_atr: float = 0.3) -> Optional[GapInfo]:
+        window = df.tail(max(20, len(df)))
+        if len(window) < 3:
+            return None
+        # Scan en arrière sur 15 bougies max
+        scan_end = max(2, len(window) - 1)
+        scan_start = max(1, scan_end - 15)
+        for idx in range(scan_end, scan_start, -1):
+            if idx - 1 < 0 or idx + 1 >= len(window):
+                continue
             prev_candle = window.iloc[idx - 1]
             candle = window.iloc[idx]
             next_candle = window.iloc[idx + 1]
+            # Bullish FVG
             if candle["low"] > prev_candle["high"] and candle["low"] > next_candle["high"]:
                 start = float(prev_candle["high"])
                 end = float(candle["low"])
-                return GapInfo("bull", start, end, (start + end) / 2.0)
+                gap_size = abs(end - start)
+                # Rejeter si FVG trop petit vs ATR
+                if atr and atr > 0 and gap_size < min_size_atr * atr:
+                    continue
+                # Vérifier non-remplissage: si les 5 bougies suivantes descendent sous le gap
+                filled = False
+                future = window.iloc[idx + 1: idx + 6]
+                if len(future) > 0 and float(future["low"].min()) < start:
+                    filled = True
+                if not filled:
+                    return GapInfo("bull", start, end, (start + end) / 2.0)
+            # Bearish FVG
             if candle["high"] < prev_candle["low"] and candle["high"] < next_candle["low"]:
                 start = float(candle["high"])
                 end = float(prev_candle["low"])
-                return GapInfo("bear", start, end, (start + end) / 2.0)
+                gap_size = abs(end - start)
+                if atr and atr > 0 and gap_size < min_size_atr * atr:
+                    continue
+                filled = False
+                future = window.iloc[idx + 1: idx + 6]
+                if len(future) > 0 and float(future["high"].max()) > end:
+                    filled = True
+                if not filled:
+                    return GapInfo("bear", start, end, (start + end) / 2.0)
         return None
 
     @staticmethod
-    def _detect_order_block(df: pd.DataFrame, bullish: bool) -> Optional[float]:
-        subset = df.tail(60)
+    def _detect_order_block(df: pd.DataFrame, bullish: bool, atr: Optional[float] = None, min_reaction: float = 1.5) -> Optional[float]:
+        subset = df.tail(100)
         if len(subset) < 5:
             return None
         if bullish:
@@ -116,16 +162,31 @@ class SmartMoneyAgent:
                 if candle["close"] >= candle["open"]:
                     continue
                 future = subset.iloc[idx + 1:]
-                if future["close"].max() > candle["high"]:
-                    return float(min(candle["open"], candle["close"], candle["low"]))
+                reaction = float(future["close"].max()) - float(candle["high"])
+                # Exiger réaction >= 1.5x ATR
+                if atr and atr > 0 and reaction < min_reaction * atr:
+                    continue
+                if reaction > 0:
+                    ob_level = float(min(candle["open"], candle["close"], candle["low"]))
+                    # Vérifier que le niveau OB n'a pas été cassé
+                    if float(future["low"].min()) < ob_level:
+                        continue
+                    return ob_level
         else:
             for idx in range(len(subset) - 5, 1, -1):
                 candle = subset.iloc[idx]
                 if candle["close"] <= candle["open"]:
                     continue
                 future = subset.iloc[idx + 1:]
-                if future["close"].min() < candle["low"]:
-                    return float(max(candle["open"], candle["close"], candle["high"]))
+                reaction = float(candle["low"]) - float(future["close"].min())
+                if atr and atr > 0 and reaction < min_reaction * atr:
+                    continue
+                if reaction > 0:
+                    ob_level = float(max(candle["open"], candle["close"], candle["high"]))
+                    # Vérifier que le niveau OB n'a pas été cassé
+                    if float(future["high"].max()) > ob_level:
+                        continue
+                    return ob_level
         return None
 
     def _detect_amd(self, df: pd.DataFrame, atr: Optional[float]) -> str:
@@ -141,6 +202,42 @@ class SmartMoneyAgent:
         if abs(latest - max_close) < atr * 0.3 or abs(latest - min_close) < atr * 0.3:
             return "distribution"
         return "manipulation"
+
+    @staticmethod
+    def _compute_dynamic_multipliers(df: pd.DataFrame, direction: str) -> Tuple[float, float]:
+        """Retourne (sl_mult, tp_mult) ajustés à la volatilité et la force de tendance."""
+        sl_mult = 1.0
+        tp_mult = 1.0
+        try:
+            if df is None or len(df) < 14:
+                return sl_mult, tp_mult
+            closes = df["close"].astype(float)
+            highs = df["high"].astype(float)
+            lows = df["low"].astype(float)
+            avg_price = float(closes.tail(14).mean())
+            if avg_price <= 0:
+                return sl_mult, tp_mult
+            # ATR pour ratio de volatilité
+            atr_val = SmartMoneyAgent._compute_atr(df, period=14)
+            if atr_val and atr_val > 0:
+                vol_ratio = atr_val / avg_price
+                if vol_ratio < 0.01:
+                    sl_mult *= 0.8   # Réduire SL de 20% en faible volatilité
+                elif vol_ratio > 0.03:
+                    sl_mult *= 1.3   # Augmenter SL de 30% en forte volatilité
+            # Force de tendance (mouvement directionnel / range total sur 14 bougies)
+            tail = df.tail(14)
+            directional_move = abs(float(tail["close"].iloc[-1]) - float(tail["close"].iloc[0]))
+            total_range = float(tail["high"].max()) - float(tail["low"].min())
+            if total_range > 0:
+                trend_strength = directional_move / total_range
+                if trend_strength > 0.6:
+                    tp_mult *= 1.4   # Augmenter TP de 40% en tendance forte
+                elif trend_strength < 0.3:
+                    tp_mult *= 0.9   # Réduire TP de 10% en range
+        except Exception:
+            pass
+        return sl_mult, tp_mult
 
     def generate_signal(self, timeframe: Optional[str] = None) -> Dict[str, Any]:
         tf = timeframe or self.params.get("timeframe", "M15")
@@ -163,8 +260,6 @@ class SmartMoneyAgent:
         has_eqh = self._find_equal_levels(highs.tail(eq_len), tolerance)
         has_eql = self._find_equal_levels(lows.tail(eq_len), tolerance)
 
-        imbalance = self._detect_imbalance(df.tail(int(self.params.get("imbalance_lookback", 40))))
-
         asian_start, asian_end = self._asian_bounds(self.params.get("asian_session", {}) or {})
         now_utc = datetime.now(timezone.utc).time()
         if asian_start <= asian_end:
@@ -172,13 +267,12 @@ class SmartMoneyAgent:
         else:
             in_asian = now_utc >= asian_start or now_utc <= asian_end
 
-        atr_period = int(self.params.get("atr_period", 14))
-        prev_close = closes.shift(1)
-        tr = pd.concat([(highs - lows).abs(), (highs - prev_close).abs(), (lows - prev_close).abs()], axis=1).max(axis=1)
-        atr = float(tr.ewm(span=atr_period, min_periods=atr_period).mean().iloc[-1]) if len(tr) >= atr_period else None
+        atr = self._compute_atr(df, period=int(self.params.get("atr_period", 14)))
 
-        bull_ob = self._detect_order_block(df, bullish=True)
-        bear_ob = self._detect_order_block(df, bullish=False)
+        imbalance = self._detect_imbalance(df.tail(int(self.params.get("imbalance_lookback", 40))), atr=atr)
+
+        bull_ob = self._detect_order_block(df, bullish=True, atr=atr)
+        bear_ob = self._detect_order_block(df, bullish=False, atr=atr)
         amd_stage = self._detect_amd(df, atr)
 
         signal = "WAIT"
@@ -209,8 +303,9 @@ class SmartMoneyAgent:
         sl = None
         tp = None
         if signal in ("LONG", "SHORT"):
-            sl_mult = float(self.params.get("sl_mult", 1.5))
-            tp_mult = float(self.params.get("tp_mult", 2.2))
+            dyn_sl, dyn_tp = self._compute_dynamic_multipliers(df, signal)
+            sl_mult = float(self.params.get("sl_mult", 1.5)) * dyn_sl
+            tp_mult = float(self.params.get("tp_mult", 2.2)) * dyn_tp
             if atr and atr > 0:
                 base = atr * sl_mult
                 if signal == "LONG":
