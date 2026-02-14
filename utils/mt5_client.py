@@ -1124,6 +1124,8 @@ class MT5Client:
         # Retry/Backoff
         backoffs = list(ex["backoff_seconds"]) if ex["backoff_seconds"] else [0.5]
         tries = 0
+        _GLOBAL_TIMEOUT_SEC = 30.0
+        _order_start_ts = time.time()
 
         # Ajouter type_filling si non spécifié (crucial pour éviter 10030)
         if "type_filling" not in request:
@@ -1132,6 +1134,12 @@ class MT5Client:
                 request["type_filling"] = fillings[0]
 
         while True:
+            # Timeout global (audit fev2026)
+            if time.time() - _order_start_ts > _GLOBAL_TIMEOUT_SEC:
+                self._cb_note_error()
+                logger.error(f"[MT5] global_timeout ({_GLOBAL_TIMEOUT_SEC}s) pour {symbol} après {tries} tentatives")
+                return {"ok": False, "error": "global_timeout", "tries": tries, "elapsed": round(time.time() - _order_start_ts, 1)}
+
             tries += 1
 
             # Log détaillé avant envoi
