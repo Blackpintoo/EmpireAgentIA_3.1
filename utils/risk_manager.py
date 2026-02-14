@@ -160,6 +160,28 @@ class RiskManager:
             lots = risk_budget / (effective_points * point_value)
             lots = _round_step(lots, self.lot_step)
             lots = max(self.min_lot, lots)
+
+            # Plafond max_volume depuis position_limits (audit fev2026)
+            try:
+                max_vol = float(
+                    (self.profile.get("orchestrator") or {})
+                    .get("position_limits", {})
+                    .get("max_volume", 0)
+                )
+                if max_vol > 0 and lots > max_vol:
+                    logger.info(
+                        f"[RISK] {self.symbol}: lots {lots:.4f} plafonné à max_volume {max_vol}"
+                    )
+                    lots = min(lots, max_vol)
+                    lots = _round_step(lots, self.lot_step)
+                    if lots < self.min_lot:
+                        logger.info(
+                            f"[RISK] {self.symbol}: lots {lots:.4f} < min_lot {self.min_lot} après plafonnement → trade annulé"
+                        )
+                        return None
+            except Exception:
+                pass
+
             return lots
         except Exception as exc:
             logger.warning(f"[RISK] compute_position_size error: {exc}")
