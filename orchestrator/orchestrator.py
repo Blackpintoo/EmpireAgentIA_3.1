@@ -120,6 +120,29 @@ except Exception:
     econ_should_avoid_trading = None  # type: ignore
     ECONOMIC_CALENDAR_AVAILABLE = False
 
+# FIX 2026-02-20: Kill Switch Global + Circuit Breaker + Session Filter (étape 2)
+try:
+    from utils.risk_manager import get_global_kill_switch, GlobalKillSwitch
+except Exception:
+    get_global_kill_switch = None  # type: ignore
+    GlobalKillSwitch = None  # type: ignore
+
+try:
+    from utils.circuit_breaker import get_circuit_breaker, CircuitBreaker
+except Exception:
+    get_circuit_breaker = None  # type: ignore
+    CircuitBreaker = None  # type: ignore
+
+try:
+    from utils.session_filter import (
+        is_in_prime_hours, get_adjusted_min_score, is_eod_restricted, should_close_eod
+    )
+except Exception:
+    is_in_prime_hours = None  # type: ignore
+    get_adjusted_min_score = None  # type: ignore
+    is_eod_restricted = None  # type: ignore
+    should_close_eod = None  # type: ignore
+
 # PHASE 3 (2025-12-17): Score Composite - Unification de tous les signaux
 try:
     from utils.composite_score import (
@@ -694,11 +717,13 @@ class Orchestrator:
             self.asset_manager = None
 
         # --- Profil & overrides ---
+        self.overrides_all: Dict[str, Any] = {}  # FIX 2026-02-20: stocké pour accès global
         try:
             ov_path = os.path.join("config", "overrides.yaml")
             if os.path.exists(ov_path):
                 with open(ov_path, encoding="utf-8") as f:
                     ov_all = yaml.safe_load(f) or {}
+                self.overrides_all = ov_all  # FIX 2026-02-20: persisté pour kill switch/EOD
                 self._apply_overrides_for_symbol(ov_all.get(self.symbol) or {})
         except Exception as e:
             logger.warning(f"[OVR] load overrides.yaml: {e}")
@@ -711,6 +736,7 @@ class Orchestrator:
         self._last_report_ts: Optional[datetime] = None
 
         weights_cfg = self.ori_cfg.get("agent_weights", {}) or {}
+        self.agent_weights = weights_cfg  # FIX 2026-02-20: stocké pour _compute_aggregate_direction (étape 3.2)
         self.w_news      = float(weights_cfg.get("news",     0.6))
         self.w_swing     = float(weights_cfg.get("swing",    0.5))
         self.w_scalp     = float(weights_cfg.get("scalping", 0.3))
@@ -719,8 +745,9 @@ class Orchestrator:
         self.w_whale     = float(weights_cfg.get("whale", self.whale_cfg.get("weight", 0.4)))
 
         self.votes_required: int = int(self.ori_cfg.get("votes_required", 2))
-        self.min_confluence: float = float(self.ori_cfg.get("min_confluence", 2))
-        self.min_score_for_proposal: float = float(self.ori_cfg.get("min_score_for_proposal", 2.0))
+        # FIX 2026-02-20: seuils relevés à 2.5 par défaut (étape 3.5)
+        self.min_confluence: float = float(self.ori_cfg.get("min_confluence", 2.5))
+        self.min_score_for_proposal: float = float(self.ori_cfg.get("min_score_for_proposal", 2.5))
         self.require_scalping_entry: bool = bool(self.ori_cfg.get("require_scalping_entry", False))
         self.require_swing_confirm: bool  = bool(self.ori_cfg.get("require_swing_confirm", False))
         self.confluence_weights: Dict[str, float] = {
@@ -1049,6 +1076,30 @@ class Orchestrator:
                    f"ticket {payload.get('ticket','?')} | {ts}")
             if self._tg_antispam_ok("trade_event", msg):
                 self._send_telegram(msg, kind="trade_event", force=True)
+
+            # FIX 2026-02-20: Circuit-Breaker record_loss/record_win (étape 2.4)
+            try:
+                if get_circuit_breaker is not None:
+                    _cb = get_circuit_breaker()
+                    _pnl_str = str(payload.get("pnl_ccy", "0")).replace("+", "")
+                    _pnl_val = float(_pnl_str)
+                    if _pnl_val < 0:
+                        _cb.record_loss(sym)
+                        logger.info(f"[CIRCUIT_BREAKER] {sym}: perte enregistrée (P&L={_pnl_val:+.2f})")
+                    elif _pnl_val > 0:
+                        _cb.record_win(sym)
+            except Exception as _cb_err:
+                logger.debug(f"[CIRCUIT_BREAKER] Erreur enregistrement: {_cb_err}")
+
+            # FIX 2026-02-20: Kill Switch — mise à jour P&L réalisé (étape 2.1)
+            try:
+                if get_global_kill_switch is not None:
+                    _pnl_str2 = str(payload.get("pnl_ccy", "0")).replace("+", "")
+                    _pnl_val2 = float(_pnl_str2)
+                    _ks = get_global_kill_switch()
+                    _ks.update_realized_pnl(_pnl_val2)
+            except Exception as _ks_err:
+                logger.debug(f"[KILL_SWITCH] Erreur update P&L: {_ks_err}")
 
         else:
             # MOVE_BE / TP1_HIT / TRAILING_SL_UPDATE / ERROR etc.
@@ -2830,6 +2881,110 @@ class Orchestrator:
 
 
 
+            # ═══════════════════════════════════════════════════════════════
+            # FIX 2026-02-20: Garde-fous AVANT calcul des signaux (étape 2.4)
+            # Ordre: 1) Kill switch global, 2) Circuit-breaker symbole, 3) EOD
+            # ═══════════════════════════════════════════════════════════════
+
+            # (a) Kill Switch Global — vérifie perte journalière totale
+            if get_global_kill_switch is not None:
+                try:
+                    _global_cfg = (self.overrides_all or {}).get("GLOBAL", {})
+                    _ks_limit = float((_global_cfg.get("risk") or {}).get("global_daily_loss_limit", 400.0))
+                    _ks = get_global_kill_switch(_ks_limit)
+                    _floating = 0.0
+                    try:
+                        _floating = float(self.risk.get_floating_pnl()) if hasattr(self.risk, "get_floating_pnl") else 0.0
+                    except Exception:
+                        _floating = 0.0
+                    _ks_blocked, _ks_reason = _ks.check_kill_switch(_floating)
+                    if _ks_blocked:
+                        logger.warning(f"[KILL_SWITCH] {symbol} bloqué: {_ks_reason}")
+                        self._send_telegram(
+                            f"[KILL_SWITCH] Trading BLOQUE: {_ks_reason} "
+                            f"(realized={_ks._state.get('realized_pnl', 0):.2f} + floating={_floating:.2f})",
+                            kind="status", force=True
+                        )
+                        return
+                except Exception as _ks_err:
+                    logger.debug(f"[KILL_SWITCH] Erreur vérification: {_ks_err}")
+
+            # (b) Circuit-Breaker par symbole — 3 pertes consécutives = 24h de pause
+            if get_circuit_breaker is not None:
+                try:
+                    _cb = get_circuit_breaker()
+                    _cb_blocked, _cb_reason = _cb.is_blocked(symbol)
+                    if _cb_blocked:
+                        logger.info(f"[CIRCUIT_BREAKER] {symbol} bloqué: {_cb_reason}")
+                        return
+                except Exception as _cb_err:
+                    logger.debug(f"[CIRCUIT_BREAKER] Erreur vérification: {_cb_err}")
+
+            # (c) Restriction EOD — pas de nouvelles positions non-crypto après 18:00 UTC
+            if is_eod_restricted is not None:
+                try:
+                    _eod_cfg = (self.overrides_all or {}).get("GLOBAL", {})
+                    _last_entry = str(_eod_cfg.get("last_entry_time_utc", "18:00"))
+                    if is_eod_restricted(symbol, _last_entry):
+                        logger.info(f"[EOD] {symbol} bloqué: après {_last_entry} UTC (non-crypto)")
+                        return
+                except Exception as _eod_err:
+                    logger.debug(f"[EOD] Erreur vérification: {_eod_err}")
+
+            # (d) Fermeture EOD — fermer positions non-crypto après 19:30 UTC
+            if should_close_eod is not None:
+                try:
+                    _eod_close_cfg = (self.overrides_all or {}).get("GLOBAL", {})
+                    _eod_close_time = str(_eod_close_cfg.get("eod_close_time_utc", "19:30"))
+                    if should_close_eod(symbol, _eod_close_time):
+                        logger.info(f"[EOD_CLOSE] {symbol}: fermeture EOD demandée ({_eod_close_time} UTC)")
+                        # FIX 2026-02-20: Fermeture effective via MT5 (étape 2.3)
+                        try:
+                            if mt5:
+                                _broker_sym = getattr(self, "broker_symbol", symbol)
+                                _eod_positions = mt5.positions_get(symbol=_broker_sym) or []
+                                for _eod_p in _eod_positions:
+                                    _eod_ticket = int(getattr(_eod_p, "ticket", 0) or 0)
+                                    _eod_vol = float(getattr(_eod_p, "volume", 0) or 0)
+                                    _eod_type = int(getattr(_eod_p, "type", 0))
+                                    _eod_profit = float(getattr(_eod_p, "profit", 0) or 0)
+                                    if _eod_ticket <= 0 or _eod_vol <= 0:
+                                        continue
+                                    _eod_side = "BUY" if _eod_type == 0 else "SELL"
+                                    _eod_order_type = mt5.ORDER_TYPE_SELL if _eod_side == "BUY" else mt5.ORDER_TYPE_BUY
+                                    _eod_tick = mt5.symbol_info_tick(_broker_sym)
+                                    _eod_price = (_eod_tick.bid if _eod_side == "BUY" else _eod_tick.ask) if _eod_tick else 0
+                                    if _eod_price <= 0:
+                                        continue
+                                    _eod_req = {
+                                        "action": mt5.TRADE_ACTION_DEAL,
+                                        "position": _eod_ticket,
+                                        "symbol": _broker_sym,
+                                        "volume": _eod_vol,
+                                        "type": _eod_order_type,
+                                        "price": _eod_price,
+                                        "deviation": 30,
+                                        "magic": 0,
+                                        "comment": "eod_close",
+                                        "type_filling": mt5.ORDER_FILLING_IOC,
+                                        "type_time": mt5.ORDER_TIME_GTC,
+                                    }
+                                    _eod_result = mt5.order_send(_eod_req)
+                                    if _eod_result and _eod_result.retcode == mt5.TRADE_RETCODE_DONE:
+                                        logger.info(f"[EOD_CLOSE] {symbol} ticket {_eod_ticket} fermé (P&L: {_eod_profit:+.2f})")
+                                        self._send_telegram(
+                                            f"[EOD_CLOSE] {symbol} #{_eod_ticket} fermé à {_eod_close_time} UTC (P&L: {_eod_profit:+.2f})",
+                                            kind="trade_event", force=True
+                                        )
+                                    else:
+                                        _eod_err_msg = _eod_result.comment if _eod_result else "Unknown"
+                                        logger.warning(f"[EOD_CLOSE] Échec fermeture {symbol} #{_eod_ticket}: {_eod_err_msg}")
+                        except Exception as _eod_mt5_err:
+                            logger.warning(f"[EOD_CLOSE] Erreur MT5: {_eod_mt5_err}")
+                        return  # Pas de nouveau trade après EOD close
+                except Exception as _eod_close_err:
+                    logger.debug(f"[EOD_CLOSE] Erreur: {_eod_close_err}")
+
             # 1) Collecte des signaux agents + indicateurs (+ hints SL/TP/PRICE)
             per_tf_signals, global_signals, indicators, market = self._gather_agent_signals(symbol)
 
@@ -2849,6 +3004,17 @@ class Orchestrator:
             if price is None:
                 logger.info(f"[{symbol}] Pas de prix (tick & fallback indisponibles) → skip.")
                 return
+
+            # FIX 2026-02-20: Détection régime centralisée AVANT agrégation (étape 5.1)
+            self._current_regime = ""
+            try:
+                if detect_market_regime is not None:
+                    _regime_df = self._get_ohlcv_dataframe(symbol, "H1", 150) if hasattr(self, "_get_ohlcv_dataframe") else None
+                    if _regime_df is not None and len(_regime_df) > 50:
+                        _regime_res = detect_market_regime(symbol, _regime_df)
+                        self._current_regime = str(_regime_res.get("regime_name", "")).lower()
+            except Exception:
+                pass
 
             # 2) Agrégation → direction/score/confluence
             direction, score_agr, confluence, _details = self._compute_aggregate_direction(
@@ -2879,25 +3045,22 @@ class Orchestrator:
             tech_majority_long = sum(1 for sig in tech_signals.values() if _norm(sig) == "LONG")
             tech_majority_short = sum(1 for sig in tech_signals.values() if _norm(sig) == "SHORT")
 
-            # Confirmation structure OU swing requise pour fast-track
+            # FIX 2026-02-20: Fast-track corrigé (étape 3.1)
+            # - Structure ET swing requis (pas OR)
+            # - Score individuel > 1.5 requis
+            # - Bonus +0.5 au lieu de forcer 2.1
             structure_dir = _norm(global_signals.get("structure") if global_signals else None)
             swing_dir_ft = _norm(global_signals.get("swing") if global_signals else None)
 
             fast_track_validated = False
             if tech_majority_long >= 5 and news_dir == "LONG":
-                if structure_dir == "LONG" or swing_dir_ft == "LONG":
-                    direction = "LONG"; score_agr = max(score_agr, 2.1); confluence = max(confluence, 2)
+                if structure_dir == "LONG" and swing_dir_ft == "LONG" and score_agr > 1.5:
+                    direction = "LONG"; score_agr += 0.5; confluence = max(confluence, 2)
                     fast_track_validated = True
             elif tech_majority_short >= 5 and news_dir == "SHORT":
-                if structure_dir == "SHORT" or swing_dir_ft == "SHORT":
-                    direction = "SHORT"; score_agr = max(score_agr, 2.1); confluence = max(confluence, 2)
+                if structure_dir == "SHORT" and swing_dir_ft == "SHORT" and score_agr > 1.5:
+                    direction = "SHORT"; score_agr += 0.5; confluence = max(confluence, 2)
                     fast_track_validated = True
-
-            if not fast_track_validated:
-                has_tech_dir = any(_norm(sig) in ("LONG", "SHORT") for sig in tech_signals.values())
-                swing_dir = _norm(global_signals.get("swing") if global_signals else None)
-                if not has_tech_dir and swing_dir and swing_dir == news_dir and swing_dir in ("LONG", "SHORT"):
-                    direction = swing_dir; score_agr = max(score_agr, 1.9); confluence = max(confluence, 2)
 
             whale_dir = _norm(global_signals.get("whale") if global_signals else None)
             if whale_dir in ("LONG", "SHORT") and self.whale_agent:
@@ -3000,8 +3163,20 @@ class Orchestrator:
 
             if direction not in ("LONG", "SHORT"):
                 reasons.append("direction_indeterminee")
-            if score_agr < self.min_score_for_proposal:
-                reasons.append(f"score({score_agr:.2f})<min({self.min_score_for_proposal:.2f})")
+
+            # FIX 2026-02-20: Session filter — ajuster min_score hors prime hours (étape 5.5)
+            _eff_min_score = self.min_score_for_proposal
+            if get_adjusted_min_score is not None:
+                try:
+                    _prime_cfg = ((self.overrides_all or {}).get(symbol, {}) or {}).get("prime_hours_utc")
+                    _eff_min_score, _in_prime = get_adjusted_min_score(symbol, self.min_score_for_proposal, _prime_cfg)
+                    if not _in_prime:
+                        decision_notes.append(f"off_prime_hours(min_score={_eff_min_score:.2f})")
+                except Exception:
+                    pass
+
+            if score_agr < _eff_min_score:
+                reasons.append(f"score({score_agr:.2f})<min({_eff_min_score:.2f})")
             if confluence < self.min_confluence:
                 reasons.append(f"confluence({confluence})<min({self.min_confluence})")
 
@@ -3175,6 +3350,11 @@ class Orchestrator:
                             # Avertir si marché trop volatile
                             elif regime_type == "volatile" and regime_confidence > 0.7:
                                 decision_notes.append("volatile_market_caution")
+                            # FIX 2026-02-20: Bloquer en régime QUIET (étape 5.3)
+                            elif regime_type == "quiet" and regime_confidence > 0.7:
+                                reasons.append(f"regime_quiet(conf={regime_confidence:.2f})")
+                                decision_notes.append("quiet_regime_blocked")
+                                logger.info(f"[REGIME] {symbol} bloqué: régime QUIET (conf={regime_confidence:.2f})")
 
                         # ══════════════════════════════════════════════════════════════
                         # OPTIMISATION 2025-12-30: Renforcer filtre contre-tendance BUY
@@ -4022,49 +4202,111 @@ class Orchestrator:
         score_short = 0.0
         confluence = 0.0
 
+        # FIX 2026-02-20: agent_weights appliqués dans per_tf (étape 3.2)
+        _agent_w = dict(getattr(self, "agent_weights", {}) or {})
+
+        # FIX 2026-02-20: Poids dynamiques par régime (étape 5.2)
+        # TRENDING: swing*1.3, scalping*0.7
+        # RANGING: structure*1.3, swing*0.7
+        # VOLATILE: scalping*0.5, structure*1.2
+        _regime_label = str(getattr(self, "_current_regime", "") or "").lower()
+        _regime_mults: Dict[str, Dict[str, float]] = {
+            "trending_up":   {"swing": 1.3, "scalping": 0.7, "structure": 1.0, "news": 0.8},
+            "trending_down": {"swing": 1.3, "scalping": 0.7, "structure": 1.0, "news": 0.8},
+            "ranging":       {"swing": 0.7, "scalping": 1.0, "structure": 1.3, "news": 0.8},
+            "volatile":      {"swing": 0.9, "scalping": 0.5, "structure": 1.2, "news": 0.6},
+            "quiet":         {"swing": 0.5, "scalping": 0.3, "structure": 0.5, "news": 0.3},
+        }
+        if _regime_label in _regime_mults:
+            _rm = _regime_mults[_regime_label]
+            for _rk, _rv in _rm.items():
+                if _rk in _agent_w:
+                    _agent_w[_rk] = float(_agent_w[_rk]) * _rv
+
+        # FIX 2026-02-20: tracking direction par agent pour pénalité dispersion (étape 3.3)
+        _agent_dirs: list = []  # list of ("LONG"|"SHORT"|"NEUTRAL")
+
         for agent_name, tf_map in per_tf_signals.items():
+            agent_weight = float(_agent_w.get(agent_name, 1.0))
             longs = sum(w(tf) for tf, sig in tf_map.items() if _norm(sig) == "LONG")
             shorts = sum(w(tf) for tf, sig in tf_map.items() if _norm(sig) == "SHORT")
             total_weight = longs + shorts
             if longs > shorts:
-                score_long += longs - shorts
+                score_long += (longs - shorts) * agent_weight
                 dispersion = (longs - shorts) / max(total_weight, 1e-6)
                 if dispersion >= self.min_confluence_dispersion:
                     confluence += float(self.confluence_weights.get(agent_name, 1.0))
+                _agent_dirs.append("LONG")
             elif shorts > longs:
-                score_short += shorts - longs
+                score_short += (shorts - longs) * agent_weight
                 dispersion = (shorts - longs) / max(total_weight, 1e-6)
                 if dispersion >= self.min_confluence_dispersion:
                     confluence += float(self.confluence_weights.get(agent_name, 1.0))
+                _agent_dirs.append("SHORT")
+            else:
+                _agent_dirs.append("NEUTRAL")
+
+        # FIX 2026-02-20: Poids dynamiques appliqués aux global signals (étape 5.2)
+        _eff_w_news = self.w_news * _regime_mults.get(_regime_label, {}).get("news", 1.0)
+        _eff_w_swing = self.w_swing * _regime_mults.get(_regime_label, {}).get("swing", 1.0)
+        _eff_w_scalp = self.w_scalp * _regime_mults.get(_regime_label, {}).get("scalping", 1.0)
+        _eff_w_structure = self.w_structure * _regime_mults.get(_regime_label, {}).get("structure", 1.0)
 
         news_dir = _norm(global_signals.get("news") if global_signals else None)
         if news_dir == "LONG":
-            score_long += self.w_news; confluence += 1
+            score_long += _eff_w_news; confluence += 1
+            _agent_dirs.append("LONG")
         elif news_dir == "SHORT":
-            score_short += self.w_news; confluence += 1
+            score_short += _eff_w_news; confluence += 1
+            _agent_dirs.append("SHORT")
 
         swing_dir = _norm(global_signals.get("swing") if global_signals else None)
         if swing_dir == "LONG":
-            score_long += self.w_swing
+            score_long += _eff_w_swing
+            _agent_dirs.append("LONG")
         elif swing_dir == "SHORT":
-            score_short += self.w_swing
+            score_short += _eff_w_swing
+            _agent_dirs.append("SHORT")
 
         scalping_dir = _norm(global_signals.get("scalping") if global_signals else None)
         if scalping_dir == "LONG":
-            score_long += self.w_scalp
+            score_long += _eff_w_scalp
+            _agent_dirs.append("LONG")
         elif scalping_dir == "SHORT":
-            score_short += self.w_scalp
+            score_short += _eff_w_scalp
+            _agent_dirs.append("SHORT")
 
         structure_dir = _norm(global_signals.get("structure") if global_signals else None)
         if structure_dir == "LONG":
-            score_long += self.w_structure
+            score_long += _eff_w_structure
+            _agent_dirs.append("LONG")
         elif structure_dir == "SHORT":
-            score_short += self.w_structure
+            score_short += _eff_w_structure
+            _agent_dirs.append("SHORT")
 
         direction = "LONG" if score_long > score_short else ("SHORT" if score_short > score_long else "")
         score_agr = max(score_long, score_short)
+
+        # FIX 2026-02-20: Pénalité de dispersion (étape 3.3)
+        # -0.5 si >35% des agents désaccord, -1.0 block si >45%
         details: Dict[str, Any] = {}
-        return direction, float(score_agr), int(confluence), details
+        if _agent_dirs and direction in ("LONG", "SHORT"):
+            _total_agents = len(_agent_dirs)
+            _disagree = sum(1 for d in _agent_dirs if d not in (direction, "NEUTRAL"))
+            _disagree_pct = _disagree / _total_agents if _total_agents > 0 else 0.0
+            if _disagree_pct > 0.45:
+                score_agr -= 1.0
+                details["dispersion_penalty"] = -1.0
+                details["disagree_pct"] = round(_disagree_pct, 2)
+            elif _disagree_pct > 0.35:
+                score_agr -= 0.5
+                details["dispersion_penalty"] = -0.5
+                details["disagree_pct"] = round(_disagree_pct, 2)
+
+        # FIX 2026-02-20: Cap confluence à 5.0 (étape 3.4)
+        confluence = min(confluence, 5.0)
+
+        return direction, float(score_agr), float(confluence), details
     def _estimate_rr(self, proposal: Optional[Dict[str, Any]]) -> Optional[float]:
         try:
             if not proposal:

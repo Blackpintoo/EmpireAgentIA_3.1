@@ -1,17 +1,7 @@
 {
-  "BTCUSD:826300184": {
+  "XAUUSD:858034226": {
     "partials_done": [],
     "be_done": true,
     "trail_active": true
-  },
-  "BTCUSD:830382092": {
-    "partials_done": [],
-    "be_done": true,
-    "trail_active": true
-  },
-  "BTCUSD:835567708": {
-    "partials_done": [],
-    "be_done": true,
-    "trail_active": false
   }
 }

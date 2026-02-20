@@ -1,14 +1,14 @@
 {
-  "timestamp": "2026-02-20T05:19:12.001725+00:00",
-  "symbol": "SOLUSD",
+  "timestamp": "2026-02-20T12:16:30.052541+00:00",
+  "symbol": "AUDUSD",
   "signals": {
-    "swing": {
+    "structure": {
       "signal": "SHORT",
       "intensity": null,
       "reason": ""
     },
     "smc": {
-      "signal": "SHORT",
+      "signal": "LONG",
       "intensity": null,
       "reason": ""
     },

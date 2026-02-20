@@ -1,5 +1,77 @@
 # CHANGELOG - Empire Agent IA v3
 
+## [2026-02-20] Refonte majeure - Audit Fev 2026
+
+### Contexte
+- P&L net: -$2,654 (1-20 fev 2026)
+- RR reel: 0.50 (vs theorique 1.3)
+- Capital: $102,044 -> $55,787 (-45% en 7 semaines)
+- Objectif: $5,000/mois
+
+### Etape 1 - Survie du capital (config only)
+- **overrides.yaml** entierement reecrit
+- Partials: RR 1.5 (30%) + RR 2.5 (30%) pour tous les symboles
+- Break-even: 0.6 -> 1.2 (preserve la course du trade)
+- SL ATR serres: forex 1.4, XAUUSD 1.8, crypto 1.5, indices 1.6
+- Max volumes plafonnes: XAUUSD 0.15, NAS100 1.0, BTCUSD 0.10
+- AUDUSD et LTCUSD desactives (enabled: false)
+- Cooldowns: min_secs_between_trades >= 600s, after_loss >= 60s
+- whale_override.enable: false pour non-crypto
+- prime_hours_utc configures par symbole
+
+### Etape 2 - Mecanismes de protection
+- **Kill Switch Global** ($400/jour) - `utils/risk_manager.py`
+  - Persiste dans `data/daily_loss_state.json`, reset 00:00 UTC
+  - Inclut P&L realise + flottant, notification Telegram
+- **Circuit-Breaker** par symbole - `utils/circuit_breaker.py` (nouveau)
+  - 3 pertes dans 48h = blocage 24h, persiste dans `data/circuit_breaker_state.json`
+  - record_loss/record_win integres dans orchestrator
+- **Session Filter** - `utils/session_filter.py` (nouveau)
+  - Prime hours par instrument, restriction EOD 18:00 UTC
+  - Fermeture EOD effective 19:30 UTC via MT5
+
+### Etape 3 - Recalibration orchestrateur
+- **Fast-tracks corriges**: structure ET swing requis (pas OR)
+  - Score > 1.5 exige, bonus +0.5 au lieu de forcer 2.1
+- **agent_weights** appliques dans `_compute_aggregate_direction()`
+- **Penalite de dispersion**: -0.5 si >35% desaccord, -1.0 si >45%
+- **Confluence plafonnee** a 5.0, seuils releves: min_score 2.5, min_confluence 2.5
+
+### Etape 4 - Recalibration agents
+- **TechnicalAgent**: RSI 68/32, MACD eps 0.003, filtre ADX >= 20
+- **ScalpingAgent**: RSI period 9, EMA 13, RSI 72/28
+- **SwingAgent**: slope 0.025, RSI 45/55, fallback desactive
+- **SentimentAgent**: retourne None pour non-crypto
+- **NewsAgent**: retourne None pour non-crypto
+
+### Etape 5 - Architecture decision
+- **Regime centralise**: detection avant aggregation (une seule fois par cycle)
+- **Poids dynamiques par regime** (TRENDING: swing x1.3; RANGING: structure x1.3; etc.)
+- **QUIET regime**: trading bloque si confidence > 0.7
+- **CompositeScore**: redistribution poids quand composants indisponibles
+- **Session filter**: min_score x1.5 hors prime hours
+
+### Etape 6 - Nettoyage et validation
+- `scripts/validate_config.py` (nouveau): validation overrides + compilation + imports
+- Verification syntaxe de tous les fichiers Python critiques
+- CHANGELOG.md mis a jour
+
+### Fichiers modifies
+- `config/overrides.yaml` - reecrit
+- `utils/risk_manager.py` - GlobalKillSwitch
+- `utils/circuit_breaker.py` - nouveau
+- `utils/session_filter.py` - nouveau
+- `utils/composite_score.py` - redistribution poids
+- `orchestrator/orchestrator.py` - garde-fous, fast-tracks, aggregation, regime
+- `agents/technical.py` - RSI, MACD, ADX
+- `agents/scalping.py` - RSI, EMA
+- `agents/swing.py` - slope, RSI, fallback
+- `agents/sentiment.py` - filtre non-crypto
+- `agents/news.py` - filtre non-crypto
+- `scripts/validate_config.py` - nouveau
+
+---
+
 ## [Version 1.1.0] - 2025-11-29
 
 ### 🚀 PHASE 1 : CORRECTIONS CRITIQUES

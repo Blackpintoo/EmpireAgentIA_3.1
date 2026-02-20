@@ -73,11 +73,12 @@ class ScalpingParams:
     session_hours: List[int] = None
     max_spread: float = 100.0
     max_trades_per_hour: int = 6  # (optionnel: non utilisé ici, l’orchestrateur garde déjà)
-    rsi_period: int = 7
-    ema_period: int = 21
+    # FIX 2026-02-20: RSI period 9, EMA 13, RSI 72/28 (étape 4.2)
+    rsi_period: int = 9
+    ema_period: int = 13
     atr_period: int = 14
-    rsi_overbought: float = 70
-    rsi_oversold: float = 30
+    rsi_overbought: float = 72
+    rsi_oversold: float = 28
     tp_mult: float = 2.0
     sl_mult: float = 1.5
     vol_window: int = 20
@@ -115,11 +116,12 @@ class ScalpingAgent:
             "session_hours": list(range(7, 23)),
             "max_spread": 35.0,
             "max_trades_per_hour": 6,
-            "rsi_period": 7,
-            "ema_period": 21,
+            # FIX 2026-02-20: RSI period 9, EMA 13, RSI 72/28 (étape 4.2)
+            "rsi_period": 9,
+            "ema_period": 13,
             "atr_period": 14,
-            "rsi_overbought": 68,
-            "rsi_oversold": 32,
+            "rsi_overbought": 72,
+            "rsi_oversold": 28,
             "tp_mult": 2.0,
             "sl_mult": 1.6,
             "vol_window": 20,

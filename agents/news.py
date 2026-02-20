@@ -247,6 +247,11 @@ class NewsAgent:
     # -----------------------------
     def generate_signal(self, bar=None):
         logger.debug(f"[DEBUG] generate_signal in {self.__class__.__name__}")
+        # FIX 2026-02-20: Désactiver pour non-crypto (étape 4.5)
+        _crypto_kw = ("BTC", "ETH", "SOL", "BNB", "LTC", "DOGE")
+        if not any(c in self.symbol.upper() for c in _crypto_kw):
+            logger.debug(f"[NEWS] {self.symbol} non-crypto — news désactivé")
+            return {"signal": None, "intensity": 0.0, "reason": "non_crypto"}
         news = self.dedup(self.fetch_news())
 
         # PHASE 2: Essayer d'abord l'analyse V2 (FinBERT)

@@ -62,72 +62,72 @@
     },
     "technical_m1": {
       "M1|default": {
-        "count": 10,
-        "score_ema": 0.46534121320549926,
-        "outcome_ema": 0.37500000000000006,
-        "win_rate": 0.575,
-        "weight": 1.6317047279232997,
-        "last_update": "2026-02-17T09:14:55+00:00"
+        "count": 11,
+        "score_ema": 0.5051988180191751,
+        "outcome_ema": 0.6937500000000001,
+        "win_rate": 0.6387499999999999,
+        "weight": 2.210244290811505,
+        "last_update": "2026-02-20T06:13:52+00:00"
       }
     },
     "swing_h4": {
       "H4|default": {
-        "count": 60,
-        "score_ema": 0.32795068889910556,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 62,
+        "score_ema": 0.3115756171597774,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:30+00:00"
       }
     },
     "swing_h1": {
       "H1|default": {
-        "count": 60,
-        "score_ema": 0.4310108373760922,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 62,
+        "score_ema": 0.514274085574053,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:30+00:00"
       }
     },
     "swing_m30": {
       "M30|default": {
-        "count": 60,
-        "score_ema": 0.44989921939779304,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 62,
+        "score_ema": 0.5279209415847319,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:30+00:00"
       }
     },
     "swing_m15": {
       "M15|default": {
-        "count": 58,
-        "score_ema": 0.44989921939779304,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 60,
+        "score_ema": 0.5279209415847319,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:30+00:00"
       }
     },
     "swing_m5": {
       "M5|default": {
-        "count": 59,
-        "score_ema": 0.44989921939779304,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 61,
+        "score_ema": 0.5279209415847319,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:30+00:00"
       }
     },
     "swing_m1": {
       "M1|default": {
-        "count": 59,
-        "score_ema": 0.44900281371415673,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 61,
+        "score_ema": 0.5272732884783047,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:30+00:00"
       }
     },
     "structure_h1": {
@@ -142,132 +142,132 @@
     },
     "structure_m15": {
       "M15|default": {
-        "count": 35,
-        "score_ema": 0.5641187555698264,
-        "outcome_ema": 0.6937499999999999,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.245596253341896,
-        "last_update": "2026-02-15T08:54:33+00:00"
+        "count": 37,
+        "score_ema": 0.610444556469026,
+        "outcome_ema": 1.194984375,
+        "win_rate": 0.738996875,
+        "weight": 3.145539546381416,
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "structure_m5": {
       "M5|default": {
-        "count": 33,
-        "score_ema": 0.5346587867945007,
-        "outcome_ema": 0.37499999999999817,
-        "win_rate": 0.575,
-        "weight": 1.6732952720766976,
-        "last_update": "2026-02-13T10:14:00+00:00"
+        "count": 34,
+        "score_ema": 0.5641187555698264,
+        "outcome_ema": 0.6937499999999985,
+        "win_rate": 0.6387499999999999,
+        "weight": 2.245596253341893,
+        "last_update": "2026-02-20T06:13:53+00:00"
       }
     },
     "smc_h1": {
       "H1|default": {
-        "count": 40,
-        "score_ema": 0.3999131781510337,
-        "outcome_ema": 1.5959504713557804,
-        "win_rate": 0.8397114672822944,
+        "count": 42,
+        "score_ema": 0.49180602678394825,
+        "outcome_ema": 1.8468242155545513,
+        "win_rate": 0.8841915351114578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "smc_m30": {
       "M30|default": {
-        "count": 45,
-        "score_ema": 0.43443075738925063,
-        "outcome_ema": 1.8216455374121214,
-        "win_rate": 0.8841915268583984,
+        "count": 47,
+        "score_ema": 0.51674497778356,
+        "outcome_ema": 2.0098889007802576,
+        "win_rate": 0.9163283781551929,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "smc_m15": {
       "M15|default": {
-        "count": 46,
-        "score_ema": 0.5147618925744104,
-        "outcome_ema": 1.879549773982923,
-        "win_rate": 0.9015627978296387,
+        "count": 48,
+        "score_ema": 0.5747842229548379,
+        "outcome_ema": 2.051724711702662,
+        "win_rate": 0.928879121431914,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "smc_m5": {
       "M5|default": {
-        "count": 26,
-        "score_ema": 0.45166174154519295,
-        "outcome_ema": 1.865494470229504,
-        "win_rate": 0.8841915268583984,
+        "count": 28,
+        "score_ema": 0.5291943638362283,
+        "outcome_ema": 2.041569754740817,
+        "win_rate": 0.9163283781551929,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "smc_m1": {
       "M1|default": {
-        "count": 50,
-        "score_ema": 0.4310108373760922,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 52,
+        "score_ema": 0.514274085574053,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "global_news": {
       "NEWS|default": {
-        "count": 60,
-        "score_ema": 0.5315956010437265,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 62,
+        "score_ema": 0.48240819677643415,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "global_swing": {
       "SWING|default": {
-        "count": 60,
-        "score_ema": 0.47344695824922556,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 62,
+        "score_ema": 0.5147978917435801,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "global_structure": {
       "STRUCTURE|default": {
-        "count": 53,
-        "score_ema": 0.468417123117372,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 55,
+        "score_ema": 0.5176009964299595,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "global_smc": {
       "SMC|default": {
-        "count": 54,
-        "score_ema": 0.4868275131261379,
-        "outcome_ema": 2.04340523709329,
-        "win_rate": 0.928879121431914,
+        "count": 56,
+        "score_ema": 0.5244653426421493,
+        "outcome_ema": 2.170110283799902,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "structure_m30": {
       "M30|default": {
-        "count": 21,
-        "score_ema": 0.5,
-        "outcome_ema": 0.0,
-        "win_rate": 0.5,
-        "weight": 1.0,
-        "last_update": "2026-01-02T11:09:25+00:00"
+        "count": 22,
+        "score_ema": 0.5346587867945007,
+        "outcome_ema": 0.37500000000000006,
+        "win_rate": 0.575,
+        "weight": 1.6732952720767005,
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "structure_m1": {
       "M1|default": {
-        "count": 20,
-        "score_ema": 0.42385203029870955,
-        "outcome_ema": 1.643094115234387,
-        "win_rate": 0.839711455859375,
+        "count": 21,
+        "score_ema": 0.46993301254840386,
+        "outcome_ema": 1.771629997949229,
+        "win_rate": 0.8637547374804687,
         "weight": 3.5,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "last_update": "2026-02-20T09:12:31+00:00"
       }
     },
     "technical_m5": {
@@ -292,12 +292,12 @@
     },
     "technical_m15": {
       "M15|default": {
-        "count": 9,
-        "score_ema": 0.37166357832955543,
-        "outcome_ema": 1.2504061254821586,
-        "win_rate": 0.7783544612951336,
-        "weight": 3.1326326887751312,
-        "last_update": "2026-02-19T11:41:10+00:00"
+        "count": 10,
+        "score_ema": 0.42557282837462285,
+        "outcome_ema": 1.4378452066598348,
+        "win_rate": 0.8116012921008636,
+        "weight": 3.486033057535562,
+        "last_update": "2026-02-20T09:12:30+00:00"
       }
     },
     "technical_m30": {
@@ -698,7 +698,7 @@
       "M30|default": {
         "count": 5,
         "score_ema": 0.5,
-        "outcome_ema": 6.024590532482322e-66,
+        "outcome_ema": 1.3988292383839462e-67,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-01-12T16:02:50+00:00"
@@ -708,7 +708,7 @@
       "H1|default": {
         "count": 3,
         "score_ema": 0.5,
-        "outcome_ema": 2.9315267889998516e-59,
+        "outcome_ema": 9.161021215624538e-61,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-01-15T14:02:13+00:00"
@@ -758,7 +758,7 @@
       "M30|default": {
         "count": 258,
         "score_ema": 0.5,
-        "outcome_ema": 3.814798612421925e-138,
+        "outcome_ema": 2.2251228454935945e-154,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-02-01T17:52:16+00:00"
@@ -1020,62 +1020,62 @@
     },
     "swing_h4": {
       "H4|default": {
-        "count": 80,
-        "score_ema": 0.4358812444301736,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.009278746658114,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 81,
+        "score_ema": 0.41084027097114684,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.4895916625826793,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "swing_h1": {
       "H1|default": {
-        "count": 80,
-        "score_ema": 0.4948011819808249,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.044630709188505,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 81,
+        "score_ema": 0.5302397914782019,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.561231374886912,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "swing_m30": {
       "M30|default": {
-        "count": 80,
-        "score_ema": 0.5051988180191751,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.050869290811515,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 81,
+        "score_ema": 0.5390777821107996,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.566534169266471,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "swing_m15": {
       "M15|default": {
-        "count": 80,
-        "score_ema": 0.5051988180191751,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.050869290811515,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 81,
+        "score_ema": 0.5390777821107996,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.566534169266471,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "swing_m5": {
       "M5|default": {
-        "count": 80,
-        "score_ema": 0.4358812444301736,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.009278746658114,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 81,
+        "score_ema": 0.41084027097114684,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.4895916625826793,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "swing_m1": {
       "M1|default": {
-        "count": 80,
-        "score_ema": 0.4948011819808249,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.044630709188505,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 81,
+        "score_ema": 0.5302397914782019,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.561231374886912,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "structure_m15": {
@@ -1110,92 +1110,92 @@
     },
     "smc_m30": {
       "M30|default": {
-        "count": 59,
-        "score_ema": 0.4948011819808249,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.044630709188505,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 60,
+        "score_ema": 0.5302397914782019,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.561231374886912,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "smc_m15": {
       "M15|default": {
-        "count": 64,
-        "score_ema": 0.4948011819808249,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.044630709188505,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 65,
+        "score_ema": 0.5302397914782019,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.561231374886912,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "smc_m5": {
       "M5|default": {
-        "count": 74,
-        "score_ema": 0.4948011819808249,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.044630709188505,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 75,
+        "score_ema": 0.5302397914782019,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.561231374886912,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "smc_m1": {
       "M1|default": {
-        "count": 67,
-        "score_ema": 0.4948011819808249,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.044630709188505,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 68,
+        "score_ema": 0.5302397914782019,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.561231374886912,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "global_news": {
       "NEWS|default": {
-        "count": 74,
-        "score_ema": 0.5032772668900805,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.0497163601340587,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 75,
+        "score_ema": 0.4809372309226991,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.5316498385536104,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "global_structure": {
       "STRUCTURE|default": {
-        "count": 65,
-        "score_ema": 0.49672273310991955,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.045783639865962,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 66,
+        "score_ema": 0.5190627690773009,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.5545251614463718,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "global_smc": {
       "SMC|default": {
-        "count": 78,
-        "score_ema": 0.4972446650479583,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.046096799028785,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 79,
+        "score_ema": 0.5160268649710428,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.5527036189826164,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "technical_m1": {
       "M1|default": {
-        "count": 11,
-        "score_ema": 0.5,
-        "outcome_ema": 0.0,
-        "win_rate": 0.5,
-        "weight": 1.0,
-        "last_update": "2025-12-23T20:54:17+00:00"
+        "count": 12,
+        "score_ema": 0.5346587867945007,
+        "outcome_ema": 0.3749999999999884,
+        "win_rate": 0.575,
+        "weight": 1.673295272076683,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "global_swing": {
       "SWING|default": {
-        "count": 53,
-        "score_ema": 0.4660175355914853,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.0273605213549013,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 54,
+        "score_ema": 0.48948380493304067,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.5367777829598155,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "scalping_m15": {
@@ -1230,12 +1230,12 @@
     },
     "structure_m1": {
       "M1|default": {
-        "count": 26,
-        "score_ema": 0.4948011819808249,
-        "outcome_ema": 0.5875000000000068,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.044630709188505,
-        "last_update": "2026-02-18T12:56:08+00:00"
+        "count": 27,
+        "score_ema": 0.5302397914782019,
+        "outcome_ema": 0.8743749999999941,
+        "win_rate": 0.6929375,
+        "weight": 2.561231374886912,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "technical_m15": {
@@ -1252,7 +1252,7 @@
       "M30|default": {
         "count": 18,
         "score_ema": 0.5,
-        "outcome_ema": 1.0322801192060967e-272,
+        "outcome_ema": 0.0,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-22T17:42:09+00:00"
@@ -1290,12 +1290,12 @@
     },
     "smc_h4": {
       "H4|default": {
-        "count": 25,
-        "score_ema": 0.5346587867945007,
-        "outcome_ema": 0.250000000000008,
-        "win_rate": 0.575,
-        "weight": 1.4857952720767125,
-        "last_update": "2026-02-17T15:14:57+00:00"
+        "count": 26,
+        "score_ema": 0.4948011819808249,
+        "outcome_ema": 0.5874999999999952,
+        "win_rate": 0.6387499999999999,
+        "weight": 2.044630709188488,
+        "last_update": "2026-02-20T12:12:34+00:00"
       }
     },
     "scalping_h1": {
@@ -1342,12 +1342,12 @@
   "XAUUSD": {
     "technical_h1": {
       "H1|default": {
-        "count": 34,
-        "score_ema": 0.4801578445601483,
-        "outcome_ema": 0.7493749999999986,
-        "win_rate": 0.6929375,
-        "weight": 2.3436822067360867,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "count": 35,
+        "score_ema": 0.5177929546706268,
+        "outcome_ema": 0.886968749999997,
+        "win_rate": 0.738996875,
+        "weight": 2.6279251478023715,
+        "last_update": "2026-02-20T08:03:49+00:00"
       }
     },
     "scalping_h1": {
@@ -1362,122 +1362,122 @@
     },
     "swing_h4": {
       "H4|default": {
-        "count": 91,
-        "score_ema": 0.5781387984844565,
-        "outcome_ema": 2.0519108482007233,
-        "win_rate": 0.999828739241544,
+        "count": 92,
+        "score_ema": 0.6010767655062887,
+        "outcome_ema": 1.994124220970613,
+        "win_rate": 0.9998544283553125,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:49+00:00"
       }
     },
     "swing_h1": {
       "H1|default": {
-        "count": 93,
-        "score_ema": 0.6575478810124475,
-        "outcome_ema": 2.0475539222196883,
-        "win_rate": 0.9998762641020156,
+        "count": 94,
+        "score_ema": 0.668574485655081,
+        "outcome_ema": 1.9904208338867333,
+        "win_rate": 0.9998948244867133,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:49+00:00"
       }
     },
     "swing_m30": {
       "M30|default": {
-        "count": 88,
-        "score_ema": 0.6778136681634748,
-        "outcome_ema": 2.0472476136765256,
-        "win_rate": 0.999721130456412,
+        "count": 89,
+        "score_ema": 0.6858004047334543,
+        "outcome_ema": 1.990160471625045,
+        "win_rate": 0.9997629608879501,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:49+00:00"
       }
     },
     "swing_m15": {
       "M15|default": {
-        "count": 91,
-        "score_ema": 0.6476436850924729,
-        "outcome_ema": 2.047422440312306,
-        "win_rate": 0.999828739241544,
+        "count": 92,
+        "score_ema": 0.6601559191231028,
+        "outcome_ema": 1.9903090742654581,
+        "win_rate": 0.9998544283553125,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:50+00:00"
       }
     },
     "swing_m5": {
       "M5|default": {
-        "count": 89,
-        "score_ema": 0.6672964518393041,
-        "outcome_ema": 2.047427609975337,
-        "win_rate": 0.9998479497162581,
+        "count": 90,
+        "score_ema": 0.6768607708579093,
+        "outcome_ema": 1.9903134684790345,
+        "win_rate": 0.9998707572588194,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:50+00:00"
       }
     },
     "swing_m1": {
       "M1|default": {
-        "count": 93,
-        "score_ema": 0.5953813298614739,
-        "outcome_ema": 2.0475539222196883,
-        "win_rate": 0.9998762641020156,
+        "count": 94,
+        "score_ema": 0.5464153435877521,
+        "outcome_ema": 1.9904208338867333,
+        "win_rate": 0.9998948244867133,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:50+00:00"
       }
     },
     "smc_m1": {
       "M1|default": {
-        "count": 70,
-        "score_ema": 0.5959127036274243,
-        "outcome_ema": 2.0659483402160963,
-        "win_rate": 0.9987135713258766,
+        "count": 71,
+        "score_ema": 0.6161845848778114,
+        "outcome_ema": 2.00605608918368,
+        "win_rate": 0.998906535626995,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:50+00:00"
       }
     },
     "global_news": {
       "NEWS|default": {
-        "count": 90,
-        "score_ema": 0.6197784589906521,
-        "outcome_ema": 2.0495539527229325,
-        "win_rate": 0.9998500869930916,
+        "count": 91,
+        "score_ema": 0.579963244208185,
+        "outcome_ema": 1.9921208598144908,
+        "win_rate": 0.9998725739441279,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:50+00:00"
       }
     },
     "global_swing": {
       "SWING|default": {
-        "count": 89,
-        "score_ema": 0.5952739763206177,
-        "outcome_ema": 2.047497179087775,
-        "win_rate": 0.9999294008845877,
+        "count": 90,
+        "score_ema": 0.5993517795528033,
+        "outcome_ema": 1.990372602224607,
+        "win_rate": 0.9999399907518995,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:50+00:00"
       }
     },
     "global_smc": {
       "SMC|default": {
-        "count": 82,
-        "score_ema": 0.5617756928008466,
-        "outcome_ema": 2.0493649291020506,
-        "win_rate": 0.9997177628279539,
+        "count": 83,
+        "score_ema": 0.5708782385609978,
+        "outcome_ema": 1.9919601897367412,
+        "win_rate": 0.9997600984037608,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:50+00:00"
       }
     },
     "scalping_m15": {
       "M15|default": {
         "count": 8,
-        "score_ema": 0.5346587867945007,
-        "outcome_ema": 0.25000000000000056,
-        "win_rate": 0.575,
-        "weight": 1.4857952720767011,
+        "score_ema": 0.5000239330695021,
+        "outcome_ema": 0.00017263349150062232,
+        "win_rate": 0.5000517900474502,
+        "weight": 1.0003354581358923,
         "last_update": "2026-02-05T08:46:28+00:00"
       }
     },
     "scalping_m5": {
       "M5|default": {
-        "count": 16,
-        "score_ema": 0.49999999999999933,
-        "outcome_ema": 7.655538620140978e-15,
-        "win_rate": 0.5000000000000018,
-        "weight": 1.000000000000012,
-        "last_update": "2026-02-03T18:09:24+00:00"
+        "count": 17,
+        "score_ema": 0.46534121320549926,
+        "outcome_ema": 0.24999999999999822,
+        "win_rate": 0.575,
+        "weight": 1.4442047279232968,
+        "last_update": "2026-02-20T08:03:49+00:00"
       }
     },
     "technical_m5": {
@@ -1532,12 +1532,12 @@
     },
     "technical_m30": {
       "M30|default": {
-        "count": 25,
-        "score_ema": 0.6166369518966146,
-        "outcome_ema": 2.0138965138728713,
-        "win_rate": 0.9698393738415896,
+        "count": 26,
+        "score_ema": 0.6338001959066231,
+        "outcome_ema": 1.9618120367919387,
+        "win_rate": 0.9743634677653511,
         "weight": 3.5,
-        "last_update": "2026-02-16T08:04:23+00:00"
+        "last_update": "2026-02-20T08:03:49+00:00"
       }
     },
     "smc_m15": {
@@ -1574,7 +1574,7 @@
       "M30|default": {
         "count": 1,
         "score_ema": 0.5,
-        "outcome_ema": 2.0281797880722212e-138,
+        "outcome_ema": 4.2711106030573163e-144,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-15T14:39:13+00:00"
@@ -1583,10 +1583,10 @@
     "structure_m30": {
       "M30|default": {
         "count": 30,
-        "score_ema": 0.660552672257799,
-        "outcome_ema": 1.486075416184957,
-        "win_rate": 0.9395472532171268,
-        "weight": 3.5,
+        "score_ema": 0.5000000000000006,
+        "outcome_ema": 4.550872102536807e-15,
+        "win_rate": 0.5000000000000013,
+        "weight": 1.0000000000000075,
         "last_update": "2026-02-04T12:28:46+00:00"
       }
     },
@@ -1594,7 +1594,7 @@
       "M15|default": {
         "count": 30,
         "score_ema": 0.5,
-        "outcome_ema": 1.027040824552653e-21,
+        "outcome_ema": 4.921109171723885e-42,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-02-04T12:28:46+00:00"
@@ -1602,12 +1602,12 @@
     },
     "smc_h1": {
       "H1|default": {
-        "count": 46,
-        "score_ema": 0.596568590703489,
-        "outcome_ema": 2.0493809672108534,
-        "win_rate": 0.9972138624507968,
+        "count": 47,
+        "score_ema": 0.5474245153034649,
+        "outcome_ema": 1.9919738221292236,
+        "win_rate": 0.9976317830831772,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:50+00:00"
       }
     },
     "structure_m5": {
@@ -1642,22 +1642,22 @@
     },
     "technical_m15": {
       "M15|default": {
-        "count": 11,
-        "score_ema": 0.5,
-        "outcome_ema": 0.0,
-        "win_rate": 0.5,
-        "weight": 1.0,
-        "last_update": "2026-01-16T07:17:35+00:00"
+        "count": 12,
+        "score_ema": 0.5346587867945007,
+        "outcome_ema": 0.2499999999999982,
+        "win_rate": 0.575,
+        "weight": 1.4857952720766976,
+        "last_update": "2026-02-20T08:03:49+00:00"
       }
     },
     "smc_h4": {
       "H4|default": {
-        "count": 49,
-        "score_ema": 0.6826938634187294,
-        "outcome_ema": 2.054574055642481,
-        "win_rate": 0.998519521903864,
+        "count": 50,
+        "score_ema": 0.6899485707004207,
+        "outcome_ema": 1.996387947296107,
+        "win_rate": 0.9987415936182844,
         "weight": 3.5,
-        "last_update": "2026-02-19T08:04:15+00:00"
+        "last_update": "2026-02-20T08:03:50+00:00"
       }
     },
     "structure_h1": {
@@ -2198,7 +2198,7 @@
       "M15|default": {
         "count": 2,
         "score_ema": 0.5,
-        "outcome_ema": 6.621829256888563e-195,
+        "outcome_ema": 1.2691509007485727e-214,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-27T14:45:34+00:00"
@@ -2228,7 +2228,7 @@
       "H4|default": {
         "count": 1,
         "score_ema": 0.5,
-        "outcome_ema": 5.001569280349108e-28,
+        "outcome_ema": 7.258108776681221e-31,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-15T06:01:27+00:00"
@@ -2268,7 +2268,7 @@
       "H1|default": {
         "count": 1,
         "score_ema": 0.5,
-        "outcome_ema": 1.3641535531923915e-66,
+        "outcome_ema": 1.4027092914288772e-75,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-11T16:44:10+00:00"
@@ -2310,7 +2310,7 @@
       "H1|default": {
         "count": 3,
         "score_ema": 0.5,
-        "outcome_ema": 1.4966510288481402e-153,
+        "outcome_ema": 5.1746035796212196e-161,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-12T07:05:45+00:00"
@@ -2510,7 +2510,7 @@
       "H4|default": {
         "count": 3,
         "score_ema": 0.5,
-        "outcome_ema": 3.926463104330247e-45,
+        "outcome_ema": 2.067168588313173e-51,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-08T10:44:27+00:00"
@@ -4402,62 +4402,62 @@
     },
     "swing_h4": {
       "H4|default": {
-        "count": 83,
-        "score_ema": 0.3911338972674057,
-        "outcome_ema": 2.1377426383636697,
-        "win_rate": 0.9486151652345578,
+        "count": 84,
+        "score_ema": 0.3728050258827941,
+        "outcome_ema": 2.1920812426091194,
+        "win_rate": 0.9563228904493741,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:25+00:00"
+        "last_update": "2026-02-20T12:02:03+00:00"
       }
     },
     "swing_h1": {
       "H1|default": {
-        "count": 83,
-        "score_ema": 0.5462806351774514,
-        "outcome_ema": 2.1377426383636697,
-        "win_rate": 0.9486151652345578,
+        "count": 84,
+        "score_ema": 0.504679753106333,
+        "outcome_ema": 2.1920812426091194,
+        "win_rate": 0.9563228904493741,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:25+00:00"
+        "last_update": "2026-02-20T12:02:03+00:00"
       }
     },
     "swing_m30": {
       "M30|default": {
-        "count": 78,
-        "score_ema": 0.5192167929867946,
-        "outcome_ema": 2.020474209737083,
-        "win_rate": 0.928879121431914,
+        "count": 79,
+        "score_ema": 0.48167548724427467,
+        "outcome_ema": 2.0924030782765204,
+        "win_rate": 0.9395472532171268,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:25+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "swing_m15": {
       "M15|default": {
-        "count": 75,
-        "score_ema": 0.6215804979410393,
-        "outcome_ema": 1.9236712606929385,
-        "win_rate": 0.9163283781551929,
+        "count": 76,
+        "score_ema": 0.5686846364553826,
+        "outcome_ema": 2.0101205715889976,
+        "win_rate": 0.928879121431914,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:25+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "swing_m5": {
       "M5|default": {
-        "count": 78,
-        "score_ema": 0.5656986372184472,
-        "outcome_ema": 2.0101205715889883,
-        "win_rate": 0.928879121431914,
+        "count": 79,
+        "score_ema": 0.5211850548411794,
+        "outcome_ema": 2.08360248585064,
+        "win_rate": 0.9395472532171268,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:25+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "swing_m1": {
       "M1|default": {
-        "count": 81,
-        "score_ema": 0.5462806351774514,
-        "outcome_ema": 2.1377426383636697,
-        "win_rate": 0.9486151652345578,
+        "count": 82,
+        "score_ema": 0.504679753106333,
+        "outcome_ema": 2.1920812426091194,
+        "win_rate": 0.9563228904493741,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:25+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "structure_h1": {
@@ -4482,72 +4482,72 @@
     },
     "smc_m15": {
       "M15|default": {
-        "count": 61,
-        "score_ema": 0.5554009996350882,
-        "outcome_ema": 2.0599803248116526,
-        "win_rate": 0.928879121431914,
+        "count": 62,
+        "score_ema": 0.5124320628953242,
+        "outcome_ema": 2.125983276089905,
+        "win_rate": 0.9395472532171268,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:26+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "smc_m5": {
       "M5|default": {
-        "count": 68,
-        "score_ema": 0.5554009996350882,
-        "outcome_ema": 2.0599803248116526,
-        "win_rate": 0.928879121431914,
+        "count": 69,
+        "score_ema": 0.5124320628953242,
+        "outcome_ema": 2.125983276089905,
+        "win_rate": 0.9395472532171268,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:26+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "smc_m1": {
       "M1|default": {
-        "count": 72,
-        "score_ema": 0.5504710729012305,
-        "outcome_ema": 2.117663801480526,
-        "win_rate": 0.9395472532171268,
+        "count": 73,
+        "score_ema": 0.5082416251715451,
+        "outcome_ema": 2.175014231258447,
+        "win_rate": 0.9486151652345578,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:26+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "global_news": {
       "NEWS|default": {
-        "count": 83,
-        "score_ema": 0.5343141031794889,
-        "outcome_ema": 2.1377426383636697,
-        "win_rate": 0.9486151652345578,
+        "count": 84,
+        "score_ema": 0.5073185417686963,
+        "outcome_ema": 2.1920812426091194,
+        "win_rate": 0.9563228904493741,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:26+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "global_swing": {
       "SWING|default": {
-        "count": 82,
-        "score_ema": 0.5245283930379538,
-        "outcome_ema": 2.1377426383636697,
-        "win_rate": 0.9486151652345578,
+        "count": 83,
+        "score_ema": 0.5024802344019825,
+        "outcome_ema": 2.1920812426091194,
+        "win_rate": 0.9563228904493741,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:26+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "global_structure": {
       "STRUCTURE|default": {
-        "count": 66,
-        "score_ema": 0.5291747071660372,
-        "outcome_ema": 2.1377426383636697,
-        "win_rate": 0.9486151652345578,
+        "count": 67,
+        "score_ema": 0.5029500551572623,
+        "outcome_ema": 2.1920812426091194,
+        "win_rate": 0.9563228904493741,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:26+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "global_smc": {
       "SMC|default": {
-        "count": 77,
-        "score_ema": 0.5245283930379538,
-        "outcome_ema": 2.1377426383636697,
-        "win_rate": 0.9486151652345578,
+        "count": 78,
+        "score_ema": 0.5024802344019825,
+        "outcome_ema": 2.1920812426091194,
+        "win_rate": 0.9563228904493741,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:26+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "technical_m1": {
@@ -4564,7 +4564,7 @@
       "M30|default": {
         "count": 1,
         "score_ema": 0.5,
-        "outcome_ema": 7.572573419392008e-82,
+        "outcome_ema": 4.5136054869842575e-89,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-01-08T12:31:41+00:00"
@@ -4592,12 +4592,12 @@
     },
     "structure_m1": {
       "M1|default": {
-        "count": 29,
-        "score_ema": 0.5554009996350882,
-        "outcome_ema": 2.0889324430970513,
-        "win_rate": 0.928879121431914,
+        "count": 30,
+        "score_ema": 0.5124320628953242,
+        "outcome_ema": 2.150592576632494,
+        "win_rate": 0.9395472532171268,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:06:25+00:00"
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "structure_h4": {
@@ -4634,7 +4634,7 @@
       "M5|default": {
         "count": 17,
         "score_ema": 0.5,
-        "outcome_ema": 3.217867205481212e-289,
+        "outcome_ema": 1e-323,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-01-19T12:34:27+00:00"
@@ -4644,7 +4644,7 @@
       "M15|default": {
         "count": 3,
         "score_ema": 0.5,
-        "outcome_ema": 1.1605431034793046e-144,
+        "outcome_ema": 1.0314833807536786e-161,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-01-12T14:17:56+00:00"
@@ -4662,12 +4662,12 @@
     },
     "structure_m5": {
       "M5|default": {
-        "count": 13,
-        "score_ema": 0.4358812444301736,
-        "outcome_ema": 0.693749999999986,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.168653746658083,
-        "last_update": "2026-02-11T15:36:00+00:00"
+        "count": 14,
+        "score_ema": 0.41084027097114684,
+        "outcome_ema": 0.9646874999999882,
+        "win_rate": 0.6929375,
+        "weight": 2.62506041258267,
+        "last_update": "2026-02-20T12:02:04+00:00"
       }
     },
     "technical_m30": {
@@ -4692,12 +4692,12 @@
     },
     "technical_h1": {
       "H1|default": {
-        "count": 20,
-        "score_ema": 0.46534121320549926,
-        "outcome_ema": 0.37500000000000006,
-        "win_rate": 0.575,
-        "weight": 1.6317047279232997,
-        "last_update": "2026-02-17T15:00:34+00:00"
+        "count": 21,
+        "score_ema": 0.4358812444301736,
+        "outcome_ema": 0.6937500000000001,
+        "win_rate": 0.6387499999999999,
+        "weight": 2.168653746658104,
+        "last_update": "2026-02-20T12:02:03+00:00"
       }
     },
     "structure_m15": {
@@ -5076,142 +5076,142 @@
   "SP500": {
     "swing_h4": {
       "H4|default": {
-        "count": 253,
-        "score_ema": 0.432535505124565,
-        "outcome_ema": 2.0176483927825832,
-        "win_rate": 0.9435573353175425,
+        "count": 254,
+        "score_ema": 0.40799639256137954,
+        "outcome_ema": 2.090001133865196,
+        "win_rate": 0.9520237350199111,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:51+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "swing_h1": {
       "H1|default": {
-        "count": 253,
-        "score_ema": 0.5165086901439565,
-        "outcome_ema": 2.0176483927825832,
-        "win_rate": 0.9435573353175425,
+        "count": 254,
+        "score_ema": 0.47937359982786226,
+        "outcome_ema": 2.090001133865196,
+        "win_rate": 0.9520237350199111,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "swing_m30": {
       "M30|default": {
-        "count": 74,
-        "score_ema": 0.5619801859660882,
-        "outcome_ema": 1.9492878581524342,
-        "win_rate": 0.9293571057038129,
+        "count": 75,
+        "score_ema": 0.5873419448656758,
+        "outcome_ema": 2.0318946794295694,
+        "win_rate": 0.9399535398482409,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "swing_m15": {
       "M15|default": {
-        "count": 234,
-        "score_ema": 0.45611097639510706,
-        "outcome_ema": 2.0230107884721256,
-        "win_rate": 0.9293571057038129,
+        "count": 235,
+        "score_ema": 0.42803554314134024,
+        "outcome_ema": 2.0945591702013067,
+        "win_rate": 0.9399535398482409,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "swing_m5": {
       "M5|default": {
-        "count": 249,
-        "score_ema": 0.5164479773844179,
-        "outcome_ema": 2.0176484015594105,
-        "win_rate": 0.9435522056491562,
+        "count": 250,
+        "score_ema": 0.4793219939822545,
+        "outcome_ema": 2.090001141325499,
+        "win_rate": 0.9520193748017828,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "swing_m1": {
       "M1|default": {
-        "count": 251,
-        "score_ema": 0.494518268485545,
-        "outcome_ema": 2.0176483827910587,
-        "win_rate": 0.9435573353175425,
+        "count": 252,
+        "score_ema": 0.4606817414182125,
+        "outcome_ema": 2.0900011253724,
+        "win_rate": 0.9520237350199111,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "structure_m1": {
       "M1|default": {
-        "count": 193,
-        "score_ema": 0.5009392698842575,
-        "outcome_ema": 1.8942507342167951,
-        "win_rate": 0.8841915268583984,
+        "count": 194,
+        "score_ema": 0.4661395926071181,
+        "outcome_ema": 1.9851131240842759,
+        "win_rate": 0.9015627978296387,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "smc_m15": {
       "M15|default": {
-        "count": 239,
-        "score_ema": 0.520198283417562,
-        "outcome_ema": 1.932527507579232,
-        "win_rate": 0.9335635644121074,
+        "count": 240,
+        "score_ema": 0.48250975411042696,
+        "outcome_ema": 2.0176483814423474,
+        "win_rate": 0.9435290297502913,
         "weight": 3.5,
-        "last_update": "2026-02-17T15:01:50+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "smc_m5": {
       "M5|default": {
-        "count": 242,
-        "score_ema": 0.538443165433055,
-        "outcome_ema": 1.8948006240842707,
-        "win_rate": 0.9015627978296387,
+        "count": 243,
+        "score_ema": 0.49801790382359606,
+        "outcome_ema": 1.98558053047163,
+        "win_rate": 0.9163283781551929,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "smc_m1": {
       "M1|default": {
-        "count": 68,
-        "score_ema": 0.5162215395251717,
-        "outcome_ema": 1.8948006240842707,
-        "win_rate": 0.9015627978296387,
+        "count": 69,
+        "score_ema": 0.4791295218018952,
+        "outcome_ema": 1.98558053047163,
+        "win_rate": 0.9163283781551929,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "global_news": {
       "NEWS|default": {
-        "count": 252,
-        "score_ema": 0.5402020705963761,
-        "outcome_ema": 2.0176483944740498,
-        "win_rate": 0.9435573353175425,
+        "count": 253,
+        "score_ema": 0.5123233140730504,
+        "outcome_ema": 2.090001135302942,
+        "win_rate": 0.9520237350199111,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "global_structure": {
       "STRUCTURE|default": {
-        "count": 243,
-        "score_ema": 0.4888902829758366,
-        "outcome_ema": 2.017648382418789,
-        "win_rate": 0.9435451057621165,
+        "count": 244,
+        "score_ema": 0.46870829459559177,
+        "outcome_ema": 2.0900011250559705,
+        "win_rate": 0.952013339897799,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "global_smc": {
       "SMC|default": {
-        "count": 251,
-        "score_ema": 0.49329573784258607,
-        "outcome_ema": 2.0032986228994676,
-        "win_rate": 0.9329528500435323,
+        "count": 252,
+        "score_ema": 0.47593247748591994,
+        "outcome_ema": 2.0778038294645476,
+        "win_rate": 0.9430099225370024,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "global_swing": {
       "SWING|default": {
-        "count": 253,
-        "score_ema": 0.49062981078952095,
-        "outcome_ema": 2.0176483927825832,
-        "win_rate": 0.9435573353175425,
+        "count": 254,
+        "score_ema": 0.47366643949081466,
+        "outcome_ema": 2.090001133865196,
+        "win_rate": 0.9520237350199111,
         "weight": 3.5,
-        "last_update": "2026-02-18T12:38:52+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "technical_h4": {
@@ -5238,7 +5238,7 @@
       "H1|default": {
         "count": 2,
         "score_ema": 0.5,
-        "outcome_ema": 4.1890930903874097e-88,
+        "outcome_ema": 1.6814490731747144e-97,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-19T06:03:57+00:00"
@@ -5247,10 +5247,10 @@
     "scalping_m30": {
       "M30|default": {
         "count": 1,
-        "score_ema": 0.5072205805821877,
-        "outcome_ema": 0.052083333333333745,
-        "win_rate": 0.50234375,
-        "weight": 1.0170539696698626,
+        "score_ema": 0.5000327219051506,
+        "outcome_ema": 0.00023602892784834234,
+        "win_rate": 0.5000106213017532,
+        "weight": 1.0000772844193933,
         "last_update": "2026-02-04T08:24:44+00:00"
       }
     },
@@ -5316,12 +5316,12 @@
     },
     "structure_m5": {
       "M5|default": {
-        "count": 200,
-        "score_ema": 0.5,
-        "outcome_ema": 9.180799944699403e-79,
-        "win_rate": 0.5,
-        "weight": 1.0,
-        "last_update": "2026-02-03T18:16:39+00:00"
+        "count": 201,
+        "score_ema": 0.46534121320549926,
+        "outcome_ema": 0.37500000000000006,
+        "win_rate": 0.575,
+        "weight": 1.6317047279232997,
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "technical_m30": {
@@ -5348,7 +5348,7 @@
       "H4|default": {
         "count": 2,
         "score_ema": 0.5,
-        "outcome_ema": 3.531748788834074e-24,
+        "outcome_ema": 1.4146574218836646e-27,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-29T06:01:29+00:00"
@@ -5356,22 +5356,22 @@
     },
     "technical_h1": {
       "H1|default": {
-        "count": 10,
-        "score_ema": 0.5051988180191751,
-        "outcome_ema": 0.6937500000000001,
-        "win_rate": 0.6387499999999999,
-        "weight": 2.210244290811505,
-        "last_update": "2026-02-18T12:38:51+00:00"
+        "count": 11,
+        "score_ema": 0.4697602085217981,
+        "outcome_ema": 0.9646875000000001,
+        "win_rate": 0.6929375,
+        "weight": 2.6604123751130793,
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "smc_h4": {
       "H4|default": {
-        "count": 242,
-        "score_ema": 0.5363573390655505,
-        "outcome_ema": 1.7838926017254941,
-        "win_rate": 0.8841915268583984,
+        "count": 243,
+        "score_ema": 0.49624495141121716,
+        "outcome_ema": 1.89130871146667,
+        "win_rate": 0.9015627978296387,
         "weight": 3.5,
-        "last_update": "2026-02-17T15:01:50+00:00"
+        "last_update": "2026-02-20T12:01:44+00:00"
       }
     },
     "structure_m15": {

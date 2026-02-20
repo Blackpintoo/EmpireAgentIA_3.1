@@ -79,9 +79,10 @@ class SwingParams:
     atr_period: int = 14
     rsi_period: int = 14
 
+    # FIX 2026-02-20: RSI 45/55 (étape 4.3)
     # Trend rules
-    trend_rsi_long: float = 52.0
-    trend_rsi_short: float = 48.0
+    trend_rsi_long: float = 55.0
+    trend_rsi_short: float = 45.0
     trend_sl_mult: float = 1.5
     trend_tp_mult: float = 2.4
 
@@ -91,12 +92,13 @@ class SwingParams:
     range_sl_mult: float = 1.5
     range_tp_mult: float = 2.0
 
+    # FIX 2026-02-20: slope 0.025, fallback désactivé (étape 4.3)
     # Regime detection
-    slope_level: float = 0.05    # pente EMA minimale
+    slope_level: float = 0.025   # pente EMA minimale (abaissée pour meilleure détection)
     atr_level_val: float = 0.0   # réservé évolutions
 
-    # Fallback doux
-    enable_fallback: bool = True
+    # Fallback doux — DÉSACTIVÉ (étape 4.3: génère trop de faux signaux)
+    enable_fallback: bool = False
     fallback_sl_mult: float = 1.2
     fallback_tp_mult: float = 1.8
 

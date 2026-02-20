@@ -487,16 +487,32 @@ class CompositeScoreCalculator:
         breakdown["sentiment"] = sent_details
 
         # 5. Calculer le score composite pondéré
+        # FIX 2026-02-20: Redistribution poids si composants indisponibles (étape 5.4)
+        _w_agents = self.config.weight_agents
+        _w_vp = self.config.weight_volume_profile if vp_score != 0.0 else 0.0
+        _w_im = self.config.weight_inter_market if im_score != 0.0 else 0.0
+        _w_sent = self.config.weight_sentiment if sent_score != 0.0 else 0.0
+        _w_total = _w_agents + _w_vp + _w_im + _w_sent
+        if _w_total > 0:
+            _w_agents /= _w_total
+            _w_vp /= _w_total
+            _w_im /= _w_total
+            _w_sent /= _w_total
+
         # Convertir en échelle 0-20 pour compatibilité avec le système existant
         weighted_score = (
-            self.config.weight_agents * agents_normalized +
-            self.config.weight_volume_profile * (vp_score + 1) / 2 +  # -1,1 -> 0,1
-            self.config.weight_inter_market * (im_score + 1) / 2 +
-            self.config.weight_sentiment * (sent_score + 1) / 2
+            _w_agents * agents_normalized +
+            _w_vp * (vp_score + 1) / 2 +  # -1,1 -> 0,1
+            _w_im * (im_score + 1) / 2 +
+            _w_sent * (sent_score + 1) / 2
         )
 
         # Reconvertir en échelle 0-20
         result.composite_score = weighted_score * 20.0
+        breakdown["weight_redistribution"] = {
+            "agents": round(_w_agents, 3), "vp": round(_w_vp, 3),
+            "im": round(_w_im, 3), "sent": round(_w_sent, 3)
+        }
 
         # 6. Calculer la confiance globale
         # Moyenne pondérée des confiances de chaque composant

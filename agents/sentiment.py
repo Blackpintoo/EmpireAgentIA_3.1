@@ -42,6 +42,14 @@ def fetch_fear_greed() -> tuple[Optional[int], Optional[str], Optional[datetime.
         return None, None, None
 
 
+# FIX 2026-02-20: Symboles crypto autorisés (étape 4.4)
+_CRYPTO_KEYWORDS = ("BTC", "ETH", "SOL", "BNB", "LTC", "DOGE")
+
+def _is_crypto(symbol: str) -> bool:
+    s = (symbol or "").upper()
+    return any(c in s for c in _CRYPTO_KEYWORDS)
+
+
 class SentimentAgent:
     def __init__(self, cfg: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None, symbol: str = "BTCUSD"):
         self.cfg = cfg or {}
@@ -193,6 +201,10 @@ class SentimentAgent:
 
     def generate_signal(self, bar: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         logger.debug(f"[DEBUG] generate_signal appelé dans {self.__class__.__name__}")
+        # FIX 2026-02-20: Désactiver pour non-crypto (étape 4.4)
+        if not _is_crypto(self.symbol):
+            logger.debug(f"[SENT] {self.symbol} non-crypto — sentiment désactivé")
+            return {"signal": None, "agg_score": 0.0, "trend": "disabled", "reason": "non_crypto"}
         return self.aggregate_sentiment()
 
     def execute(self, *args, **kwargs) -> Dict[str, Any]:

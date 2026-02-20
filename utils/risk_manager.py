@@ -7,14 +7,18 @@ focuses on the primitives the Whale module and orchestrator rely on:
     - position sizing
     - whale sizing helper (size_by_scores)
     - trailing stop helper
+    - FIX 2026-02-20: global kill switch (étape 2.1)
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 import math
+import os
+import json
+import logging
 import pytz
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     import MetaTrader5 as mt5  # type: ignore
@@ -32,8 +36,6 @@ except Exception:  # pragma: no cover
 try:
     from utils.logger import logger
 except Exception:  # pragma: no cover
-    import logging
-
     logger = logging.getLogger(__name__)
 
 try:
@@ -49,6 +51,22 @@ except Exception:  # pragma: no cover
             return max(0.0, min(1.0, 0.5 * (self.trust_score + self.signal_score)))
 
 
+# FIX 2026-02-20: Guards log file (étape 2.1)
+_GUARDS_LOG_PATH = os.path.join("logs", "guards.log")
+_DAILY_LOSS_STATE_PATH = os.path.join("data", "daily_loss_state.json")
+
+
+def _log_guard(message: str) -> None:
+    """Log guard events to logs/guards.log"""
+    try:
+        os.makedirs(os.path.dirname(_GUARDS_LOG_PATH), exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        with open(_GUARDS_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {message}\n")
+    except Exception:
+        pass
+
+
 def _clamp(v: float, lo: float, hi: float) -> float:
     return max(float(lo), min(float(hi), float(v)))
 
@@ -57,6 +75,115 @@ def _round_step(value: float, step: float) -> float:
     if step <= 0:
         return float(value)
     return math.floor((float(value) + 1e-12) / float(step)) * float(step)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FIX 2026-02-20: Kill Switch Global (étape 2.1)
+# Stoppe TOUT le trading quand la perte journalière cumulée dépasse le seuil.
+# Inclut P&L réalisé ET flottant. Persisté dans data/daily_loss_state.json.
+# Se réinitialise à 00:00 UTC chaque jour.
+# ═══════════════════════════════════════════════════════════════════════════
+
+class GlobalKillSwitch:
+    """Kill switch global journalier — bloque tout trading si perte > seuil."""
+
+    def __init__(self, limit_usd: float = 400.0):
+        self.limit_usd = abs(limit_usd) if limit_usd else 400.0
+        self._state = self._load_state()
+        self._check_day_reset()
+
+    def _load_state(self) -> Dict[str, Any]:
+        try:
+            if os.path.exists(_DAILY_LOSS_STATE_PATH):
+                with open(_DAILY_LOSS_STATE_PATH, "r", encoding="utf-8") as f:
+                    return json.load(f) or {}
+        except Exception:
+            pass
+        return {}
+
+    def _save_state(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(_DAILY_LOSS_STATE_PATH), exist_ok=True)
+            with open(_DAILY_LOSS_STATE_PATH, "w", encoding="utf-8") as f:
+                json.dump(self._state, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+    def _today_utc(self) -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    def _check_day_reset(self) -> None:
+        """Réinitialise si le jour UTC a changé."""
+        today = self._today_utc()
+        if self._state.get("date") != today:
+            self._state = {
+                "date": today,
+                "realized_pnl": 0.0,
+                "kill_switch_triggered": False,
+                "trigger_time": None,
+            }
+            self._save_state()
+
+    def update_realized_pnl(self, pnl_delta: float) -> None:
+        """Met à jour le P&L réalisé cumulé du jour."""
+        self._check_day_reset()
+        self._state["realized_pnl"] = float(self._state.get("realized_pnl", 0.0)) + float(pnl_delta)
+        self._save_state()
+
+    def check_kill_switch(self, floating_pnl: float = 0.0) -> Tuple[bool, str]:
+        """
+        Vérifie si le kill switch doit être activé.
+
+        Args:
+            floating_pnl: P&L flottant actuel (positions ouvertes)
+
+        Returns:
+            Tuple[blocked, reason]
+        """
+        self._check_day_reset()
+
+        # Si déjà déclenché aujourd'hui
+        if self._state.get("kill_switch_triggered", False):
+            return True, "GLOBAL_DAILY_LOSS_LIMIT (already triggered)"
+
+        realized = float(self._state.get("realized_pnl", 0.0))
+        total_pnl = realized + float(floating_pnl)
+
+        if total_pnl <= -self.limit_usd:
+            self._state["kill_switch_triggered"] = True
+            self._state["trigger_time"] = datetime.now(timezone.utc).isoformat()
+            self._save_state()
+
+            msg = (f"GLOBAL_DAILY_LOSS_LIMIT: total_pnl={total_pnl:.2f} "
+                   f"(realized={realized:.2f} + floating={floating_pnl:.2f}) "
+                   f"<= -${self.limit_usd:.0f}")
+            logger.warning(f"[KILL_SWITCH] {msg}")
+            _log_guard(f"KILL_SWITCH_TRIGGERED: {msg}")
+            return True, "GLOBAL_DAILY_LOSS_LIMIT"
+
+        return False, ""
+
+    def get_budget_remaining(self) -> float:
+        """Retourne le budget restant avant déclenchement."""
+        self._check_day_reset()
+        realized = float(self._state.get("realized_pnl", 0.0))
+        return max(0.0, self.limit_usd + realized)
+
+    def is_triggered(self) -> bool:
+        self._check_day_reset()
+        return bool(self._state.get("kill_switch_triggered", False))
+
+
+# Instance globale du kill switch
+_global_kill_switch: Optional[GlobalKillSwitch] = None
+
+
+def get_global_kill_switch(limit_usd: float = 400.0) -> GlobalKillSwitch:
+    """Récupère ou crée l'instance globale du kill switch."""
+    global _global_kill_switch
+    if _global_kill_switch is None:
+        _global_kill_switch = GlobalKillSwitch(limit_usd)
+    return _global_kill_switch
 
 
 class RiskManager:
@@ -132,6 +259,18 @@ class RiskManager:
             return float((self.profile.get("account") or {}).get("equity_start"))
         except Exception:
             return None
+
+    # FIX 2026-02-20: Helper pour obtenir le P&L flottant total (étape 2.1)
+    def get_floating_pnl(self) -> float:
+        """Retourne le P&L flottant total de toutes les positions ouvertes."""
+        try:
+            if mt5:
+                positions = mt5.positions_get()
+                if positions:
+                    return sum(float(getattr(p, "profit", 0.0) or 0.0) for p in positions)
+        except Exception:
+            pass
+        return 0.0
 
     def max_parallel_positions(self) -> int:
         try:

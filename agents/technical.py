@@ -59,6 +59,24 @@ def _atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(window=period).mean()
 
+# FIX 2026-02-20: ADX filter (étape 4.1)
+def _adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Calcule l'ADX (Average Directional Index)."""
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
+    plus_dm = high.diff()
+    minus_dm = -low.diff()
+    plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+    tr = pd.concat([(high - low), (high - close.shift()).abs(), (low - close.shift()).abs()], axis=1).max(axis=1)
+    atr_s = tr.ewm(span=period, adjust=False).mean()
+    plus_di = 100 * (plus_dm.ewm(span=period, adjust=False).mean() / atr_s.replace(0, 1e-12))
+    minus_di = 100 * (minus_dm.ewm(span=period, adjust=False).mean() / atr_s.replace(0, 1e-12))
+    dx = 100 * ((plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, 1e-12))
+    adx = dx.ewm(span=period, adjust=False).mean()
+    return adx
+
 def _safe_float(x, default=None):
     try:
         if x is None:
@@ -91,9 +109,12 @@ class TechnicalParams:
     atr_period: int = 14
     tp_mult: float = 2.5
     sl_mult: float = 2.0
-    rsi_overbought: float = 60
-    rsi_oversold: float = 40
-    macd_eps: float = 0.0008
+    # FIX 2026-02-20: RSI 68/32, MACD eps 0.003, ADX filter (étape 4.1)
+    rsi_overbought: float = 68
+    rsi_oversold: float = 32
+    macd_eps: float = 0.003
+    adx_period: int = 14
+    adx_min: float = 20.0  # ADX minimum pour valider un signal trend
     # filtres
     vol_window: int = 20
     vol_spike_ratio: float = 1.8
@@ -140,9 +161,10 @@ class TechnicalAgent:
             "atr_period": 14,
             "tp_mult": 2.5,
             "sl_mult": 2.0,
-            "rsi_overbought": 60,
-            "rsi_oversold": 40,
-            "macd_eps": 0.0008,
+            # FIX 2026-02-20: RSI 68/32, MACD eps 0.003 (étape 4.1)
+            "rsi_overbought": 68,
+            "rsi_oversold": 32,
+            "macd_eps": 0.003,
             "vol_window": 20,
             "vol_spike_ratio": 1.8,
             "notify_telegram": True,
@@ -450,11 +472,21 @@ class TechnicalAgent:
             ema_slope = 0.0
 
         macd_diff = float(macd_last - macd_sig_last)
+
+        # FIX 2026-02-20: ADX filter — exige ADX >= adx_min pour valider (étape 4.1)
+        adx_val = None
+        try:
+            adx_series = _adx(df, int(self.params.adx_period))
+            adx_val = _safe_float(adx_series.iloc[-1], None)
+        except Exception:
+            adx_val = None
+
         signal = "WAIT"
         eps = float(self.params.macd_eps)
-        if price > ema_last and ema_slope > 0 and macd_diff > eps and rsi_last < float(self.params.rsi_overbought):
+        adx_ok = (adx_val is not None and adx_val >= float(self.params.adx_min)) if adx_val is not None else True
+        if price > ema_last and ema_slope > 0 and macd_diff > eps and rsi_last < float(self.params.rsi_overbought) and adx_ok:
             signal = "LONG"
-        elif price < ema_last and ema_slope < 0 and macd_diff < -eps and rsi_last > float(self.params.rsi_oversold):
+        elif price < ema_last and ema_slope < 0 and macd_diff < -eps and rsi_last > float(self.params.rsi_oversold) and adx_ok:
             signal = "SHORT"
 
         if signal == "WAIT":
