@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-02-13T05:14:36.938905+00:00",
+  "timestamp": "2026-02-19T20:05:40.734663+00:00",
   "symbol": "AUDUSD",
   "retail": {
-    "long_percentage": 33.0,
-    "short_percentage": 67.0,
+    "long_percentage": 35.0,
+    "short_percentage": 65.0,
     "source": "simulated"
   }
 }

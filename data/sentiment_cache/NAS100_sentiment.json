@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-02-13T05:14:00.688497+00:00",
+  "timestamp": "2026-02-19T20:06:55.635711+00:00",
   "symbol": "NAS100",
   "retail": {
-    "long_percentage": 47.0,
-    "short_percentage": 53.0,
+    "long_percentage": 49.0,
+    "short_percentage": 51.0,
     "source": "simulated"
   }
 }
