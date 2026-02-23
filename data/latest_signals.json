@@ -1,5 +1,11 @@
 {
-  "timestamp": "2026-02-23T04:58:06.890224+00:00",
-  "symbol": "USDJPY",
-  "signals": {}
+  "timestamp": "2026-02-23T19:54:02.532509+00:00",
+  "symbol": "SOLUSD",
+  "signals": {
+    "news": {
+      "signal": "LONG",
+      "intensity": null,
+      "reason": ""
+    }
+  }
 }
