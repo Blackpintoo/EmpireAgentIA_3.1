@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-02-20T09:12:21.426431+00:00",
+  "timestamp": "2026-02-21T13:39:09.460974+00:00",
   "symbol": "BTCUSD",
   "retail": {
-    "long_percentage": 75.0,
-    "short_percentage": 25.0,
+    "long_percentage": 74.0,
+    "short_percentage": 26.0,
     "source": "simulated"
   }
 }

@@ -1,21 +1,5 @@
 {
-  "timestamp": "2026-02-20T12:16:30.052541+00:00",
-  "symbol": "AUDUSD",
-  "signals": {
-    "structure": {
-      "signal": "SHORT",
-      "intensity": null,
-      "reason": ""
-    },
-    "smc": {
-      "signal": "LONG",
-      "intensity": null,
-      "reason": ""
-    },
-    "news": {
-      "signal": "SHORT",
-      "intensity": null,
-      "reason": ""
-    }
-  }
+  "timestamp": "2026-02-23T04:58:06.890224+00:00",
+  "symbol": "USDJPY",
+  "signals": {}
 }

@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-02-20T12:15:18.870211+00:00",
+  "timestamp": "2026-02-20T17:18:00.068919+00:00",
   "symbol": "XAUUSD",
   "retail": {
-    "long_percentage": 53.0,
-    "short_percentage": 47.0,
+    "long_percentage": 55.0,
+    "short_percentage": 45.0,
     "source": "simulated"
   }
 }
