@@ -3219,11 +3219,13 @@ class Orchestrator:
             lots = None
             atr = indicators.get("ATR_H1") or indicators.get("ATR_M30")
             if direction in ("LONG", "SHORT"):
-                if atr is None:
+                # FIX 2026-02-23: Recalculer si atr est None, 0 ou 0.0 (Directive 5)
+                if not atr or atr <= 0:
                     atr = self._compute_atr(symbol, timeframe="H1") or self._compute_atr(symbol, timeframe="M30")
 
                 # Fallback ATR si manque SL/TP
-                if atr:
+                # FIX 2026-02-23: Test explicite atr > 0 (Directive 5)
+                if atr and atr > 0:
                     mul_sl = float(self.ori_cfg.get("atr_sl_mult", 1.5))
                     mul_tp = float(self.ori_cfg.get("atr_tp_mult", 2.5))
                     if sl is None or tp is None:
@@ -3241,8 +3243,9 @@ class Orchestrator:
                     pt = 0.01
                 mul_sl = float(self.ori_cfg.get("atr_sl_mult", 1.5))
                 mul_tp = float(self.ori_cfg.get("atr_tp_mult", 2.5))
-                # Distance minimale: max(10% ATR, 50 points broker)
-                est_atr = float(atr) if atr is not None else (pt * 200.0)  # heuristique si ATR manquant
+                # FIX 2026-02-23: est_atr proportionnel au prix (Directive 6)
+                # pt*200 donne 2$ pour BTCUSD — price*0.003 donne 204$ (bien plus réaliste)
+                est_atr = float(atr) if (atr is not None and atr > 0) else max(pt * 200.0, (price or 0) * 0.003)
                 broker_min = 0.0
                 try:
                     if hasattr(self.mt5, "_min_stop_distance_points"):
@@ -3250,19 +3253,23 @@ class Orchestrator:
                         broker_min = max(broker_min, min_pts_candidate * pt)
                 except Exception:
                     broker_min = broker_min or 0.0
-                min_pts = max(est_atr * 0.10, pt * 50.0, broker_min)
+                # FIX 2026-02-23: Ajout price*0.0005 comme plancher (34$ pour BTCUSD) (Directive 6)
+                _price_floor = (price * 0.0005) if price else 0.0
+                min_pts = max(est_atr * 0.10, pt * 50.0, broker_min, _price_floor)
 
                 def ensure_min_distance(p, s, t, side):
+                    # FIX 2026-02-23: Utiliser est_atr au lieu de (atr or pt*200) (Directive 6)
+                    _fb_atr = atr if (atr and atr > 0) else est_atr
                     if side == "LONG":
                         if s is None or s >= p - min_pts:
-                            s = p - mul_sl * (atr or pt * 200)
+                            s = p - mul_sl * _fb_atr
                         if t is None or t <= p + min_pts:
-                            t = p + mul_tp * (atr or pt * 200)
+                            t = p + mul_tp * _fb_atr
                     else:
                         if s is None or s <= p + min_pts:
-                            s = p + mul_sl * (atr or pt * 200)
+                            s = p + mul_sl * _fb_atr
                         if t is None or t >= p - min_pts:
-                            t = p - mul_tp * (atr or pt * 200)
+                            t = p - mul_tp * _fb_atr
                     # enforce distances mini finales
                     if abs(p - s) < min_pts:
                         s = p - min_pts if side == "LONG" else p + min_pts
@@ -4631,21 +4638,44 @@ class Orchestrator:
             os.makedirs("data", exist_ok=True)
             path = os.path.join("data", "deals_history.csv")
 
-            # Lire les position_id déjà enregistrés pour éviter les doublons
+            # FIX 2026-02-23: Déclaration fields avant lecture (Directive 2)
+            fields = ["time", "symbol", "type", "entry", "volume", "price", "profit",
+                      "commission", "swap", "magic", "comment", "position_id", "order"]
+
+            # FIX 2026-02-23: Raw parsing au lieu de DictReader (le fichier peut ne pas avoir de header)
             existing_ids = set()
+            has_header = False
             if os.path.exists(path):
                 try:
                     with open(path, "r", encoding="utf-8") as f:
-                        reader = csv.DictReader(f)
-                        for row in reader:
-                            key = f"{row.get('time', '')}_{row.get('position_id', '')}_{row.get('order', '')}"
-                            existing_ids.add(key)
+                        for raw_line in f:
+                            line = raw_line.strip()
+                            if not line:
+                                continue
+                            if line.startswith("time,"):
+                                has_header = True
+                                continue
+                            parts = line.split(",")
+                            if len(parts) >= 13:
+                                key = f"{parts[0]}_{parts[11]}_{parts[12]}"
+                                existing_ids.add(key)
                 except Exception:
                     pass
 
-            fields = ["time", "symbol", "type", "entry", "volume", "price", "profit",
-                      "commission", "swap", "magic", "comment", "position_id", "order"]
-            write_header = not os.path.exists(path)
+            # FIX 2026-02-23: Injecter header si fichier existant sans header
+            if os.path.exists(path) and os.path.getsize(path) > 0 and not has_header:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    with open(path, "w", encoding="utf-8", newline="") as f:
+                        f.write(",".join(fields) + "\n")
+                        f.write(content)
+                    logger.info("[SYNC] Header CSV injecté dans deals_history.csv")
+                except Exception as _hdr_err:
+                    logger.debug(f"[SYNC] Erreur injection header: {_hdr_err}")
+
+            # FIX 2026-02-23: write_header si fichier inexistant OU vide
+            write_header = not os.path.exists(path) or os.path.getsize(path) == 0
 
             new_deals = 0
             with open(path, "a", newline="", encoding="utf-8") as f:

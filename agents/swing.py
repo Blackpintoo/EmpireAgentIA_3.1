@@ -430,7 +430,8 @@ class SwingAgent:
 
         # distances mini (? 50 points broker) si on a un setup
         if signal != "WAIT" and sl is not None and tp is not None:
-            min_dist = max(50 * self.point, 0.0)
+            # FIX 2026-02-23: Distance minimale proportionnelle au prix (Directive 7)
+            min_dist = max(50 * self.point, price * 0.001)
             if abs(price - sl) < min_dist:
                 sl = price - min_dist if signal == "LONG" else price + min_dist
             if abs(tp - price) < min_dist:

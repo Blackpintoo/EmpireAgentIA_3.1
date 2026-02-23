@@ -499,7 +499,8 @@ class TechnicalAgent:
         sl = price_f - self.params.sl_mult * atr_last if signal == "LONG" else price_f + self.params.sl_mult * atr_last
         tp = price_f + self.params.tp_mult * atr_last if signal == "LONG" else price_f - self.params.tp_mult * atr_last
 
-        min_dist = max(50 * self.point, 0.0)
+        # FIX 2026-02-23: Distance minimale proportionnelle au prix (Directive 7)
+        min_dist = max(50 * self.point, price_f * 0.001)
         if abs(price_f - sl) < min_dist:
             sl = price_f - min_dist if signal == "LONG" else price_f + min_dist
         if abs(tp - price_f) < min_dist:

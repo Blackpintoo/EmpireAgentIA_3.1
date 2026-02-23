@@ -468,7 +468,10 @@ class ScalpingAgent:
             sl = price + float(self.params.sl_mult) * atr_v
             tp = price - float(self.params.tp_mult) * atr_v
 
-        min_dist = max(50 * self.point, 0.0)
+        # FIX 2026-02-23: Distance minimale proportionnelle au prix (Directive 4)
+        # Pour BTCUSD (price=68000, point=0.01): max(0.50, 68.0) = 68.0$
+        # Pour EURUSD (price=1.08, point=0.00001): max(0.0005, 0.00108) = 0.00108
+        min_dist = max(50 * self.point, price * 0.001)
         if abs(price - sl) < min_dist:
             sl = price - min_dist if signal == "LONG" else price + min_dist
         if abs(tp - price) < min_dist:
