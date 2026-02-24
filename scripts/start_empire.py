@@ -11,7 +11,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import subprocess
 
 from orchestrator.orchestrator import Orchestrator
-from utils.config import get_enabled_symbols, load_config
+from utils.config import get_enabled_symbols, load_config, get_overrides
 from utils.digest import TZ
 from utils.logger import logger
 from utils.telegram_client_async import AsyncTelegramClient
@@ -234,7 +234,14 @@ async def _runtime(orchestrators: List[Orchestrator], proposal_dir: Path, poll_s
 def build_orchestrators(symbols: Iterable[str], *, cfg: Dict[str, any], dry_run: bool,
                         overrides_path: Optional[str], telegram_client: Optional[AsyncTelegramClient]) -> List[Orchestrator]:
     orchestrators: List[Orchestrator] = []
+    # FIX 2026-02-24: Charger overrides pour vérifier enabled (Directive 9)
+    _ov = get_overrides() or {}
     for symbol in symbols:
+        # FIX 2026-02-24: Skip symboles désactivés dans overrides.yaml
+        _sym_ov = (_ov.get(symbol, {}) or {}).get("orchestrator", {}) or {}
+        if _sym_ov.get("enabled") is False:
+            logger.info("[DISABLED] Symbole %s désactivé dans overrides.yaml — skip", symbol)
+            continue
         orch = Orchestrator(symbol=symbol, cfg=cfg, dry_run=dry_run,
                             telegram_client=telegram_client, overrides_path=overrides_path)
         orchestrators.append(orch)
