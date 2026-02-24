@@ -2428,9 +2428,19 @@ class Orchestrator:
         # ══════════════════════════════════════════════════════════════════════
         # (2026-02-04) CRITICAL FIX: Enforce max_volume per-trade limit
         # AVANT l'envoi de l'ordre, plafonner le volume à la limite configurée
+        # FIX 2026-02-24: Lire d'abord depuis overrides (ori_cfg), fallback profile (Directive 8)
         # ══════════════════════════════════════════════════════════════════════
-        pos_limits = (self.profile.get("orchestrator") or {}).get("position_limits") or {}
-        max_volume_limit = float(pos_limits.get("max_volume", 0.0) or 0.0)
+        _ov_pl = (self.ori_cfg.get("position_limits") or {})
+        _pf_pl = (self.profile.get("orchestrator") or {}).get("position_limits") or {}
+        _ov_max = float(_ov_pl.get("max_volume", 0.0) or 0.0)
+        _pf_max = float(_pf_pl.get("max_volume", 0.0) or 0.0)
+        # FIX 2026-02-24: Prendre la valeur la plus restrictive si les deux existent
+        if _ov_max > 0 and _pf_max > 0:
+            max_volume_limit = min(_ov_max, _pf_max)
+        else:
+            max_volume_limit = _ov_max or _pf_max
+        _mv_source = "override" if _ov_max > 0 else "profile"
+        logger.info(f"[MAX_VOLUME] {symbol}: limit={max_volume_limit:.2f} (source={_mv_source}, ov={_ov_max}, pf={_pf_max})")
 
         if max_volume_limit > 0 and lots > max_volume_limit:
             logger.warning(
