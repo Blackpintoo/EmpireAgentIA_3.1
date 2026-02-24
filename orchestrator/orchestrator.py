@@ -2085,6 +2085,19 @@ class Orchestrator:
         # ══════════════════════════════════════════════════════════════════════
 
         # ══════════════════════════════════════════════════════════════════════
+        # FIX 2026-02-24: HARD FILTER — Filtre directionnel par symbole (Directive 2)
+        # ══════════════════════════════════════════════════════════════════════
+        _allowed_dirs = self.ori_cfg.get("allowed_directions")
+        if _allowed_dirs is not None and sig not in _allowed_dirs:
+            logger.warning(f"[DIRECTION_FILTER] {symbol}: {sig} bloqué — allowed={_allowed_dirs}")
+            self._send_telegram(
+                f"\U0001f6ab [DIRECTION_FILTER] {symbol}: {sig} bloqué (seuls {_allowed_dirs} autorisés)",
+                kind="status", force=True
+            )
+            return False
+        # ══════════════════════════════════════════════════════════════════════
+
+        # ══════════════════════════════════════════════════════════════════════
         # (2026-01-06) HARD FILTER 4: DAILY LOSS LIMIT - Blocage si pertes journalières > 2%
         # Calcule le P&L réel depuis MT5 et bloque si limite atteinte
         # ══════════════════════════════════════════════════════════════════════

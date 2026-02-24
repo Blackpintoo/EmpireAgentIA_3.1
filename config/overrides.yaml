@@ -265,6 +265,8 @@ BNBUSD:
   orchestrator:
     auto_execute: true
     telegram_validation: false
+    # FIX 2026-02-24: BUY=-16069$ (6 trades) vs SELL=+2198$ (17 trades) → SHORT only
+    allowed_directions: ["SHORT"]
     min_rr: 1.20
     votes_required: 2
     min_confluence: 1.2
