@@ -236,17 +236,34 @@ class PositionManager:
             pass
     # ---------------------------- MT5 helpers ----------------------------
     def _positions_get(self) -> List[Any]:
+        # FIX 2026-02-24: Fallback élargi avec filtrage manuel (Directive 3 — Étape D)
         try:
             if self.mt5c and hasattr(self.mt5c, "positions_get"):
                 poss = self.mt5c.positions_get(symbol=self.broker_symbol)
-                if poss is not None:
-                    return list(poss)
+                if poss is not None and len(list(poss)) > 0:
+                    result = list(poss)
+                    logger.debug(f"[PM_DIAG] _positions_get via mt5c: {len(result)} pos pour {self.broker_symbol}")
+                    return result
         except Exception:
             pass
         try:
             if mt5:
                 poss = mt5.positions_get(symbol=self.broker_symbol)
-                return list(poss or [])
+                if poss is not None and len(poss) > 0:
+                    logger.debug(f"[PM_DIAG] _positions_get via mt5 direct: {len(poss)} pos pour {self.broker_symbol}")
+                    return list(poss)
+        except Exception:
+            pass
+        # FIX 2026-02-24: Fallback sans filtre symbole + filtrage manuel
+        try:
+            if mt5:
+                all_poss = mt5.positions_get()
+                if all_poss:
+                    _bs = self.broker_symbol.upper()
+                    _sc = self.symbol_canon.upper()
+                    filtered = [p for p in all_poss if getattr(p, "symbol", "").upper() in (_bs, _sc)]
+                    logger.debug(f"[PM_DIAG] _positions_get fallback sans filtre: {len(all_poss)} total, {len(filtered)} matchés ({_bs}/{_sc})")
+                    return filtered
         except Exception:
             pass
         return []
@@ -311,6 +328,9 @@ class PositionManager:
                 logger.info(f"[PM] Attente {wait_time:.1f}s avant close partial (anti-collision)")
                 time.sleep(wait_time)
 
+            # FIX 2026-02-24: Log AVANT tentative de fermeture (Directive 3 — Étape E)
+            logger.info(f"[PM_PARTIAL_EXEC] ticket={ticket} vol_close={volume_close:.4f} symbol={self.broker_symbol}")
+
             # Exécuter le close partial
             result = False
             try:
@@ -318,6 +338,7 @@ class PositionManager:
                     result = bool(self.mt5c.close_partial(ticket=ticket, volume=volume_close))
                     if result:
                         _LAST_PARTIAL_CLOSE_TIME = time.time()
+                        logger.info(f"[PM_PARTIAL_EXEC] ticket={ticket} SUCCÈS via mt5c")
                         return True
             except Exception as e:
                 logger.warning(f"[PM] close_partial via mt5c failed: {e}")
@@ -329,6 +350,10 @@ class PositionManager:
                     result = bool(r)
                     if result:
                         _LAST_PARTIAL_CLOSE_TIME = time.time()
+                        logger.info(f"[PM_PARTIAL_EXEC] ticket={ticket} SUCCÈS via mt5 natif")
+                    else:
+                        _err = mt5.last_error() if hasattr(mt5, "last_error") else "N/A"
+                        logger.warning(f"[PM_PARTIAL_EXEC] ticket={ticket} ÉCHEC via mt5 natif: {_err}")
                     return result
             except Exception as e:
                 logger.warning(f"[PM] close_partial via mt5 native failed: {e}")
@@ -581,6 +606,9 @@ class PositionManager:
         if not self.enabled:
             return
 
+        # FIX 2026-02-24: Log diagnostic PM (Directive 3 — Étape A)
+        logger.info(f"[PM_DIAG] {self.symbol_canon}: broker_symbol={self.broker_symbol}, enabled={self.enabled}")
+
         # PRIORITÉ: Fermer les positions avant la clôture du marché
         closed_before_market = self._close_positions_before_market_close()
         if closed_before_market > 0:
@@ -592,6 +620,11 @@ class PositionManager:
             positions = self._positions_get()
         except Exception:
             positions = []
+
+        # FIX 2026-02-24: Log nombre de positions trouvées (Directive 3 — Étape B)
+        logger.info(f"[PM_DIAG] {self.symbol_canon}: {len(positions)} position(s) trouvée(s)")
+        if not positions:
+            logger.debug(f"[PM_DIAG] Aucune position trouvée pour broker_symbol={self.broker_symbol}")
         for p in positions or []:
             try:
                 ticket = int(getattr(p, "ticket", 0) or 0)
@@ -680,6 +713,8 @@ class PositionManager:
                     rr_now = _compute_rr(side, entry, sl, tp or entry, price) or 0.0
 
                     # ---- PARTIALS
+                    # FIX 2026-02-24: Log diagnostic partials (Directive 3 — Étape C)
+                    logger.debug(f"[PM_PARTIAL] ticket={ticket} rr_now={rr_now:.2f} vol={volume} partials_cfg={[(p.rr, p.close_frac) for p in self.partials]}")
                     partial_hit = False
                     if self.partials and volume and rr_now >= min(pp.rr for pp in self.partials):
                         volume, partial_hit = self._apply_partials(ticket, volume, rr_now)
