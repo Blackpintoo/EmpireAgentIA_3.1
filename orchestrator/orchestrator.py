@@ -3368,14 +3368,14 @@ class Orchestrator:
                         # Si tendance baissiere HTF (meme non stable), exiger score >= 10
                         # ══════════════════════════════════════════════════════════════
                         if regime_type == "trending_down" and direction == "LONG":
-                            current_score = confidence if isinstance(confidence, (int, float)) else 0
+                            current_score = score_agr  # FIX 2026-02-24: était confidence (nombre confluences 2-5) au lieu du score réel
                             min_score_counter_trend = 10.0
                             if regime_confidence > 0.4 and current_score < min_score_counter_trend:
                                 reasons.append(f"counter_trend_low_score:{current_score:.1f}<{min_score_counter_trend}")
                                 decision_notes.append(f"buy_against_downtrend_blocked")
                                 logger.info(f"[COUNTER_TREND] {symbol} BUY bloqué: score={current_score:.1f} < {min_score_counter_trend} en downtrend (conf={regime_confidence:.2f})")
                         elif regime_type == "trending_up" and direction == "SHORT":
-                            current_score = confidence if isinstance(confidence, (int, float)) else 0
+                            current_score = score_agr  # FIX 2026-02-24: était confidence (nombre confluences 2-5) au lieu du score réel
                             min_score_counter_trend = 10.0
                             if regime_confidence > 0.4 and current_score < min_score_counter_trend:
                                 reasons.append(f"counter_trend_low_score:{current_score:.1f}<{min_score_counter_trend}")
