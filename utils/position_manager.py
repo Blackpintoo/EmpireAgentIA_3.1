@@ -218,6 +218,10 @@ class PositionManager:
         self.close_before_enabled = bool(close_before_cfg.get("enabled", True))
         self.close_before_minutes = int(close_before_cfg.get("minutes_before", 30))
 
+        # FIX 2026-02-24: Timeout max par position (Directive 4)
+        self.max_duration_minutes = int(pm_cfg.get("max_duration_minutes", 0) or 0)
+        self.timeout_only_if_losing = bool(pm_cfg.get("timeout_only_if_losing", False))
+
     def _load_open_state(self) -> Dict[str, Any]:
         try:
             if os.path.exists(self._open_state_path):
@@ -746,6 +750,40 @@ class PositionManager:
 
                 except Exception as e:
                     logger.warning(f"[PM] manage position error: {e}")
+
+            # FIX 2026-02-24: Timeout — fermeture automatique après max_duration_minutes (Directive 4)
+            if self.max_duration_minutes > 0:
+                from datetime import datetime, timezone
+                _now_utc = datetime.now(timezone.utc)
+                for p in positions:
+                    try:
+                        ticket = int(getattr(p, "ticket", getattr(p, "identifier", 0)) or 0)
+                        if ticket <= 0:
+                            continue
+                        _open_time = int(getattr(p, "time", 0))
+                        if _open_time <= 0:
+                            continue
+                        _open_dt = datetime.fromtimestamp(_open_time, tz=timezone.utc)
+                        _elapsed_min = (_now_utc - _open_dt).total_seconds() / 60.0
+                        if _elapsed_min < self.max_duration_minutes:
+                            continue
+                        _pnl = float(getattr(p, "profit", 0.0) or 0.0)
+                        # Si timeout_only_if_losing, ne fermer que les perdants
+                        if self.timeout_only_if_losing and _pnl >= 0:
+                            continue
+                        _vol = float(getattr(p, "volume", 0.0) or 0.0)
+                        _side = "BUY" if int(getattr(p, "type", 0)) == 0 else "SELL"
+                        _hours = int(_elapsed_min // 60)
+                        _mins = int(_elapsed_min % 60)
+                        logger.warning(f"[PM_TIMEOUT] {self.symbol_canon} ticket={ticket} durée={_hours}h{_mins:02d}m P&L={_pnl:.2f} → fermeture")
+                        closed = self._close_position_full(ticket, _vol, _side)
+                        if closed:
+                            self._notify("TIMEOUT_CLOSE", {
+                                "symbol": self.symbol_canon,
+                                "detail": f"ticket={ticket} durée={_hours}h{_mins:02d}m P&L={_pnl:+.2f}"
+                            })
+                    except Exception as _to_err:
+                        logger.debug(f"[PM_TIMEOUT] Erreur check timeout: {_to_err}")
 
         except Exception as e:
             logger.warning(f"[PM] manage_open_positions failed: {e}")

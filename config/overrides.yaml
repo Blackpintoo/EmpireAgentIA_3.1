@@ -111,6 +111,7 @@ BTCUSD:
     # FIX 2026-02-20: Position manager corrigé (étape 1.1 + 1.2)
     position_manager:
       enabled: true
+      max_duration_minutes: 480           # FIX 2026-02-24: timeout 8h (Directive 4)
       break_even:
         rr: 1.2                           # FIX 2026-02-20: 0.6→1.2 (étape 1.2)
         offset_points: 0.0
@@ -331,6 +332,7 @@ BNBUSD:
     dynamic_risk: true
   position_manager:
     enabled: true
+    max_duration_minutes: 360             # FIX 2026-02-24: timeout 6h (Directive 4)
     break_even:
       rr: 1.2                            # FIX 2026-02-20: 0.6→1.2 (étape 1.2)
       offset_points: 0.0
@@ -357,6 +359,7 @@ XAUUSD:
       enable: false
     position_manager:
       enabled: true
+      max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
       break_even:
         rr: 1.2                          # FIX 2026-02-20: 0.6→1.2 (étape 1.2)
         offset_points: 0.0
@@ -559,6 +562,7 @@ EURUSD:
     dynamic_risk: true
   position_manager:
     enabled: true
+    max_duration_minutes: 360             # FIX 2026-02-24: timeout 6h (Directive 4)
     break_even:
       rr: 1.2                            # FIX 2026-02-20: 0.6→1.2 (étape 1.2)
       offset_points: 0.0
@@ -593,6 +597,8 @@ SOLUSD:
     # FIX 2026-02-20: ATR SL resserré (étape 1.3)
     atr_sl_mult: 1.5                      # Ajouté (crypto)
     atr_tp_mult: 2.5
+    position_manager:
+      max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
   risk:
     daily_loss_abs: 300
 
@@ -621,6 +627,8 @@ SP500:
     # FIX 2026-02-20: prime_hours (étape 5.5)
     prime_hours_utc:
       - {start: 13, end: 20}             # Session NY cash (13:30-20:00)
+    position_manager:
+      max_duration_minutes: 240           # FIX 2026-02-24: timeout 4h (Directive 4)
   risk:
     daily_loss_abs: 500
 
@@ -643,6 +651,8 @@ GBPUSD:
       after_streak_min: 30
     atr_sl_mult: 1.4                      # FIX 2026-02-20: forex
     atr_tp_mult: 2.5
+    position_manager:
+      max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
   risk:
     daily_loss_abs: 100
 
@@ -691,6 +701,8 @@ NAS100:
     # FIX 2026-02-20: prime_hours (étape 5.5)
     prime_hours_utc:
       - {start: 13, end: 20}             # Session NY cash
+    position_manager:
+      max_duration_minutes: 240           # FIX 2026-02-24: timeout 4h (Directive 4)
   risk:
     daily_loss_abs: 2000
 
@@ -745,5 +757,7 @@ USDJPY:
     # FIX 2026-02-20: prime_hours (étape 5.5)
     prime_hours_utc:
       - {start: 7, end: 17}              # London + NY overlap
+    position_manager:
+      max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
   risk:
     daily_loss_abs: 150
