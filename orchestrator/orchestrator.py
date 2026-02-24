@@ -2833,12 +2833,13 @@ class Orchestrator:
             return
 
         # (audit fev2026) Floating P&L: vérifier réalisé + flottant
+        # FIX 2026-02-24: utilisait 'mt5' non importé → remplacé par '_mt5' (Directive 11)
         if abs_limit > 0:
             try:
                 floating_pnl = 0.0
-                if mt5:
+                if _mt5 is not None:  # FIX 2026-02-24: était 'mt5' → '_mt5'
                     broker_sym = self.broker_symbol or self.symbol
-                    open_positions = mt5.positions_get(symbol=broker_sym)
+                    open_positions = _mt5.positions_get(symbol=broker_sym)  # FIX 2026-02-24
                     if open_positions:
                         floating_pnl = sum(float(getattr(p, "profit", 0.0) or 0.0) for p in open_positions)
                 total_pnl = pnl_today_ccy + floating_pnl
@@ -2855,7 +2856,14 @@ class Orchestrator:
                     )
                     return
             except Exception as e:
-                logger.warning(f"[RISK] Floating P&L check failed: {e}")
+                # FIX 2026-02-24: En cas d'échec, bloquer par précaution (protéger le capital)
+                logger.error(f"[RISK_CRITICAL] Floating P&L check failed: {e} — trades bloqués par précaution")
+                self._send_telegram(
+                    f"[FLOATING_PL_ERROR] {self.symbol}: Impossible de vérifier le P&L flottant ({e}). "
+                    f"Nouveaux trades bloqués par précaution.",
+                    kind="status", force=True,
+                )
+                return
 
         # appelle la méthode nouvelle signature (2 args), sinon fallback ancienne (0 arg)
         stop = False
@@ -2963,9 +2971,9 @@ class Orchestrator:
                         logger.info(f"[EOD_CLOSE] {symbol}: fermeture EOD demandée ({_eod_close_time} UTC)")
                         # FIX 2026-02-20: Fermeture effective via MT5 (étape 2.3)
                         try:
-                            if mt5:
+                            if _mt5 is not None:  # FIX 2026-02-24: était 'mt5' → '_mt5' (Directive 11)
                                 _broker_sym = getattr(self, "broker_symbol", symbol)
-                                _eod_positions = mt5.positions_get(symbol=_broker_sym) or []
+                                _eod_positions = _mt5.positions_get(symbol=_broker_sym) or []  # FIX 2026-02-24
                                 for _eod_p in _eod_positions:
                                     _eod_ticket = int(getattr(_eod_p, "ticket", 0) or 0)
                                     _eod_vol = float(getattr(_eod_p, "volume", 0) or 0)
@@ -2974,13 +2982,13 @@ class Orchestrator:
                                     if _eod_ticket <= 0 or _eod_vol <= 0:
                                         continue
                                     _eod_side = "BUY" if _eod_type == 0 else "SELL"
-                                    _eod_order_type = mt5.ORDER_TYPE_SELL if _eod_side == "BUY" else mt5.ORDER_TYPE_BUY
-                                    _eod_tick = mt5.symbol_info_tick(_broker_sym)
+                                    _eod_order_type = _mt5.ORDER_TYPE_SELL if _eod_side == "BUY" else _mt5.ORDER_TYPE_BUY  # FIX 2026-02-24
+                                    _eod_tick = _mt5.symbol_info_tick(_broker_sym)  # FIX 2026-02-24
                                     _eod_price = (_eod_tick.bid if _eod_side == "BUY" else _eod_tick.ask) if _eod_tick else 0
                                     if _eod_price <= 0:
                                         continue
                                     _eod_req = {
-                                        "action": mt5.TRADE_ACTION_DEAL,
+                                        "action": _mt5.TRADE_ACTION_DEAL,  # FIX 2026-02-24
                                         "position": _eod_ticket,
                                         "symbol": _broker_sym,
                                         "volume": _eod_vol,
@@ -2989,11 +2997,11 @@ class Orchestrator:
                                         "deviation": 30,
                                         "magic": 0,
                                         "comment": "eod_close",
-                                        "type_filling": mt5.ORDER_FILLING_IOC,
-                                        "type_time": mt5.ORDER_TIME_GTC,
+                                        "type_filling": _mt5.ORDER_FILLING_IOC,  # FIX 2026-02-24
+                                        "type_time": _mt5.ORDER_TIME_GTC,  # FIX 2026-02-24
                                     }
-                                    _eod_result = mt5.order_send(_eod_req)
-                                    if _eod_result and _eod_result.retcode == mt5.TRADE_RETCODE_DONE:
+                                    _eod_result = _mt5.order_send(_eod_req)  # FIX 2026-02-24
+                                    if _eod_result and _eod_result.retcode == _mt5.TRADE_RETCODE_DONE:  # FIX 2026-02-24
                                         logger.info(f"[EOD_CLOSE] {symbol} ticket {_eod_ticket} fermé (P&L: {_eod_profit:+.2f})")
                                         self._send_telegram(
                                             f"[EOD_CLOSE] {symbol} #{_eod_ticket} fermé à {_eod_close_time} UTC (P&L: {_eod_profit:+.2f})",
