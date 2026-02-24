@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-02-23T19:57:42.380913+00:00",
+  "timestamp": "2026-02-24T05:02:23.824767+00:00",
   "symbol": "SOLUSD",
   "retail": {
-    "long_percentage": 60.0,
-    "short_percentage": 40.0,
+    "long_percentage": 64.0,
+    "short_percentage": 36.0,
     "source": "simulated"
   }
 }

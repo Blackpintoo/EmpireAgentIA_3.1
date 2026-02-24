@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-02-23T20:41:15.963438+00:00",
+  "timestamp": "2026-02-24T05:14:19.436021+00:00",
   "symbol": "BTCUSD",
   "signals": {
     "swing": {
@@ -13,11 +13,6 @@
       "reason": ""
     },
     "smc": {
-      "signal": "SHORT",
-      "intensity": null,
-      "reason": ""
-    },
-    "news": {
       "signal": "LONG",
       "intensity": null,
       "reason": ""

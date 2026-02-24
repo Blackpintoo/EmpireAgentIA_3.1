@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-02-20T17:36:32.032939+00:00",
+  "timestamp": "2026-02-24T05:03:02.994578+00:00",
   "symbol": "USDJPY",
   "retail": {
-    "long_percentage": 45.0,
-    "short_percentage": 55.0,
+    "long_percentage": 51.0,
+    "short_percentage": 49.0,
     "source": "simulated"
   }
 }

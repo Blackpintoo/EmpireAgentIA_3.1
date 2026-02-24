@@ -8,12 +8,11 @@ datetime,currency,impact,title,source,url
 2026-02-23 15:00,EUR,Low,German ifo Business Climate,this,https://www.forexfactory.com/calendar/316-ge-ifo-business-climate
 2026-02-23 17:00,GBP,Low,MPC Member Taylor Speaks,this,https://www.forexfactory.com/calendar/916-uk-mpc-member-taylor-speaks
 2026-02-23 19:00,USD,Medium,FOMC Member Waller Speaks,this,https://www.forexfactory.com/calendar/839-us-fomc-member-waller-speaks
-2026-02-23 20:00,EUR,Low,Belgian NBB Business Climate,this,https://www.forexfactory.com/calendar/317-be-nbb-business-climate
+2026-02-23 19:26,EUR,Low,Belgian NBB Business Climate,this,https://www.forexfactory.com/calendar/317-be-nbb-business-climate
 2026-02-23 21:00,USD,Low,Factory Orders m/m,this,https://www.forexfactory.com/calendar/351-us-factory-orders-mm
 2026-02-23 23:30,EUR,Medium,ECB President Lagarde Speaks,this,https://www.forexfactory.com/calendar/832-ez-ecb-president-lagarde-speaks
 2026-02-24 07:00,CNY,Low,1-y Loan Prime Rate,this,https://www.forexfactory.com/calendar/777-ch-1-y-loan-prime-rate
 2026-02-24 07:00,CNY,Low,5-y Loan Prime Rate,this,https://www.forexfactory.com/calendar/898-ch-5-y-loan-prime-rate
-2026-02-24 13:02,CNY,Low,Foreign Direct Investment ytd/y,this,https://www.forexfactory.com/calendar/457-ch-foreign-direct-investment-ytdy
 2026-02-24 17:00,GBP,Low,CBI Realized Sales,this,https://www.forexfactory.com/calendar/329-uk-cbi-realized-sales
 2026-02-24 19:00,USD,Low,FOMC Member Goolsbee Speaks,this,https://www.forexfactory.com/calendar/889-us-fomc-member-goolsbee-speaks
 2026-02-24 19:20,USD,Low,ADP Weekly Employment Change,this,https://www.forexfactory.com/calendar/929-us-adp-weekly-employment-change
@@ -27,6 +26,7 @@ datetime,currency,impact,title,source,url
 2026-02-24 21:00,USD,Medium,CB Consumer Confidence,this,https://www.forexfactory.com/calendar/208-us-cb-consumer-confidence
 2026-02-24 21:00,USD,Medium,Richmond Manufacturing Index,this,https://www.forexfactory.com/calendar/186-us-richmond-manufacturing-index
 2026-02-24 21:00,USD,Low,Final Wholesale Inventories m/m,this,https://www.forexfactory.com/calendar/154-us-final-wholesale-inventories-mm
+2026-02-24 23:30,CHF,Medium,SNB Chairman Schlegel Speaks,this,https://www.forexfactory.com/calendar/915-sz-snb-chairman-schlegel-speaks
 2026-02-25 02:20,USD,Low,FOMC Member Barkin Speaks,this,https://www.forexfactory.com/calendar/728-us-fomc-member-barkin-speaks
 2026-02-25 02:20,USD,Low,FOMC Member Collins Speaks,this,https://www.forexfactory.com/calendar/882-us-fomc-member-collins-speaks
 2026-02-25 03:30,USD,Low,API Weekly Statistical Bulletin,this,https://www.forexfactory.com/calendar/754-us-api-weekly-statistical-bulletin
@@ -40,6 +40,7 @@ datetime,currency,impact,title,source,url
 2026-02-25 11:00,JPY,Low,BOJ Core CPI y/y,this,https://www.forexfactory.com/calendar/631-jn-boj-core-cpi-yy
 2026-02-25 13:00,EUR,Low,German Final GDP q/q,this,https://www.forexfactory.com/calendar/77-ge-final-gdp-qq
 2026-02-25 13:00,EUR,Low,German GfK Consumer Climate,this,https://www.forexfactory.com/calendar/335-ge-gfk-consumer-climate
+2026-02-25 13:02,CNY,Low,Foreign Direct Investment ytd/y,this,https://www.forexfactory.com/calendar/457-ch-foreign-direct-investment-ytdy
 2026-02-25 14:40,AUD,Medium,RBA Gov Bullock Speaks,this,https://www.forexfactory.com/calendar/671-au-rba-gov-bullock-speaks
 2026-02-25 15:00,CHF,Low,UBS Economic Expectations,this,https://www.forexfactory.com/calendar/315-sz-ubs-economic-expectations
 2026-02-25 16:00,EUR,Low,Final Core CPI y/y,this,https://www.forexfactory.com/calendar/167-ez-final-core-cpi-yy
