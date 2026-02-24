@@ -3522,9 +3522,6 @@ class Orchestrator:
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                         "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=self.proposal_ttl_secs)).isoformat(),
                     }
-                    # log proposal comme exécutée (la tentative va suivre)
-                    self._log_proposal_csv(direction, price, sl, tp, lots, score_agr, confluence, self.proposal_ttl_secs, expired=False, executed=True)
-
                     # Snapshot "proposed" (même si auto)
                     try:
                         self._log_agents_snapshot_jsonl(
@@ -3533,7 +3530,9 @@ class Orchestrator:
                     except Exception:
                         pass
 
-                    self.execute_trade(direction)
+                    # FIX 2026-02-24: logger executed APRÈS execute_trade pour refléter le vrai statut
+                    trade_ok = self.execute_trade(direction)
+                    self._log_proposal_csv(direction, price, sl, tp, lots, score_agr, confluence, self.proposal_ttl_secs, expired=False, executed=bool(trade_ok))
                 else:
                     # Snapshot "proposed"
                     try:
