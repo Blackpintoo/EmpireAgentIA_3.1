@@ -4310,8 +4310,8 @@ class Orchestrator:
                 details["dispersion_penalty"] = -0.5
                 details["disagree_pct"] = round(_disagree_pct, 2)
 
-        # FIX 2026-02-20: Cap confluence à 5.0 (étape 3.4)
-        confluence = min(confluence, 5.0)
+        # FIX 2026-02-24: Cap confluence relevé 5.0→8.0 (le HARD_MIN est à 5, cap=5 rendait le filtre binaire)
+        confluence = min(confluence, 8.0)
 
         return direction, float(score_agr), float(confluence), details
     def _estimate_rr(self, proposal: Optional[Dict[str, Any]]) -> Optional[float]:
