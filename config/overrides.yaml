@@ -3,6 +3,10 @@
 
 GLOBAL:
   orchestrator:
+    # FIX 2026-03-09: Interval global 120s pour tous les symboles (sémaphore MT5)
+    timeframes:
+      orchestrator: 120
+
     weekend_guard:
       enabled: true
       close_positions: true
@@ -18,11 +22,11 @@ GLOBAL:
   # FIX 2026-02-20: Seuils qualité relevés (étape 3)
   default:
     min_score_for_proposal: 2.5           # FIX 2026-02-20: relevé de ~1.2 → 2.5
-    min_confluence: 2.5                   # FIX 2026-02-20: relevé de ~0.8 → 2.5
+    min_confluence: 2.0                   # FIX 2026-03-08: 2.5→2.0
 
   # FIX 2026-02-20: Fermeture EOD (étape 2)
-  eod_close_time_utc: "19:30"
-  last_entry_time_utc: "18:00"
+  eod_close_time_utc: "21:00"        # OPT 2026-03-06: couvrir fin de session US
+  last_entry_time_utc: "20:00"       # OPT 2026-03-06: ne pas couper session US
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BTCUSD — Crypto majeure
@@ -31,14 +35,16 @@ BTCUSD:
   orchestrator:
     auto_execute: true
     telegram_validation: false
+    # R17: LONG only — SHORT catastrophique sur 5 jours
+    allowed_directions: ["LONG"]
     status_report_hours: 2
 
     # Agrégation & qualité
-    min_rr: 1.15
+    min_rr: 0.8                             # FIX 2026-03-08: 1.15→0.8
     votes_required: 2
     min_confluence: 0.8
     min_confluence_dispersion: 0.25
-    min_score_for_proposal: 1.2
+    min_score_for_proposal: 3.0             # R18: monté de 1.2→3.0 (28.6% HR trop bas)
     confluence_weights:
       technical: 1.2
       scalping: 0.9
@@ -67,15 +73,11 @@ BTCUSD:
 
     multi_timeframes:
       enabled: true
-      tfs: ["H4", "H1", "M30", "M15", "M5"]
+      tfs: ["H1", "M15", "M5"]  # FIX 2026-03-06: réduit pour éviter saturation MT5
       tf_weights:
-        D1: 1.2
-        H4: 1.1
         H1: 1.2
-        M30: 1.0
-        M15: 0.9
-        M5: 0.8
-        M1: 0.7
+        M15: 1.0
+        M5: 0.9
 
     once_per_candle_tf: "M15"
     cooldown:
@@ -102,11 +104,11 @@ BTCUSD:
       min_factor: 0.20
 
     timeframes:
-      orchestrator: 60
+      orchestrator: 120                    # FIX 2026-03-08: 60→120 pour sémaphore MT5
 
     require_scalping_entry: false
     require_swing_confirm: false
-    blocked_hours_utc: [16, 17, 18, 20, 22]
+    blocked_hours_utc: [3, 4, 5]            # FIX 2026-03-08: crypto 24/7, seulement heures mortes bloquées
 
     # FIX 2026-02-20: Position manager corrigé (étape 1.1 + 1.2)
     position_manager:
@@ -160,7 +162,7 @@ BTCUSD:
       smc_pivot_window: 3
       smc_fvg_tolerance: 0.05
 
-  interval_secs: 20
+  # interval_secs supprimé — FIX 2026-03-09: le champ correct est orchestrator.timeframes.orchestrator (hérité de GLOBAL)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LTCUSD — DÉSACTIVÉ (WR 0%, -$410)
@@ -168,19 +170,22 @@ BTCUSD:
 # ══════════════════════════════════════════════════════════════════════════════
 LTCUSD:
   orchestrator:
-    enabled: false                        # FIX 2026-02-20: DÉSACTIVÉ (étape 1.5)
-    max_trades_per_day: 0                 # FIX 2026-02-20: Backup désactivation
+    enabled: true
+    # R18: MODE PROBATION — 1 trade, 0% HR, -$299 sur 14j
+    probation: true
+    allowed_directions: ["LONG"]          # R18: LONG only
+    min_score_for_proposal: 7.0           # R18: relevé de 2.5→7.0
+    max_trades_per_day: 1                 # R18: 1 seul trade/jour
     auto_execute: true
     telegram_validation: false
     status_report_hours: 2
-    min_rr: 2.0
-    votes_required: 3
-    min_confluence: 3.0
+    min_rr: 0.8
+    votes_required: 4                     # R18: 4 agents d'accord
+    min_confluence: 2.0
     min_confluence_dispersion: 0.15
-    min_score_for_proposal: 4.0
     require_scalping_entry: false
     require_swing_confirm: true
-    allowed_hours_utc: [8, 18, 22]
+    allowed_hours_utc: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]  # R18: London+NY
     agent_weights:
       swing: 0.8
       structure: 0.9
@@ -193,22 +198,22 @@ LTCUSD:
     tf_weight_dynamic_scale: 0.15
     multi_timeframes:
       enabled: true
-      tfs: ["H4", "H1", "M30"]
+      tfs: ["H1", "M15", "M5"]  # FIX 2026-03-06: réduit pour éviter saturation MT5
       tf_weights:
-        H4: 1.3
         H1: 1.2
-        M30: 0.9
+        M15: 1.0
+        M5: 0.9
     once_per_candle_tf: "H1"
     cooldown:
       enabled: true
       min_secs_between_trades: 1800
-      max_trades_per_day: 0               # FIX 2026-02-20: désactivé
+      max_trades_per_day: 1               # R18: réduit à 1
       after_trade_min: 15
       after_win_min: 20
-      after_loss_min: 60
+      after_loss_min: 120                 # R18: 2h après perte
       after_reject_min: 10
-      after_streak_n: 3                   # FIX 2026-02-20: 2→3 (étape 1.6)
-      after_streak_min: 120
+      after_streak_n: 2                   # R18: pause après 2 pertes
+      after_streak_min: 2880              # R18: 48h de pause
     news_filter:
       enabled: true
       csv_path: data/news_calendar.csv
@@ -226,24 +231,20 @@ LTCUSD:
       min_trades_live: 10
       lookback_days: 5
     trading_window:
-      enabled: true
-      timezone: "Europe/Zurich"
-      sessions:
-        - {start: "10:00", end: "12:00"}
-        - {start: "15:00", end: "17:00"}
+      enabled: false                       # FIX 2026-03-08: crypto 24/7
     # FIX 2026-02-20: ATR SL resserré (étape 1.3)
     atr_sl_mult: 1.5                      # RÉDUIT 2.5→1.5 (crypto)
     atr_tp_mult: 3.5
   risk:
-    risk_per_trade: 0.002
-    daily_loss_abs: 200
-    max_consec_losses: 2
+    risk_per_trade: 0.001                 # R18: risque minimal absolu
+    daily_loss_abs: 30                    # R18: kill switch $30/jour
+    max_consec_losses: 2                  # R18: 2 pertes = pause
     daily_loss_limit_pct: 0.01
     dynamic_risk: true
   position_manager:
     enabled: true
     break_even:
-      rr: 1.2                            # FIX 2026-02-20: 0.6→1.2 (étape 1.2)
+      rr: 1.2
       offset_points: 2.0
     partials:
       - rr: 1.5                          # FIX 2026-02-20: 0.8→1.5 (étape 1.1)
@@ -257,7 +258,7 @@ LTCUSD:
       atr_period: 21
       atr_mult: 1.5
       lock_rr: 0.5
-  interval_secs: 60
+  # interval_secs supprimé — FIX 2026-03-09: le champ correct est orchestrator.timeframes.orchestrator (hérité de GLOBAL)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BNBUSD — Crypto secondaire
@@ -266,12 +267,15 @@ BNBUSD:
   orchestrator:
     auto_execute: true
     telegram_validation: false
-    # FIX 2026-02-24: BUY=-16069$ (6 trades) vs SELL=+2198$ (17 trades) → SHORT only
-    allowed_directions: ["SHORT"]
-    min_rr: 1.20
-    votes_required: 2
+    # R18: MODE PROBATION — 14 trades, 7.1% HR, -$489 sur 14j
+    # R18: Changement SHORT only → LONG only (les SHORTs = 7.1% HR, catastrophique)
+    probation: true
+    allowed_directions: ["LONG"]          # R18: INVERSE de R17 — essayer LONG au lieu de SHORT
+    min_score_for_proposal: 7.0           # R18: relevé de 5.0→7.0
+    min_rr: 0.8
+    votes_required: 4                     # R18: 4 agents d'accord
+    max_trades_per_day: 1                 # R18: 1 seul trade/jour
     min_confluence: 1.2
-    min_score_for_proposal: 1.3
     require_scalping_entry: false
     require_swing_confirm: false
     agent_weights:
@@ -281,15 +285,16 @@ BNBUSD:
       smart_money: 0.6
       news: 0.4
     once_per_candle_tf: "M30"
+    allowed_hours_utc: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]  # R18: London+NY
     cooldown:
       enabled: true
       min_secs_between_trades: 600
-      max_trades_per_day: 6
+      max_trades_per_day: 1               # R18: réduit à 1
       after_trade_min: 4
-      after_loss_min: 60
+      after_loss_min: 120                 # R18: 2h après perte
       after_win_min: 6
-      after_streak_n: 3
-      after_streak_min: 30                # FIX 2026-02-20: 25→30 (étape 1.6)
+      after_streak_n: 2                   # R18: pause après 2 pertes
+      after_streak_min: 2880              # R18: 48h de pause
     news_filter:
       enabled: true
       csv_path: data/news_calendar.csv
@@ -298,10 +303,9 @@ BNBUSD:
       window_after_min: 45
     position_limits:
       max_positions: 2
-      max_volume: 1.0                     # FIX 2026-02-20: 2.0→1.0 (étape 1.4)
+      max_volume: 1.0
       max_net_volume: 0.01
-    # FIX 2026-02-24: heures toxiques — 18h=-9512$ (2 trades), nuit 0-5 précaution crypto volatile
-    blocked_hours_utc: [0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23]
+    blocked_hours_utc: [0, 1, 2, 3, 4, 5, 6, 7]  # R18: nuit bloquée
     live_guard:
       enabled: true
       pf_min_live: 1.20
@@ -309,38 +313,33 @@ BNBUSD:
       min_trades_live: 15
       lookback_days: 7
     trading_window:
-      enabled: true
-      timezone: "Europe/Zurich"
-      start: "08:00"
-      end: "19:00"
+      enabled: false
     multi_timeframes:
       enabled: true
-      tfs: ["H4", "H1", "M30", "M15"]
+      tfs: ["H1", "M15", "M5"]
       tf_weights:
-        H4: 1.1
-        H1: 1.1
-        M30: 1.0
-        M15: 0.85
-    # FIX 2026-02-20: ATR SL resserré (étape 1.3)
-    atr_sl_mult: 1.5                      # Ajouté (crypto)
+        H1: 1.2
+        M15: 1.0
+        M5: 0.9
+    atr_sl_mult: 1.5
     atr_tp_mult: 2.5
   risk:
-    risk_per_trade: 0.004
-    daily_loss_abs: 120
-    max_consec_losses: 3
+    risk_per_trade: 0.001                 # R18: risque minimal absolu
+    daily_loss_abs: 30                    # R18: kill switch $30/jour
+    max_consec_losses: 2                  # R18: 2 pertes = pause
     daily_loss_limit_pct: 0.025
     dynamic_risk: true
   position_manager:
     enabled: true
-    max_duration_minutes: 360             # FIX 2026-02-24: timeout 6h (Directive 4)
+    max_duration_minutes: 360
     break_even:
-      rr: 1.2                            # FIX 2026-02-20: 0.6→1.2 (étape 1.2)
+      rr: 1.2
       offset_points: 0.0
     partials:
-      - rr: 1.5                          # FIX 2026-02-20: 1.3→1.5 (étape 1.1)
-        close_frac: 0.3                  # FIX 2026-02-20: 0.4→0.3
-      - rr: 2.5                          # FIX 2026-02-20: 2.3→2.5
-        close_frac: 0.3                  # FIX 2026-02-20: 0.4→0.3
+      - rr: 1.5
+        close_frac: 0.3
+      - rr: 2.5
+        close_frac: 0.3
     trailing:
       enabled: true
       start_rr: 1.7
@@ -419,7 +418,7 @@ ETHUSD:
   orchestrator:
     auto_execute: true
     telegram_validation: false
-    min_rr: 1.20
+    min_rr: 0.8                             # FIX 2026-03-08: 1.20→0.8
     votes_required: 2
     min_confluence: 1.2
     min_score_for_proposal: 1.3
@@ -457,12 +456,11 @@ ETHUSD:
         - {start: "07:00", end: "23:00", tz: "Europe/Zurich"}
     multi_timeframes:
       enabled: true
-      tfs: ["H4", "H1", "M30", "M15"]
+      tfs: ["H1", "M15", "M5"]  # FIX 2026-03-06: réduit pour éviter saturation MT5
       tf_weights:
-        H4: 1.1
         H1: 1.2
-        M30: 1.0
-        M15: 0.85
+        M15: 1.0
+        M5: 0.9
     # FIX 2026-02-20: ATR SL resserré (étape 1.3)
     atr_sl_mult: 1.5                      # Ajouté (crypto)
     atr_tp_mult: 2.5
@@ -498,7 +496,7 @@ EURUSD:
     auto_execute: true
     telegram_validation: false
     status_report_hours: 2
-    min_rr: 1.25
+    min_rr: 0.8                             # FIX 2026-03-08: 1.2→0.8
     votes_required: 2
     min_confluence: 1.3
     min_score_for_proposal: 1.4
@@ -539,12 +537,11 @@ EURUSD:
       lookback_days: 7
     multi_timeframes:
       enabled: true
-      tfs: ["H4", "H1", "M30", "M15"]
+      tfs: ["H1", "M15", "M5"]  # FIX 2026-03-06: réduit pour éviter saturation MT5
       tf_weights:
-        H4: 1.1
         H1: 1.2
-        M30: 1.0
-        M15: 0.85
+        M15: 1.0
+        M5: 0.9
     tracker_confluence_weight: 0.6
     tracker_vote_threshold: 0.7
     market_confluence_weight: 0.65
@@ -584,23 +581,30 @@ EURUSD:
 # ══════════════════════════════════════════════════════════════════════════════
 SOLUSD:
   orchestrator:
+    # R18: MODE PROBATION — 27 trades, 18.5% HR, -$906 sur 14j
+    probation: true
+    allowed_directions: ["LONG"]          # R17: maintenu LONG only
+    min_score_for_proposal: 7.0           # R18: relevé de 4.0→7.0
+    max_trades_per_day: 1                 # R18: 1 seul trade/jour
+    votes_required: 4                     # R18: 4 agents d'accord
+    allowed_hours_utc: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]  # R18: London+NY only
     position_limits:
-      max_volume: 5.0                     # FIX 2026-02-20: 1.0→5.0 (étape 1.4)
-    allowed_hours_utc: [13, 23]
+      max_volume: 5.0
     cooldown:
       enabled: true
       min_secs_between_trades: 600
-      max_trades_per_day: 6               # FIX 2026-02-20: crypto max 6
-      after_loss_min: 60
-      after_streak_n: 3
-      after_streak_min: 30
-    # FIX 2026-02-20: ATR SL resserré (étape 1.3)
-    atr_sl_mult: 1.5                      # Ajouté (crypto)
+      max_trades_per_day: 1               # R18: réduit à 1
+      after_loss_min: 120                 # R18: 2h après perte (était 60)
+      after_streak_n: 2                   # R18: pause après 2 pertes (était 3)
+      after_streak_min: 2880              # R18: 48h de pause (2880 min)
+    atr_sl_mult: 1.5
     atr_tp_mult: 2.5
     position_manager:
-      max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
+      max_duration_minutes: 360
   risk:
-    daily_loss_abs: 300
+    risk_per_trade: 0.001                 # R18: risque minimal absolu (0.1%)
+    daily_loss_abs: 30                    # R18: kill switch $30/jour
+    max_consec_losses: 2                  # R18: 2 pertes = pause
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SP500 — Indice US
@@ -683,6 +687,7 @@ UK100:
 # ══════════════════════════════════════════════════════════════════════════════
 NAS100:
   orchestrator:
+    min_score_for_proposal: 5.0             # FIX 2026-03-28 R16-config: ajouté (17% hit rate, -$107/3j)
     # FIX 2026-02-20: whale_override désactivé pour non-crypto (étape 4.8)
     whale_override:
       enable: false
@@ -712,8 +717,11 @@ NAS100:
 # ══════════════════════════════════════════════════════════════════════════════
 AUDUSD:
   orchestrator:
-    enabled: false                        # FIX 2026-02-20: DÉSACTIVÉ (étape 1.5)
-    max_trades_per_day: 0                 # FIX 2026-02-20: Backup désactivation
+    enabled: true                         # FIX 2026-03-05: ajusté pour débloquer trading
+    max_trades_per_day: 2                 # FIX 2026-03-05: ajusté pour débloquer trading
+    # R17: Dernière chance — restrictions sévères
+    allowed_directions: ["LONG"]      # R17: LONG only (SHORT = 0% HR)
+    min_score_for_proposal: 5.0       # R17: seuil très élevé
     # FIX 2026-02-20: whale_override désactivé pour non-crypto (étape 4.8)
     whale_override:
       enable: false
@@ -728,10 +736,13 @@ AUDUSD:
       after_streak_min: 30
     atr_sl_mult: 1.4                      # FIX 2026-02-20: forex
     atr_tp_mult: 2.5
-    # FIX 2026-02-20: prime_hours (étape 5.5)
+    # R17: Changer les prime_hours — session Asie perd de l'argent
     prime_hours_utc:
-      - {start: 0, end: 8}               # Session Asie + Sydney
-      - {start: 22, end: 24}
+      - {start: 7, end: 17}          # R17: London+NY au lieu de Asie
+  risk:
+    risk_per_trade: 0.002             # R17: risque minimal
+    daily_loss_abs: 60                # R17: kill switch serré
+    max_consec_losses: 2              # R17: pause après 2 pertes (pas 3)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # USDJPY — Forex
@@ -741,9 +752,13 @@ USDJPY:
     # FIX 2026-02-20: whale_override désactivé pour non-crypto (étape 4.8)
     whale_override:
       enable: false
+    # R17: Dernière chance — restrictions sévères
+    allowed_directions: ["LONG"]      # R17: LONG only
+    min_score_for_proposal: 6.0       # R18: monté de 5.0→6.0 (25% HR, LONGs à -$46)
     position_limits:
       max_volume: 1.0
-    allowed_hours_utc: [4, 7, 12, 13, 14, 15, 17, 22]
+    # R18: Restreindre aux heures London+NY (Asie = perte)
+    allowed_hours_utc: [8, 9, 10, 11, 12, 13, 14, 15]
     cooldown:
       enabled: true
       min_secs_between_trades: 600
@@ -760,4 +775,6 @@ USDJPY:
     position_manager:
       max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
   risk:
-    daily_loss_abs: 150
+    risk_per_trade: 0.002             # R17: risque minimal
+    daily_loss_abs: 60                # R17: kill switch serré (était 150)
+    max_consec_losses: 2              # R17: pause après 2 pertes

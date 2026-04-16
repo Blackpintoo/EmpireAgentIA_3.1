@@ -102,8 +102,8 @@ profiles:
       smart_money: {enabled: true}
       news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
       sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
-      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
-      macro: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-09: Finnhub 403 — timeout systématique
+      macro: {enabled: false}         # FIX 2026-03-09: Finnhub 403 — timeout systématique
 
   ETHUSD:
     symbol: ETHUSD
@@ -149,8 +149,8 @@ profiles:
       smart_money: {enabled: true}
       news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
       sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
-      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
-      macro: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-09: Finnhub 403 — timeout systématique
+      macro: {enabled: false}         # FIX 2026-03-09: Finnhub 403 — timeout systématique
 
   BNBUSD:
     symbol: BNBUSD
@@ -196,8 +196,8 @@ profiles:
       smart_money: {enabled: true}
       news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
       sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
-      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
-      macro: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-09: Finnhub 403 — timeout systématique
+      macro: {enabled: false}         # FIX 2026-03-09: Finnhub 403 — timeout systématique
 
   LTCUSD:
     symbol: LTCUSD
@@ -248,8 +248,8 @@ profiles:
       smart_money: {enabled: true}
       news: {enabled: true}
       sentiment: {enabled: true}
-      fundamental: {enabled: true}
-      macro: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-09: Finnhub 403 — timeout systématique
+      macro: {enabled: false}         # FIX 2026-03-09: Finnhub 403 — timeout systématique
 
   XAUUSD:
     symbol: XAUUSD
@@ -294,8 +294,8 @@ profiles:
       smart_money: {enabled: true}
       news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
       sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
-      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
-      macro: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-09: Finnhub 403 — timeout systématique
+      macro: {enabled: false}         # FIX 2026-03-09: Finnhub 403 — timeout systématique
 
   EURUSD:
     symbol: EURUSD
@@ -341,8 +341,8 @@ profiles:
       smart_money: {enabled: true}
       news: {enabled: true}         # ✅ RÉACTIVÉ (Phase 5) - Alpha Vantage News Sentiment
       sentiment: {enabled: true}    # ✅ RÉACTIVÉ (Phase 5) - Fear & Greed Index
-      fundamental: {enabled: true}  # ✅ RÉACTIVÉ (Phase 5) - Finnhub Economic Calendar
-      macro: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-09: Finnhub 403 — timeout systématique
+      macro: {enabled: false}         # FIX 2026-03-09: Finnhub 403 — timeout systématique
 
   # ========================================
   # FOREX PAIRS (PHASE 2)
@@ -389,6 +389,8 @@ profiles:
       swing: {enabled: true}
       structure: {enabled: true}
       smart_money: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-10: Finnhub 403
+      macro: {enabled: false}         # FIX 2026-03-10: Finnhub 403
 
   # ══════════════════════════════════════════════════════════════════════════
   # USDJPY - SYMBOLE PROBLÉMATIQUE - RECONFIGURATION STRICTE (2025-12-13)
@@ -407,15 +409,15 @@ profiles:
       max_lot: 0.3            # RÉDUIT 0.5→0.3 (OPTIMISATION 2025-12-13)
     risk:
       tier: phase1
-      risk_per_trade: 0.003   # RÉDUIT 0.005→0.003 (OPTIMISATION 2025-12-13)
+      risk_per_trade: 0.008   # OPT 2026-03-06: 0.003→0.008 (objectif 5000$/mois)
       max_daily_loss: 0.01    # RÉDUIT 0.015→0.01 (OPTIMISATION 2025-12-13)
       max_consec_loss: 2      # RÉDUIT 3→2 - Pause rapide après pertes
     orchestrator:
       auto_execute: true
       telegram_validation: false
       # Seuils plus stricts pour USDJPY
-      min_score_for_proposal: 8.0   # NOUVEAU - Score minimum plus élevé
-      min_confluence: 5             # NOUVEAU - Plus de confirmation requise
+      min_score_for_proposal: 2.5   # FIX 2026-03-06: aligné avec config global
+      min_confluence: 3             # FIX 2026-03-06: aligné avec config global
       position_manager:
         enabled: true
         break_even:
@@ -439,6 +441,10 @@ profiles:
       swing: {enabled: true}
       structure: {enabled: true}
       smart_money: {enabled: true}
+      news: {enabled: true}         # FIX 2026-03-08: ajouté pour score>0
+      sentiment: {enabled: true}    # FIX 2026-03-08: ajouté pour score>0
+      fundamental: {enabled: false}  # FIX 2026-03-10: Finnhub 403
+      macro: {enabled: false}         # FIX 2026-03-10: Finnhub 403
 
   AUDUSD:
     symbol: AUDUSD
@@ -453,7 +459,7 @@ profiles:
       max_lot: 0.3          # Limite volume max réduite (2025-12-08) - symbole problématique
     risk:
       tier: phase1
-      risk_per_trade: 0.003  # Réduit de 1% à 0.3% (2025-12-08) - symbole problématique
+      risk_per_trade: 0.008  # OPT 2026-03-06: 0.003→0.008 (objectif 5000$/mois)
       max_daily_loss: 0.01   # Réduit (2025-12-08)
       max_consec_loss: 2     # Réduit (2025-12-08)
     orchestrator:
@@ -482,6 +488,8 @@ profiles:
       swing: {enabled: true}
       structure: {enabled: true}
       smart_money: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-10: Finnhub 403
+      macro: {enabled: false}         # FIX 2026-03-10: Finnhub 403
 
   # ========================================
   # INDICES - Configuration 2025-12-14
@@ -528,6 +536,8 @@ profiles:
       swing: {enabled: true}
       structure: {enabled: true}
       smart_money: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-10: Finnhub 403
+      macro: {enabled: false}         # FIX 2026-03-10: Finnhub 403
 
   SP500:
     symbol: SP500
@@ -570,6 +580,8 @@ profiles:
       swing: {enabled: true}
       structure: {enabled: true}
       smart_money: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-10: Finnhub 403
+      macro: {enabled: false}         # FIX 2026-03-10: Finnhub 403
 
   UK100:
     symbol: UK100
@@ -612,6 +624,8 @@ profiles:
       swing: {enabled: true}
       structure: {enabled: true}
       smart_money: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-10: Finnhub 403
+      macro: {enabled: false}         # FIX 2026-03-10: Finnhub 403
 
   # ========================================
   # MATIÈRES PREMIÈRES / COMMODITIES - Configuration 2025-12-14
@@ -658,6 +672,8 @@ profiles:
       swing: {enabled: true}
       structure: {enabled: true}
       smart_money: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-10: Finnhub 403
+      macro: {enabled: false}         # FIX 2026-03-10: Finnhub 403
 
   USOUSD:
     symbol: USOUSD
@@ -706,8 +722,8 @@ profiles:
       smart_money: {enabled: true}
       news: {enabled: true}
       sentiment: {enabled: true}
-      fundamental: {enabled: true}
-      macro: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-09: Finnhub 403 — timeout systématique
+      macro: {enabled: false}         # FIX 2026-03-09: Finnhub 403 — timeout systématique
 
   # ========================================
   # CRYPTOS (PHASE 2)
@@ -759,6 +775,8 @@ profiles:
       swing: {enabled: true}
       structure: {enabled: true}
       smart_money: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-10: Finnhub 403
+      macro: {enabled: false}         # FIX 2026-03-10: Finnhub 403
 
   SOLUSD:
     symbol: SOLUSD
@@ -806,3 +824,5 @@ profiles:
       swing: {enabled: true}
       structure: {enabled: true}
       smart_money: {enabled: true}
+      fundamental: {enabled: false}  # FIX 2026-03-10: Finnhub 403
+      macro: {enabled: false}         # FIX 2026-03-10: Finnhub 403

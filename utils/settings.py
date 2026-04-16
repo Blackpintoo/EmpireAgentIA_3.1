@@ -8,7 +8,7 @@ ENV_PATH = ROOT / ".env"
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH)
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 MT5_ACCOUNT = os.getenv("MT5_ACCOUNT", "")
 MT5_PASSWORD = os.getenv("MT5_PASSWORD", "")

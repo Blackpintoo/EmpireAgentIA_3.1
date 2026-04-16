@@ -1,0 +1,1908 @@
+{
+  "events": [
+    {
+      "timestamp": "2026-04-16T00:00:00+00:00",
+      "currency": "KH",
+      "impact": "low",
+      "title": "Cambodian New Year",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T00:00:00+00:00",
+      "currency": "LA",
+      "impact": "low",
+      "title": "Laos New Year",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T00:00:00+00:00",
+      "currency": "IN",
+      "impact": "low",
+      "title": "Passenger Vehicles Sales YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 10.6,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T00:00:00+00:00",
+      "currency": "MM",
+      "impact": "low",
+      "title": "Water Festival",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T01:00:00+00:00",
+      "currency": "AUD",
+      "impact": "high",
+      "title": "Consumer Inflation Expectations",
+      "actual": 5.9,
+      "forecast": null,
+      "previous": 5.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T01:00:00+00:00",
+      "currency": "AUD",
+      "impact": "low",
+      "title": "Westpac Leading Index MoM",
+      "actual": null,
+      "forecast": null,
+      "previous": -0.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T01:30:00+00:00",
+      "currency": "AUD",
+      "impact": "high",
+      "title": "Employment Change",
+      "actual": 17.9,
+      "forecast": 20,
+      "previous": 49.6,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T01:30:00+00:00",
+      "currency": "AUD",
+      "impact": "high",
+      "title": "Full Time Employment Chg",
+      "actual": 52.5,
+      "forecast": null,
+      "previous": -27.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T01:30:00+00:00",
+      "currency": "CNY",
+      "impact": "medium",
+      "title": "House Price Index YoY",
+      "actual": -3.4,
+      "forecast": null,
+      "previous": -3.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T01:30:00+00:00",
+      "currency": "AUD",
+      "impact": "high",
+      "title": "Part Time Employment Chg",
+      "actual": -34.6,
+      "forecast": null,
+      "previous": 77.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T01:30:00+00:00",
+      "currency": "AUD",
+      "impact": "low",
+      "title": "Participation Rate",
+      "actual": 66.8,
+      "forecast": 66.9,
+      "previous": 66.9,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T01:30:00+00:00",
+      "currency": "AUD",
+      "impact": "high",
+      "title": "Unemployment Rate",
+      "actual": 4.3,
+      "forecast": 4.3,
+      "previous": 4.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T02:00:00+00:00",
+      "currency": "CNY",
+      "impact": "medium",
+      "title": "Fixed Asset Investment (YTD) YoY",
+      "actual": 1.7,
+      "forecast": 1.9,
+      "previous": 1.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T02:00:00+00:00",
+      "currency": "CNY",
+      "impact": "high",
+      "title": "GDP Growth Rate QoQ",
+      "actual": 1.3,
+      "forecast": 1.3,
+      "previous": 1.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T02:00:00+00:00",
+      "currency": "CNY",
+      "impact": "high",
+      "title": "GDP Growth Rate YoY",
+      "actual": 5,
+      "forecast": 4.8,
+      "previous": 4.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T02:00:00+00:00",
+      "currency": "CNY",
+      "impact": "low",
+      "title": "Industrial Capacity Utilization",
+      "actual": 73.6,
+      "forecast": null,
+      "previous": 74.9,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T02:00:00+00:00",
+      "currency": "CNY",
+      "impact": "high",
+      "title": "Industrial Production YoY",
+      "actual": 5.7,
+      "forecast": 5.5,
+      "previous": 6.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T02:00:00+00:00",
+      "currency": "CNY",
+      "impact": "high",
+      "title": "Retail Sales YoY",
+      "actual": 1.7,
+      "forecast": 2.3,
+      "previous": 2.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T02:00:00+00:00",
+      "currency": "CNY",
+      "impact": "high",
+      "title": "Unemployment Rate",
+      "actual": 5.4,
+      "forecast": 5.2,
+      "previous": 5.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T02:50:00+00:00",
+      "currency": "KG",
+      "impact": "high",
+      "title": "Inflation Rate YoY",
+      "actual": 11,
+      "forecast": null,
+      "previous": 9.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T03:35:00+00:00",
+      "currency": "JPY",
+      "impact": "low",
+      "title": "52-Week Bill Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.055,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T03:40:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "ECB Lane Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T04:00:00+00:00",
+      "currency": "KG",
+      "impact": "low",
+      "title": "Industrial Production YoY",
+      "actual": 17.4,
+      "forecast": null,
+      "previous": 13.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T04:00:00+00:00",
+      "currency": "KG",
+      "impact": "high",
+      "title": "Inflation Rate YoY",
+      "actual": 11,
+      "forecast": null,
+      "previous": 9.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T04:30:00+00:00",
+      "currency": "NL",
+      "impact": "high",
+      "title": "Unemployment Rate",
+      "actual": null,
+      "forecast": null,
+      "previous": 4.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T05:00:00+00:00",
+      "currency": "SG",
+      "impact": "low",
+      "title": "1-Year T-Bill Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.44,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "low",
+      "title": "Balance of Trade",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.922,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "low",
+      "title": "Construction Output YoY",
+      "actual": null,
+      "forecast": -0.5,
+      "previous": -0.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "high",
+      "title": "GDP 3-Month Avg",
+      "actual": null,
+      "forecast": 0.2,
+      "previous": 0.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "high",
+      "title": "GDP MoM",
+      "actual": null,
+      "forecast": 0.1,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "high",
+      "title": "GDP YoY",
+      "actual": null,
+      "forecast": 0.6,
+      "previous": 0.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "medium",
+      "title": "Goods Trade Balance",
+      "actual": null,
+      "forecast": -20.2,
+      "previous": -14.45,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "medium",
+      "title": "Goods Trade Balance Non-EU",
+      "actual": null,
+      "forecast": null,
+      "previous": -3.46,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "medium",
+      "title": "Industrial Production MoM",
+      "actual": null,
+      "forecast": 0.2,
+      "previous": -0.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "low",
+      "title": "Industrial Production YoY",
+      "actual": null,
+      "forecast": -0.9,
+      "previous": 0.4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "medium",
+      "title": "Manufacturing Production MoM",
+      "actual": null,
+      "forecast": 0.3,
+      "previous": 0.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:00:00+00:00",
+      "currency": "GBP",
+      "impact": "low",
+      "title": "Manufacturing Production YoY",
+      "actual": null,
+      "forecast": -0.3,
+      "previous": 1.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:20:00+00:00",
+      "currency": "KG",
+      "impact": "high",
+      "title": "Inflation Rate YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 9.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:30:00+00:00",
+      "currency": "KG",
+      "impact": "low",
+      "title": "Industrial Production YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 13.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:30:00+00:00",
+      "currency": "CHF",
+      "impact": "low",
+      "title": "Producer & Import Prices MoM",
+      "actual": null,
+      "forecast": 0.2,
+      "previous": -0.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T06:30:00+00:00",
+      "currency": "CHF",
+      "impact": "low",
+      "title": "Producer & Import Prices YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": -2.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:00:00+00:00",
+      "currency": "SK",
+      "impact": "high",
+      "title": "Harmonised Inflation Rate MoM",
+      "actual": null,
+      "forecast": 0,
+      "previous": 0.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:00:00+00:00",
+      "currency": "AT",
+      "impact": "high",
+      "title": "Harmonised Inflation Rate MoM Final",
+      "actual": null,
+      "forecast": 1.1,
+      "previous": 0.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:00:00+00:00",
+      "currency": "SK",
+      "impact": "high",
+      "title": "Harmonised Inflation Rate YoY",
+      "actual": null,
+      "forecast": 3.7,
+      "previous": 4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:00:00+00:00",
+      "currency": "AT",
+      "impact": "high",
+      "title": "Harmonised Inflation Rate YoY Final",
+      "actual": null,
+      "forecast": 3.1,
+      "previous": 2.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:00:00+00:00",
+      "currency": "AT",
+      "impact": "high",
+      "title": "Inflation Rate MoM Final",
+      "actual": null,
+      "forecast": 1.1,
+      "previous": 0.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:00:00+00:00",
+      "currency": "AT",
+      "impact": "high",
+      "title": "Inflation Rate YoY Final",
+      "actual": null,
+      "forecast": 3.1,
+      "previous": 2.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:00:00+00:00",
+      "currency": "CZ",
+      "impact": "low",
+      "title": "PPI MoM",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:00:00+00:00",
+      "currency": "CZ",
+      "impact": "low",
+      "title": "PPI YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": -2.9,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:30:00+00:00",
+      "currency": "TR",
+      "impact": "low",
+      "title": "Auto Production YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.6,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:30:00+00:00",
+      "currency": "TR",
+      "impact": "low",
+      "title": "Auto Sales YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": -3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T07:30:00+00:00",
+      "currency": "CHF",
+      "impact": "medium",
+      "title": "SNB Monetary Policy Meeting Minutes",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "Current Account",
+      "actual": null,
+      "forecast": null,
+      "previous": 13,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "Current Account s.a",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:00:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "Harmonised Inflation Rate MoM Final",
+      "actual": null,
+      "forecast": 1.6,
+      "previous": 0.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:00:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "Harmonised Inflation Rate YoY Final",
+      "actual": null,
+      "forecast": 1.5,
+      "previous": 1.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:00:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "Inflation Rate MoM Final",
+      "actual": null,
+      "forecast": 0.5,
+      "previous": 0.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:00:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "Inflation Rate YoY Final",
+      "actual": null,
+      "forecast": 1.7,
+      "previous": 1.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:40:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "15-Year Obligacion Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.605,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:40:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "5-Year Bonos Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 2.915,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:40:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "7-Year Obligacion Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.079,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T08:40:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "Bonos y Obligaciones Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "2029 OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 2.86,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "2031 OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.04,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "2032 OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 2.89,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "2033 OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.42,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "Core Inflation Rate YoY Final",
+      "actual": null,
+      "forecast": 2.3,
+      "previous": 2.4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "CPI Final",
+      "actual": null,
+      "forecast": 101.96,
+      "previous": 100.71,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "CNY",
+      "impact": "medium",
+      "title": "FDI (YTD) YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": -5.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "GBP",
+      "impact": "low",
+      "title": "Index-linked Treasury Gilt 2049 Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 2.019,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "Inflation Rate MoM Final",
+      "actual": null,
+      "forecast": 1.2,
+      "previous": 0.6,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "HR",
+      "impact": "high",
+      "title": "Inflation Rate MoM Final",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "MT",
+      "impact": "high",
+      "title": "Inflation Rate YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 2.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "Inflation Rate YoY Final",
+      "actual": null,
+      "forecast": 2.5,
+      "previous": 1.9,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "HR",
+      "impact": "high",
+      "title": "Inflation Rate YoY Final",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:05:00+00:00",
+      "currency": "SE",
+      "impact": "low",
+      "title": "2030 SGB IL Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:05:00+00:00",
+      "currency": "SE",
+      "impact": "low",
+      "title": "2036 SGB IL Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.0059,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:05:00+00:00",
+      "currency": "SE",
+      "impact": "low",
+      "title": "SGB IL Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:15:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "ECB Tuominen Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:30:00+00:00",
+      "currency": "HU",
+      "impact": "low",
+      "title": "3-Year Bond Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 7.08,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:30:00+00:00",
+      "currency": "HU",
+      "impact": "low",
+      "title": "5-Year Bond Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 6.98,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:30:00+00:00",
+      "currency": "LK",
+      "impact": "low",
+      "title": "PPI YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T09:30:00+00:00",
+      "currency": "ZA",
+      "impact": "low",
+      "title": "SACCI Business Confidence",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "2038 Index-Linked OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "2039 Index-Linked OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.94,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "2043 Index-Linked OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "2053 Index-Linked OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.99,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:00:00+00:00",
+      "currency": "IL",
+      "impact": "high",
+      "title": "GDP Growth Annualized 3rd Est",
+      "actual": null,
+      "forecast": 4.2,
+      "previous": 12.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "Index-Linked OAT Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:00:00+00:00",
+      "currency": "SK",
+      "impact": "high",
+      "title": "Unemployment Rate",
+      "actual": null,
+      "forecast": null,
+      "previous": 5.4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:30:00+00:00",
+      "currency": "HU",
+      "impact": "low",
+      "title": "10-Year Bond Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 6.95,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:30:00+00:00",
+      "currency": "KZ",
+      "impact": "high",
+      "title": "GDP YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T10:30:00+00:00",
+      "currency": "GH",
+      "impact": "low",
+      "title": "PPI YoY",
+      "actual": 1.5,
+      "forecast": null,
+      "previous": 1.4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T11:00:00+00:00",
+      "currency": "IL",
+      "impact": "low",
+      "title": "Business Confidence",
+      "actual": null,
+      "forecast": null,
+      "previous": 19.52,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T11:00:00+00:00",
+      "currency": "IL",
+      "impact": "low",
+      "title": "Consumer Confidence",
+      "actual": null,
+      "forecast": null,
+      "previous": -15.62,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T11:00:00+00:00",
+      "currency": "RS",
+      "impact": "low",
+      "title": "Current Account",
+      "actual": null,
+      "forecast": null,
+      "previous": 381,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T11:00:00+00:00",
+      "currency": "GBP",
+      "impact": "high",
+      "title": "NIESR Monthly GDP Tracker",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T11:00:00+00:00",
+      "currency": "GH",
+      "impact": "low",
+      "title": "PPI YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T11:30:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "ECB Monetary Policy Meeting Accounts",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T11:30:00+00:00",
+      "currency": "TR",
+      "impact": "low",
+      "title": "Foreign Exchange Reserves",
+      "actual": null,
+      "forecast": null,
+      "previous": 50.73,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:00:00+00:00",
+      "currency": "PL",
+      "impact": "high",
+      "title": "Core Inflation Rate YoY",
+      "actual": null,
+      "forecast": 2.5,
+      "previous": 2.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:00:00+00:00",
+      "currency": "BR",
+      "impact": "low",
+      "title": "IBC-BR Economic Activity",
+      "actual": null,
+      "forecast": 0.5,
+      "previous": 0.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "Continuing Jobless Claims",
+      "actual": null,
+      "forecast": 1810,
+      "previous": 1794,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "medium",
+      "title": "Initial Jobless Claims",
+      "actual": null,
+      "forecast": 215,
+      "previous": 219,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "Jobless Claims 4-week Average",
+      "actual": null,
+      "forecast": null,
+      "previous": 209.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "CAD",
+      "impact": "low",
+      "title": "New Motor Vehicle Sales",
+      "actual": null,
+      "forecast": null,
+      "previous": 114.41,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "NY Fed Services Activity Index",
+      "actual": null,
+      "forecast": null,
+      "previous": -22.6,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Philadelphia Fed Manufacturing Index",
+      "actual": null,
+      "forecast": 10,
+      "previous": 18.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Philly Fed Business Conditions",
+      "actual": null,
+      "forecast": null,
+      "previous": 40,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Philly Fed CAPEX Index",
+      "actual": null,
+      "forecast": null,
+      "previous": 25.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Philly Fed Employment",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Philly Fed New Orders",
+      "actual": null,
+      "forecast": null,
+      "previous": 8.6,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Philly Fed Prices Paid",
+      "actual": null,
+      "forecast": null,
+      "previous": 44.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T12:35:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Fed Williams Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T13:00:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "ECB Schnabel Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T13:00:00+00:00",
+      "currency": "BY",
+      "impact": "low",
+      "title": "Industrial Production YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": -3.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T13:15:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "Capacity Utilization",
+      "actual": null,
+      "forecast": 76.3,
+      "previous": 76.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T13:15:00+00:00",
+      "currency": "USD",
+      "impact": "medium",
+      "title": "Industrial Production MoM",
+      "actual": null,
+      "forecast": 0.1,
+      "previous": 0.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T13:15:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "Industrial Production YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T13:15:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "Manufacturing Production MoM",
+      "actual": null,
+      "forecast": 0.1,
+      "previous": 0.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T13:15:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "Manufacturing Production YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T14:00:00+00:00",
+      "currency": "EC",
+      "impact": "low",
+      "title": "Balance of Trade",
+      "actual": null,
+      "forecast": null,
+      "previous": 485.58,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T14:30:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "EIA Natural Gas Stocks Change",
+      "actual": null,
+      "forecast": 55,
+      "previous": 50,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T14:35:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Fed Miran Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T15:00:00+00:00",
+      "currency": "PE",
+      "impact": "low",
+      "title": "Balance of Trade",
+      "actual": null,
+      "forecast": null,
+      "previous": 4622,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T15:00:00+00:00",
+      "currency": "CO",
+      "impact": "low",
+      "title": "Consumer Confidence",
+      "actual": null,
+      "forecast": null,
+      "previous": 18.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T15:00:00+00:00",
+      "currency": "CO",
+      "impact": "low",
+      "title": "Industrial Production YoY",
+      "actual": null,
+      "forecast": 0.6,
+      "previous": -0.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T15:00:00+00:00",
+      "currency": "CO",
+      "impact": "high",
+      "title": "Retail Sales YoY",
+      "actual": null,
+      "forecast": 9.8,
+      "previous": 7.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T15:30:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "4-Week Bill Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.56,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T15:30:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "8-Week Bill Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.575,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T16:00:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "15-Year Mortgage Rate",
+      "actual": null,
+      "forecast": null,
+      "previous": 5.74,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T16:00:00+00:00",
+      "currency": "CAD",
+      "impact": "low",
+      "title": "2-Year Bond Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 2.839,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T16:00:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "30-Year Mortgage Rate",
+      "actual": null,
+      "forecast": null,
+      "previous": 6.37,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T17:00:00+00:00",
+      "currency": "PY",
+      "impact": "low",
+      "title": "Consumer Confidence",
+      "actual": null,
+      "forecast": null,
+      "previous": 50.07,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T18:30:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "ECB Lane Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T18:30:00+00:00",
+      "currency": "AUD",
+      "impact": "medium",
+      "title": "RBA Hunter Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T19:00:00+00:00",
+      "currency": "GBP",
+      "impact": "high",
+      "title": "BoE Taylor Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T20:30:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Fed Balance Sheet",
+      "actual": null,
+      "forecast": null,
+      "previous": 6.69,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T22:45:00+00:00",
+      "currency": "NZD",
+      "impact": "low",
+      "title": "Electronic Retail Card Spending MoM",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T22:45:00+00:00",
+      "currency": "NZD",
+      "impact": "low",
+      "title": "Electronic Retail Card Spending YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-16T22:45:00+00:00",
+      "currency": "NZD",
+      "impact": "high",
+      "title": "Food Inflation YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 4.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T00:00:00+00:00",
+      "currency": "MM",
+      "impact": "low",
+      "title": "Myanmar New Year",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T00:00:00+00:00",
+      "currency": "MM",
+      "impact": "low",
+      "title": "Water Festival",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T00:30:00+00:00",
+      "currency": "SG",
+      "impact": "low",
+      "title": "Balance of Trade",
+      "actual": null,
+      "forecast": null,
+      "previous": 4.548,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T00:30:00+00:00",
+      "currency": "SG",
+      "impact": "low",
+      "title": "Non-Oil Exports MoM",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.9,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T00:30:00+00:00",
+      "currency": "SG",
+      "impact": "low",
+      "title": "Non-Oil Exports YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T03:35:00+00:00",
+      "currency": "JPY",
+      "impact": "low",
+      "title": "3-Month Bill Auction",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.871,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T04:00:00+00:00",
+      "currency": "MY",
+      "impact": "high",
+      "title": "GDP Growth Rate YoY Prel",
+      "actual": null,
+      "forecast": null,
+      "previous": 6.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T04:00:00+00:00",
+      "currency": "MY",
+      "impact": "high",
+      "title": "Inflation Rate MoM",
+      "actual": null,
+      "forecast": null,
+      "previous": 0.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T04:00:00+00:00",
+      "currency": "MY",
+      "impact": "high",
+      "title": "Inflation Rate YoY",
+      "actual": null,
+      "forecast": 1.7,
+      "previous": 1.4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T06:30:00+00:00",
+      "currency": "HU",
+      "impact": "low",
+      "title": "Gross Wage YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 26.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T07:00:00+00:00",
+      "currency": "SK",
+      "impact": "low",
+      "title": "Current Account",
+      "actual": null,
+      "forecast": null,
+      "previous": -490,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T08:00:00+00:00",
+      "currency": "EUR",
+      "impact": "medium",
+      "title": "Balance of Trade",
+      "actual": null,
+      "forecast": 3.83,
+      "previous": 1.089,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T08:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "Current Account",
+      "actual": null,
+      "forecast": null,
+      "previous": 13,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T08:00:00+00:00",
+      "currency": "GR",
+      "impact": "low",
+      "title": "Current Account",
+      "actual": null,
+      "forecast": null,
+      "previous": -1.286,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T08:00:00+00:00",
+      "currency": "EUR",
+      "impact": "low",
+      "title": "Current Account s.a",
+      "actual": null,
+      "forecast": 27.6,
+      "previous": 37.9,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T08:00:00+00:00",
+      "currency": "KZ",
+      "impact": "low",
+      "title": "Industrial Production YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 3.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T08:30:00+00:00",
+      "currency": "AO",
+      "impact": "low",
+      "title": "Foreign Exchange Reserves",
+      "actual": null,
+      "forecast": null,
+      "previous": 15.9,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T08:30:00+00:00",
+      "currency": "AO",
+      "impact": "low",
+      "title": "M3 Money Supply YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 10.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T09:00:00+00:00",
+      "currency": "EUR",
+      "impact": "medium",
+      "title": "Balance of Trade",
+      "actual": null,
+      "forecast": 11.1,
+      "previous": -1.9,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T09:00:00+00:00",
+      "currency": "BG",
+      "impact": "low",
+      "title": "Current Account",
+      "actual": null,
+      "forecast": null,
+      "previous": -729,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T10:00:00+00:00",
+      "currency": "AL",
+      "impact": "low",
+      "title": "Balance of Trade",
+      "actual": null,
+      "forecast": null,
+      "previous": -37,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T10:00:00+00:00",
+      "currency": "GR",
+      "impact": "low",
+      "title": "Balance of Trade",
+      "actual": null,
+      "forecast": null,
+      "previous": -2.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T10:00:00+00:00",
+      "currency": "LK",
+      "impact": "high",
+      "title": "Manufacturing PMI",
+      "actual": null,
+      "forecast": null,
+      "previous": 56.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T10:00:00+00:00",
+      "currency": "LK",
+      "impact": "high",
+      "title": "Services PMI",
+      "actual": null,
+      "forecast": null,
+      "previous": 54.4,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T10:30:00+00:00",
+      "currency": "PT",
+      "impact": "low",
+      "title": "Current Account",
+      "actual": null,
+      "forecast": null,
+      "previous": 17.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T11:00:00+00:00",
+      "currency": "CAD",
+      "impact": "low",
+      "title": "CFIB Business Barometer",
+      "actual": null,
+      "forecast": null,
+      "previous": 55.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T11:30:00+00:00",
+      "currency": "IN",
+      "impact": "low",
+      "title": "Bank Loan Growth YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 13.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T11:30:00+00:00",
+      "currency": "IN",
+      "impact": "low",
+      "title": "Deposit Growth YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 10.8,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T11:30:00+00:00",
+      "currency": "IN",
+      "impact": "low",
+      "title": "Foreign Exchange Reserves",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T11:30:00+00:00",
+      "currency": "IN",
+      "impact": "low",
+      "title": "M3 Money Supply YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 10.7,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T12:00:00+00:00",
+      "currency": "BY",
+      "impact": "high",
+      "title": "GDP YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": -1.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T12:00:00+00:00",
+      "currency": "AL",
+      "impact": "high",
+      "title": "Harmonised Inflation Rate YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 2.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T12:15:00+00:00",
+      "currency": "CAD",
+      "impact": "medium",
+      "title": "Housing Starts",
+      "actual": null,
+      "forecast": 255,
+      "previous": 250.9,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "medium",
+      "title": "Building Permits MoM Prel",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T12:30:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Building Permits Prel",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T12:30:00+00:00",
+      "currency": "CAD",
+      "impact": "low",
+      "title": "Foreign Securities Purchases",
+      "actual": null,
+      "forecast": null,
+      "previous": 46.73,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T12:30:00+00:00",
+      "currency": "CAD",
+      "impact": "low",
+      "title": "Foreign Securities Purchases by Canadians",
+      "actual": null,
+      "forecast": null,
+      "previous": 11.39,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T14:00:00+00:00",
+      "currency": "MW",
+      "impact": "high",
+      "title": "Inflation Rate YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 24.1,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T14:30:00+00:00",
+      "currency": "EUR",
+      "impact": "high",
+      "title": "ECB Buch Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T16:15:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Fed Barkin Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T17:00:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "Baker Hughes Oil Rig Count",
+      "actual": null,
+      "forecast": null,
+      "previous": 411,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T17:00:00+00:00",
+      "currency": "USD",
+      "impact": "low",
+      "title": "Baker Hughes Total Rigs Count",
+      "actual": null,
+      "forecast": null,
+      "previous": 545,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T18:00:00+00:00",
+      "currency": "USD",
+      "impact": "high",
+      "title": "Fed Waller Speech",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T23:30:00+00:00",
+      "currency": "JPY",
+      "impact": "high",
+      "title": "Core Inflation Rate YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.6,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T23:30:00+00:00",
+      "currency": "JPY",
+      "impact": "high",
+      "title": "Inflation Rate Ex-Food and Energy YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 2.5,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T23:30:00+00:00",
+      "currency": "JPY",
+      "impact": "high",
+      "title": "Inflation Rate MoM",
+      "actual": null,
+      "forecast": null,
+      "previous": -0.2,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-17T23:30:00+00:00",
+      "currency": "JPY",
+      "impact": "high",
+      "title": "Inflation Rate YoY",
+      "actual": null,
+      "forecast": null,
+      "previous": 1.3,
+      "source": "finnhub"
+    },
+    {
+      "timestamp": "2026-04-18T00:00:00+00:00",
+      "currency": "MM",
+      "impact": "low",
+      "title": "Water Festival",
+      "actual": null,
+      "forecast": null,
+      "previous": null,
+      "source": "finnhub"
+    }
+  ],
+  "last_refresh": "2026-04-16T03:12:25.713340+00:00",
+  "sources": [
+    "finnhub"
+  ]
+}

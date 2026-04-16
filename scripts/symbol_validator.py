@@ -107,7 +107,7 @@ def main():
     args = ap.parse_args()
 
     # env & MT5 init/login (tolérant aux variantes de MT5Client)
-    load_dotenv_env("config/.env", extra_paths=("config/.env.local",), overwrite=False)
+    load_dotenv_env(path=".env", extra_paths=(), overwrite=False)
     # 1) initialize
     try:
         # variante la plus fréquente dans ton code

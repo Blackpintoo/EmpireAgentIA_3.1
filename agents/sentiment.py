@@ -12,9 +12,16 @@ from utils.telegram_client import send_telegram_message
 
 FEAR_GREED_API = "https://api.alternative.me/fng/"
 
+# FIX 2026-03-14 R11: Backoff Fear & Greed
+import time as _time_mod
+_fg_api_disabled_until: float = 0.0
+
 
 def fetch_fear_greed() -> tuple[Optional[int], Optional[str], Optional[datetime.datetime]]:
     """Retrieve the Fear & Greed index and normalise basic fields."""
+    global _fg_api_disabled_until
+    if _fg_api_disabled_until > _time_mod.time():
+        return None, None, None
     try:
         logger.debug("[SENT] Récupération Fear & Greed Index")
         response = requests.get(FEAR_GREED_API, timeout=10)
@@ -38,7 +45,8 @@ def fetch_fear_greed() -> tuple[Optional[int], Optional[str], Optional[datetime.
         return score, rating, timestamp
 
     except Exception as exc:  # pragma: no cover - network failure path
-        logger.error(f"[SENT] Erreur API FG: {exc}")
+        _fg_api_disabled_until = _time_mod.time() + 1800.0  # 30 min
+        logger.error(f"[SENT] Erreur API FG — backoff 30min: {exc}")
         return None, None, None
 
 

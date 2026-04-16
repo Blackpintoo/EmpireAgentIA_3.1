@@ -6,7 +6,8 @@ from utils.telegram_client import send_telegram_message
 from optimization.optimizer import optimize_agent
 
 if __name__ == '__main__':
-    cfg = yaml.safe_load(open('config/config.yaml', encoding='utf-8'))
+    from utils.config import load_config
+    cfg = load_config()
 
     SYMBOL = cfg.get('symbol', 'BTCUSD')
     TIMEFRAME = MT5Client.TIMEFRAME_M1

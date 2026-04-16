@@ -1,7 +1,7 @@
 mt5:
-  account: 11535481
-  password: "Lapintade96@?"
-  server: VantageInternational-Demo
+  account: ${MT5_ACCOUNT}
+  password: ${MT5_PASSWORD}
+  server: ${MT5_SERVER}
   terminal_path: "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
   autostart:
     enabled: true
@@ -12,8 +12,8 @@ mt5:
 
 telegram:
   enabled: true
-  token: 7969631468:AAHzPL6iCB9kO0K1iPtVeTkP-L2FevVdttc
-  chat_id: 5277012507
+  token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
   send_status_minutely: false
   send_trade_validation_only: false
   # Notifications autorisées (réduites pour éviter le spam):
@@ -31,7 +31,8 @@ external_apis:
   # Finnhub : Calendrier économique (GRATUIT - 60 appels/min)
   # Inscription : https://finnhub.io/
   finnhub:
-    enabled: true
+    enabled: false                        # R18: DÉSACTIVÉ — 403 Forbidden depuis le 7 avril
+    # enabled: true                       # Réactiver quand la clé API sera renouvelée
     api_key: "${FINNHUB_API_KEY}"  # Variable d'environnement
     cache_ttl: 3600  # Cache 1 heure
     freeze_period_minutes: 15  # ±15 min autour des événements HIGH
@@ -69,20 +70,17 @@ engine:
   weekend_crypto_only: true     # Uniquement les cryptos le week-end (forex/indices/commodities bloqués)
 
 timeframes:
-  orchestrator: 60
-  scalping: M1
+  orchestrator: 120                       # FIX 2026-03-08: 60→120 pour laisser le temps au sémaphore MT5
+  scalping: M5
   swing: H1
 
 multi_timeframes:
   enabled: true
-  tfs: [D1, H4, H1, M30, M5, M1]
+  tfs: [H1, M15, M5]              # FIX 2026-03-06: réduit à 3 TFs pour éviter saturation MT5 COM
   tf_weights:
-    D1: 1.2
-    H4: 1.1
-    H1: 1.0
-    M30: 0.9
-    M5: 0.8
-    M1: 0.7
+    H1: 1.2
+    M15: 1.0
+    M5: 0.9
 
 execution:
   slippage_points: 10             # tolérance slippage (en points MT5)
@@ -123,7 +121,7 @@ volatility_filter:
   # Sessions à éviter (heures UTC) - OPTIMISÉ 2025-12-24 après audit
   # Heures toxiques identifiées: 01h, 02h, 05h, 18h, 19h, 20h, 21h, 22h
   avoid_low_liquidity: true
-  low_liquidity_hours_utc: [0, 1, 5, 6, 7, 9, 10, 11, 13, 14, 17, 19, 20, 21]  # 2026-01-26: Heures 22,23,2,3,4 rentables, 14,17 perdantes
+  low_liquidity_hours_utc: [0, 1, 2, 3, 4, 5]  # FIX 2026-03-05: ajusté pour débloquer trading
 
   # Blackout autour des news
   news_blackout_enabled: true
@@ -161,7 +159,7 @@ advanced_analysis:
   # Outil 3: MTF Confluence Analyzer (RENFORCÉ 2026-01-06)
   mtf_confluence_enabled: true
   mtf_confluence:
-    min_alignment_ratio: 0.7       # AUGMENTÉ 0.6→0.7 - 70% des TF doivent être alignés
+    min_alignment_ratio: 0.5       # FIX 2026-03-05: ajusté pour débloquer trading
     require_higher_tf_confirm: true
     block_counter_trend: true      # NOUVEAU - Bloquer trades contre-tendance D1/H4
     full_alignment_bonus: 0.3
@@ -191,32 +189,33 @@ orchestrator:
   # ══════════════════════════════════════════════════════════════════════════
   # SOLUTION 1: Seuils de qualité augmentés (OPTIMISATION 2025-12-24)
   # ══════════════════════════════════════════════════════════════════════════
-  min_score_for_proposal: 8.0    # AUGMENTÉ 6.0→8.0 - Exiger des signaux très forts
-  min_confluence: 5              # AUGMENTÉ 4→5 - Minimum 5 agents en accord
+  min_score_for_proposal: 2.5    # FIX 2026-03-05: ajusté pour débloquer trading
+  min_confluence: 2.0            # FIX 2026-03-08: 3→2.0 pour débloquer trading
 
   # ══════════════════════════════════════════════════════════════════════════
   # SOLUTION 2: Ratio R:R minimum requis (OPTIMISATION 2025-12-13)
   # MODIFIE 2025-12-30: Augmente de 1.5 -> 1.8 pour ameliorer Profit Factor
   # ══════════════════════════════════════════════════════════════════════════
-  min_rr_required: 1.8           # AUGMENTE 1.5->1.8 - Meilleur R:R exige
+  min_rr_required: 0.8           # FIX 2026-03-08: 1.2→0.8 pour débloquer trading
 
   # ══════════════════════════════════════════════════════════════════════════
   # SOLUTION 5: Limites de trading journalières (OPTIMISATION 2025-12-13)
   # MISE A JOUR 2026-01-06: Ajout allocation par symbole
   # ══════════════════════════════════════════════════════════════════════════
-  max_trades_per_day: 6          # 2026-01-26: 10→6 - Moins de trades = moins d'exposition
-  cooldown_after_loss_minutes: 30  # Pause 30 min après une perte
+  max_trades_per_day: 15         # OPT 2026-03-06: 6→15 pour objectif 5000$/mois
+  cooldown_after_loss_minutes: 15  # OPT 2026-03-06: 30→15 min (aligné avec cooldown.after_loss_min)
   max_consecutive_losses_pause: 3  # Pause si 3 pertes consécutives
 
   # Allocation par symbole - limite le nombre de trades par jour par symbole
   symbol_daily_limits:
     enabled: true
-    default_max_per_symbol: 2     # Par défaut: max 2 trades/jour/symbole
+    default_max_per_symbol: 3     # OPT 2026-03-06: 2→3 pour plus d'opportunités
     limits:
-      NAS100: 3                   # Moteur principal - plus de trades
-      SP500: 3                    # Moteur principal
-      AUDUSD: 2                   # Standard
-      XAUUSD: 2                   # Standard
+      NAS100: 4                   # OPT 2026-03-06: Moteur principal
+      SP500: 4                    # OPT 2026-03-06: Moteur principal
+      XAUUSD: 3                   # OPT 2026-03-06: Or très actif
+      BTCUSD: 3                   # OPT 2026-03-06: Bitcoin
+      AUDUSD: 3                   # OPT 2026-03-06
 
   # ══════════════════════════════════════════════════════════════════════════
   # COOLDOWN - Éviter les rafales de trades (FIX 2025-12-17)
@@ -224,18 +223,20 @@ orchestrator:
   # ══════════════════════════════════════════════════════════════════════════
   cooldown:
     enabled: true
-    after_trade_min: 15          # AUGMENTÉ 5→15 min après chaque trade
-    after_loss_min: 30           # Pause 30 min après une perte
-    after_win_min: 10            # AUGMENTÉ 2→10 min après un gain
-    after_reject_min: 5          # AUGMENTÉ 3→5 min après un rejet
-    after_streak_n: 3            # Nombre de pertes consécutives pour pause longue
-    after_streak_min: 120        # AUGMENTÉ 60→120 min après 3 pertes consec
+    after_trade_min: 3           # OPT 2026-03-06: 8→3 min (objectif 5000$/mois)
+    after_loss_min: 15           # OPT 2026-03-06: 30→15 min
+    after_win_min: 2             # OPT 2026-03-06: 5→2 min (capitaliser sur momentum)
+    after_reject_min: 2          # OPT 2026-03-06: 5→2 min
+    after_streak_n: 3            # Inchangé - 3 pertes consécutives = pause
+    after_streak_min: 30         # OPT 2026-03-06: 45→30 min
+    # R17: Cooldown direction reversal — anti-whipsaw
+    reversal_cooldown_min: 60         # 1h de cooldown si signal inverse après perte
 
   # ══════════════════════════════════════════════════════════════════════════
   # BUDGET HORAIRE - Éviter la concentration des trades (FIX 2025-12-17)
   # Problème détecté: 83% des trades entre 14:00-16:00 UTC
   # ══════════════════════════════════════════════════════════════════════════
-  max_trades_per_hour: 3          # 2026-01-26: 5→3 - Moins de concentration
+  max_trades_per_hour: 5          # OPT 2026-03-06: 3→5 pour ne pas rater les signaux
 
   # ══════════════════════════════════════════════════════════════════════════
   # PHASE 1: EVENT GUARD - Protection annonces économiques (2025-12-17)
@@ -285,8 +286,8 @@ orchestrator:
 
   position_policy:
     allow_stacking: false       # 1 position max par sens
-    max_open_per_side: 1
-    max_open_total: 2           # Maximum 2 positions simultanées
+    max_open_per_side: 2         # FIX 2026-03-05: ajusté pour débloquer trading
+    max_open_total: 4           # FIX 2026-03-05: ajusté pour débloquer trading
     allow_opposite: false       # pas de hedge simultané
 
   anti_spam:
@@ -294,13 +295,75 @@ orchestrator:
     cooldown_minutes: 5         # AUGMENTÉ 2→5 min pour meilleure qualité (OPTIMISATION 2025-12-13)
     price_delta_bps: 5          # AUGMENTÉ 2→5 pour éviter micro-variations
     confidence_delta: 0.05      # AUGMENTÉ 0.03→0.05
-    avoid_if_open_position: true  # RÉTABLI true - éviter surexposition (OPTIMISATION 2025-12-13)
+    avoid_if_open_position: false  # FIX 2026-03-05: ajusté pour débloquer trading
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # HARD FILTERS - Seuils d'exécution externalisés (2026-03-01)
+  # Ces valeurs étaient hardcodées dans orchestrator.py
+  # ══════════════════════════════════════════════════════════════════════════
+  hard_filters:
+    min_score: 3.8                     # FIX 2026-03-18 R13: 3.5→3.8 (35% rejet, cible 40-70%)
+    min_confluence: 2.5                # FIX 2026-03-13 R9: 2.0→2.5 (filtrer signaux faibles)
+    tracker_contradiction: 0.25        # Seuil contradiction tracker historique
+    disagree_block_pct: 0.45           # >45% agents en désaccord → block (-1.0 score)
+    disagree_penalty_pct: 0.35         # >35% agents en désaccord → pénalité (-0.5 score)
+    min_rr: 1.0                        # FIX 2026-03-13 R9: 0.8→1.0 (R:R minimum raisonnable)
+    counter_trend_min_score: 6.0       # FIX 2026-03-05: ajusté pour débloquer trading
+    quiet_block_confidence: 0.7        # Confiance min pour bloquer en régime quiet
+
+    # R17: Pénalité SHORT — les SHORT requièrent un score plus élevé
+    short_score_penalty: 1.5          # Score additionnel requis pour SHORT vs LONG
+    short_momentum_bars: 5            # Bougies M5 requises pour SHORT (vs 3 pour LONG)
+    short_momentum_threshold: 0.7     # Confirmation plus stricte pour SHORT (vs 0.6)
+
+    # R17: Adaptive min_score — ajustement dynamique par win rate
+    adaptive_score:
+      enabled: true
+      lookback_trades: 15             # Nombre de trades récents à analyser
+      hr_threshold_boost_medium: 0.30 # Si HR < 30% → boost moyen
+      hr_threshold_boost_hard: 0.15   # Si HR < 15% → boost fort
+      score_boost_medium: 1.5         # Ajout au min_score si HR < 30%
+      score_boost_hard: 3.0           # Ajout au min_score si HR < 15%
+
+    # R17: Pénalité session basse liquidité
+    low_liquidity_score_penalty: 2.0  # Score additionnel requis pendant heures creuses
+    low_liquidity_hours_utc: [0, 1, 2, 3, 4, 5, 6, 7, 22, 23]  # R18: étendu à 00-07h + 22-23h
+
+    # R18: Blocage complet des entries session Asie pour non-crypto
+    asia_block:
+      enabled: true
+      hours_utc: [0, 1, 2, 3, 4, 5, 6, 7]     # 00h-07h UTC bloqué
+      exempt_crypto: true                         # Crypto exemptée (24/7)
+
+  # R18: Mode probation — restrictions extrêmes pour symboles en difficulté
+  probation:
+    enabled: true
+    max_trades_per_day: 1                # 1 seul trade par jour max
+    daily_loss_abs: 30                   # Kill switch à $30/jour (1 perte = stop)
+    risk_per_trade_override: 0.001       # 0.1% risque par trade (minimum absolu)
+    votes_required_override: 4           # 4 agents doivent être d'accord (sur 5+)
+    min_score_override: 7.0              # Score très élevé requis
+    consecutive_loss_pause_hours: 48     # Après 2 pertes consécutives → pause 48h
+    consecutive_loss_threshold: 2        # Nombre de pertes consécutives avant pause
+    promotion_consecutive_wins: 5        # 5 wins consécutifs → sort de probation
+    allowed_hours_utc: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]  # London+NY uniquement
+
+  # Session filter - heures bloquées
+  session:
+    blocked_hours_utc: [0, 1, 2, 3, 4, 5]  # FIX 2026-03-05: ajusté pour débloquer trading
+
+  # Liste des symboles crypto (exemption session filter, crypto bucket)
+  crypto_symbols: ["BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD"]
+
+  # Position manager defaults
+  position_manager_defaults:
+    be_rr: 1.0                         # Break-even R:R par défaut
 
   near_miss_alert: false
 
   weighted:
     enabled: true
-    threshold: 3.0              # AUGMENTÉ 1.5→3.0 pour signaux plus forts (OPTIMISATION 2025-12-13)
+    threshold: 1.8              # FIX 2026-03-05: ajusté pour débloquer trading
     weights:
       TechnicalAgent: 1.2
       SwingAgent: 1.0
@@ -317,6 +380,9 @@ risk:
   timezone: Europe/Zurich
   reset_limits_daily: true
   daily_loss_limit_pct: 0.02   # 2% — ajuste si tu veux 1%: 0.01
+  max_risk_per_trade_usd: 300  # FIX R9: plafond absolu risque par trade ($)
+  kill_switch:
+    daily_loss_usd: 400          # Kill switch global : perte journalière max en USD
   daily_goal_mode: auto
   monthly_goal_chf_by_phase:
     phase1: 500
@@ -362,20 +428,24 @@ logging:
 
 scalping:
   params:
-    timeframe: M1
+    timeframe: M5
     session_hours: [7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]  # Europe/Zurich
     max_spread: 100
-    max_trades_per_hour: 10           # AUGMENTÉ de 6 → 10
-    rsi_period: 7
-    ema_period: 21
+    max_trades_per_hour: 10
+    rsi_period: 14
+    ema_period: 13
     atr_period: 14
-    rsi_overbought: 65                # ASSOUPLI de 70 → 65 (plus de signaux SHORT)
-    rsi_oversold: 35                  # ASSOUPLI de 30 → 35 (plus de signaux LONG)
-    tp_mult: 2.0
-    sl_mult: 2.0                      # 2026-01-26: 1.5→2.0 (SL trop serrés: 161 SL vs 81 TP)
+    rsi_overbought: 70
+    rsi_oversold: 30
+    tp_mult: 2.5
+    sl_mult: 1.8
+    spread_atr_max_ratio: 0.25
     vol_window: 20
     vol_spike_ratio: 1.2
-    notify_telegram: false            # Désactivé - seuls trade_event et daily_digest
+    cooldown_seconds: 300
+    regime_lookback: 60
+    higher_timeframes: [M15]
+    notify_telegram: false
 
 swing:
   params:
@@ -474,6 +544,17 @@ fundamental:
     use_forecast_diff_pct: true
     diff_pct_threshold: 0.3
     reverse_on_negative: true
+    confidence_map:
+      NFP: 0.85
+      FOMC: 0.90
+      CPI: 0.80
+      Interest Rate: 0.85
+      GDP: 0.70
+      PMI: 0.50
+      Retail Sales: 0.55
+      Employment: 0.65
+      Trade Balance: 0.45
+    confidence_default: 0.40
 
 sentiment:
   params:
@@ -489,6 +570,7 @@ whale:
   enabled: false  # DÉSACTIVÉ : Connecteurs non implémentés (onchain_listener, cex_tracker = stubs) - Sera réactivé en Phase 5
   min_trust: 0.6
   min_signal: 0.55
+  max_vol_zscore: 3.0              # Z-score volatilité max pour signal whale
   ewma_alpha: 0.2
   allow_in_vol_spike: false
   latency_ms_max: 15000
@@ -520,8 +602,11 @@ agents:
   # Agents RÉACTIVÉS en Phase 5 avec API externes (2025-11-29)
   - news           # ✅ RÉACTIVÉ - Alpha Vantage News Sentiment
   - sentiment      # ✅ RÉACTIVÉ - Fear & Greed Index
-  - fundamental    # ✅ RÉACTIVÉ - Finnhub Economic Calendar (utilisé via macro)
-  - macro          # ✅ ACTIF - Gating macro + Finnhub Calendar
+  # FIX 2026-03-09: Désactivés — Finnhub API renvoie 403 Forbidden (clé invalide/expirée)
+  # → timeout systématique à chaque cycle, gaspille du temps dans le sémaphore
+  # Réactiver quand la clé Finnhub sera remplacée/renouvelée
+  # - fundamental    # DÉSACTIVÉ - Finnhub 403
+  # - macro          # DÉSACTIVÉ - Finnhub 403
 
   # Agents DÉSACTIVÉS (implémentation complexe - Phase 6 future)
   # - whale        # Connecteurs on-chain/CEX non implémentés (onchain_listener, cex_tracker)

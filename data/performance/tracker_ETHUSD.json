@@ -1,0 +1,204 @@
+{
+  "ETHUSD": {
+    "technical_h1": {
+      "H1|default": {
+        "count": 17,
+        "score_ema": 0.27135173021319436,
+        "outcome_ema": 1.6084953124999954,
+        "win_rate": 0.5337912574509245,
+        "weight": 3.316103515819019,
+        "last_update": "2025-12-23T16:32:57+00:00"
+      }
+    },
+    "swing_h4": {
+      "H4|default": {
+        "count": 55,
+        "score_ema": 0.24983080713126,
+        "outcome_ema": 1.7872000537307537,
+        "win_rate": 0.7685688375046832,
+        "weight": 3.5,
+        "last_update": "2025-12-23T16:32:57+00:00"
+      }
+    },
+    "swing_h1": {
+      "H1|default": {
+        "count": 55,
+        "score_ema": 0.2736096167022003,
+        "outcome_ema": 1.7872000537307537,
+        "win_rate": 0.7685688375046832,
+        "weight": 3.5,
+        "last_update": "2025-12-23T16:32:58+00:00"
+      }
+    },
+    "swing_m30": {
+      "M30|default": {
+        "count": 52,
+        "score_ema": 0.32800591119733696,
+        "outcome_ema": 1.6909908263476545,
+        "win_rate": 0.6231530022465837,
+        "weight": 3.5,
+        "last_update": "2025-12-23T16:32:58+00:00"
+      }
+    },
+    "swing_m15": {
+      "M15|default": {
+        "count": 10,
+        "score_ema": 0.5,
+        "outcome_ema": 4.3769863890925795e-200,
+        "win_rate": 0.5,
+        "weight": 1.0,
+        "last_update": "2025-12-18T20:04:20+00:00"
+      }
+    },
+    "structure_h1": {
+      "H1|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "smc_h1": {
+      "H1|default": {
+        "count": 17,
+        "score_ema": 0.5,
+        "outcome_ema": 0.0,
+        "win_rate": 0.5,
+        "weight": 1.0,
+        "last_update": "2025-12-14T12:09:33+00:00"
+      }
+    },
+    "smc_m30": {
+      "M30|default": {
+        "count": 18,
+        "score_ema": 0.5,
+        "outcome_ema": 0.0,
+        "win_rate": 0.5,
+        "weight": 1.0,
+        "last_update": "2025-12-17T14:57:41+00:00"
+      }
+    },
+    "smc_m15": {
+      "M15|default": {
+        "count": 47,
+        "score_ema": 0.35080475840936914,
+        "outcome_ema": 1.5535906249999984,
+        "win_rate": 0.3863007773653465,
+        "weight": 3.104429725384035,
+        "last_update": "2025-12-23T16:32:58+00:00"
+      }
+    },
+    "global_news": {
+      "NEWS|default": {
+        "count": 55,
+        "score_ema": 0.6019594143580568,
+        "outcome_ema": 1.7872000537307537,
+        "win_rate": 0.7685688375046832,
+        "weight": 3.5,
+        "last_update": "2025-12-23T16:32:58+00:00"
+      }
+    },
+    "global_swing": {
+      "SWING|default": {
+        "count": 55,
+        "score_ema": 0.3967558429135406,
+        "outcome_ema": 1.7872000537307537,
+        "win_rate": 0.7685688375046832,
+        "weight": 3.5,
+        "last_update": "2025-12-23T16:32:58+00:00"
+      }
+    },
+    "global_structure": {
+      "STRUCTURE|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "global_smc": {
+      "SMC|default": {
+        "count": 51,
+        "score_ema": 0.3967904679614247,
+        "outcome_ema": 1.7410055435351564,
+        "win_rate": 0.6796451701645695,
+        "weight": 3.5,
+        "last_update": "2025-12-23T16:32:58+00:00"
+      }
+    },
+    "structure_m15": {
+      "M15|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "structure_m30": {
+      "M30|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "technical_m15": {
+      "M15|default": {
+        "count": 1,
+        "score_ema": 0.5,
+        "outcome_ema": 7.174648137343092e-43,
+        "win_rate": 0.5,
+        "weight": 1.0,
+        "last_update": "2025-12-18T17:41:35+00:00"
+      }
+    },
+    "technical_m30": {
+      "M30|default": {
+        "count": 17,
+        "score_ema": 0.5,
+        "outcome_ema": 1.3076917269079148e-43,
+        "win_rate": 0.5,
+        "weight": 1.0,
+        "last_update": "2025-12-18T20:04:19+00:00"
+      }
+    },
+    "technical_h4": {
+      "H4|default": {
+        "count": 2,
+        "score_ema": 0.24973989440488234,
+        "outcome_ema": 2.0000000000000053,
+        "win_rate": 0.6387499999999999,
+        "weight": 2.206537574657175,
+        "last_update": "2025-12-23T16:32:57+00:00"
+      }
+    },
+    "smc_h4": {
+      "H4|default": {
+        "count": 5,
+        "score_ema": 0.49999999997086586,
+        "outcome_ema": 2.2699550754623548e-10,
+        "win_rate": 0.5000000000323805,
+        "weight": 1.0000000002910383,
+        "last_update": "2025-12-18T20:04:20+00:00"
+      }
+    },
+    "structure_h4": {
+      "H4|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    }
+  }
+}

@@ -1,0 +1,234 @@
+================================================================================
+CONFIGURATION FILES ANALYZED - COMPLETE LIST
+================================================================================
+Generated: 2026-03-05
+Total Files Read: 7 main config files
+
+================================================================================
+CONFIGURATION DIRECTORY FILES
+================================================================================
+
+1. /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/config.yaml (578 lines)
+   ✓ READ - Main orchestrator configuration
+   Key sections:
+     - Lines 64-94:   Engine & timeframe settings
+     - Lines 110-142: Volatility filter (ATR spikes, news blackout)
+     - Lines 146-183: Advanced analysis (volume profile, market regime, MTF confluence)
+     - Lines 187-298: Orchestrator settings (quality gates, cooldown, position policy)
+     - Lines 303-312: Hard filters (min_score, min_confluence, min_rr)
+     - Lines 314-319: Session hour blocks & crypto symbols
+     - Lines 326-336: Weighted voting thresholds
+     - Lines 359-377: Risk tiers (phase1/2/3)
+     - Lines 390-578: Agent-specific parameters (scalping, swing, technical, news, etc)
+
+2. /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/overrides.yaml (764 lines)
+   ✓ READ - Symbol-specific overrides (CRITICAL FOR DEBUGGING)
+   Key sections:
+     - Lines 4-26:    Global overrides (weekend guard, risk, default thresholds)
+     - Lines 30-163:  BTCUSD configuration
+     - Lines 165-260: LTCUSD configuration (DISABLED)
+     - Lines 265-350: BNBUSD configuration (SHORT only)
+     - Lines 355-413: XAUUSD configuration
+     - Lines 418-491: ETHUSD configuration
+     - Lines 496-580: EURUSD configuration
+     - Lines 585-603: SOLUSD configuration (limited hours)
+     - Lines 608-633: SP500 configuration
+     - Lines 638-657: GBPUSD configuration (only 1 trade/day)
+     - Lines 662-679: UK100 configuration (only 1 trade/day)
+     - Lines 684-707: NAS100 configuration
+     - Lines 713-734: AUDUSD configuration (DISABLED)
+     - Lines 740-763: USDJPY configuration
+
+3. /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/asset_config.yaml (289 lines)
+   ✓ READ - Asset-type specific configuration
+   Key sections:
+     - Lines 7-54:    CRYPTOS (trading sessions, risk params, spreads)
+     - Lines 59-125:  FOREX (sessions, pair-specific settings)
+     - Lines 129-196: INDICES (schedules, risk params)
+     - Lines 200-264: COMMODITIES (sessions, settings)
+     - Lines 269-289: Global rules (correlations, max exposure, priority)
+
+4. /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/profiles.yaml
+   ✓ READ (partial - first 100 lines)
+   Contains detailed profile settings for individual symbols
+   Note: Contains references to disabled symbols and legacy configurations
+
+5. /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/auto_optimization.yaml (175 lines)
+   ✓ READ - Automatic parameter optimization
+   Key sections:
+     - Lines 8-26:    Activation & scheduling (weekly on Sunday 02:00)
+     - Lines 28-45:   Agents to optimize & symbols
+     - Lines 49-54:   Optuna parameters (30 trials, 600s timeout)
+     - Lines 57-67:   Optimization objectives & constraints
+     - Lines 70-81:   Backtest data (180-day lookback)
+     - Lines 84-121:  Backup, notifications, auto-apply settings
+
+6. /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/econ_calendar.yaml (23 lines)
+   ✓ READ - Economic calendar (DEPRECATED)
+   Note: File is deprecated - now uses EventGuard (utils/event_guard.py)
+         and data/news_calendar_live.json for real-time data
+
+7. /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/macro.yaml (2 lines)
+   ✓ READ - Macro configuration (minimal)
+   Just timezone and empty events array
+
+8. /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/presets/overrides.live.yaml (227 lines)
+   ✓ READ - Live trading preset
+   Key sections:
+     - Lines 4-10:    GLOBAL settings (dry_run: false, gating thresholds)
+     - Lines 18-99:   BTCUSD preset
+     - Lines 52-100:  ETHUSD preset
+     - Lines 100-142: LNKUSD preset (crypto, not in main list)
+     - Lines 143-184: BNBUSD preset
+     - Lines 185-226: EURUSD preset
+     - Lines 206-226: XAUUSD preset
+
+================================================================================
+DATA DIRECTORY FILES ANALYZED
+================================================================================
+
+State Files (JSON):
+  ✓ data/latest_signals.json        (480 B) - Current signal state
+  ✓ data/open_positions.json        (28 B)  - Open positions (empty/minimal)
+  ✓ data/circuit_breaker_state.json (701 B) - Circuit breaker status
+  ✓ data/daily_loss_state.json      (112 B) - Daily loss tracking
+  ✓ data/pm_state.json              (316 B) - Position manager state
+
+Trade History (CSV/JSONL):
+  - data/deals_history.csv          (480 KB) - Closed trades
+  - data/trades_log.csv             (611 KB) - Detailed trade log
+  - data/proposals_log.csv          (14.5 MB) - ALL proposals + rejections
+  - data/equity_log.csv             (37 MB) - Equity curve
+  - data/agents_snap.jsonl          (494 MB) - Agent snapshots (very large)
+
+Calendar/Events:
+  - data/news_calendar.csv          (14.5 KB) - Economic events
+  - data/news_calendar_live.json    (30 KB) - Live calendar
+
+================================================================================
+SUBDIRECTORIES NOT YET ANALYZED
+================================================================================
+
+config/symbols/          - Symbol-specific Python overrides
+  __init__.py           (12 KB) - Symbol initialization
+
+config/profiles/        - Profile-specific Python modules
+  __init__.py           (2.8 KB)
+  scalping.py           (7.1 KB)
+  swing.py              (7.1 KB)
+
+config/presets/         - Additional preset configurations
+  overrides.aggressive.yaml
+  overrides.demo.yaml
+  overrides.live.small.yaml
+  overrides.real.yaml
+  overrides.weekend.yaml
+
+data/audit/             - Audit logs
+data/backtests/         - Backtest results
+data/cache/             - Cache data
+data/correlation_cache/ - Correlation calculations
+data/event_cache/       - Event cache
+data/guards/            - Guard (filter) states
+data/journal/           - Trading journal
+data/maintenance/       - Maintenance logs
+data/performance/       - Performance metrics
+data/proposals/         - Individual proposal files
+data/sentiment_cache/   - Sentiment analysis cache
+
+================================================================================
+KEY FILES FOR DEBUGGING ZERO TRADES
+================================================================================
+
+HIGH PRIORITY:
+1. data/proposals_log.csv
+   → Check if proposals are being generated
+   → Look for rejection reasons in past 24h
+   → Search for "REJECT" or "BLOCK" entries
+
+2. config/overrides.yaml
+   → Verify which symbols have "enabled: true"
+   → Check blocked_hours_utc for each symbol
+   → Check allowed_hours_utc (WHITELIST mode)
+   → Check max_trades_per_day for each symbol
+
+3. data/circuit_breaker_state.json
+   → Check if circuit breaker is triggered (would block ALL trades)
+
+4. data/daily_loss_state.json
+   → Check if daily loss limit ($400) has been exceeded
+
+MEDIUM PRIORITY:
+5. data/agents_snap.jsonl
+   → Large file (494 MB) with agent signal states
+   → Check if agents are generating signals
+
+6. data/open_positions.json
+   → Verify no positions blocking new trades
+
+7. config/config.yaml
+   → Verify hard filters (min_score, min_confluence)
+   → Check session filters and volatility settings
+
+================================================================================
+CONFIGURATION CHANGES NOTES FROM FILES
+================================================================================
+
+Recent Optimizations Documented:
+- 2026-02-24: Position manager timeout directives (max_duration_minutes)
+- 2026-02-20: ATR SL tightening, volume caps, hour restrictions
+- 2025-12-30: Increased R:R from 1.5 to 1.8
+- 2025-12-24: Raised min_score from 6.0 to 8.0, min_confluence from 4 to 5
+- 2025-12-17: Added event guard, sentiment v2, composite score, inter-market guard
+- 2025-12-13: Volatility filter, advanced analysis, votes increased 1→2
+
+Symbols Disabled Due to Losses:
+- LTCUSD: WR 0%, loss -$410, enabled: false
+- AUDUSD: WR 33%, loss -$844, 10 consecutive losses, enabled: false
+- SOLUSD: WR 15.4%, loss -$8,728
+- GBPUSD: WR 0%, loss -$2,695, max_trades: 1
+- ADAUSD: 72% trades counter-trend, WR 15.9%, loss -$138,956
+- USDJPY: 42% counter-trend, WR 0%, loss -$38,912
+
+================================================================================
+CONFIGURATION COMPLEXITY METRICS
+================================================================================
+
+Hard Filters:              9 distinct threshold checks
+Soft Filters:             20+ additional constraints
+Time-Based Blocks:        26+ hour restrictions across symbols
+Volume/Position Limits:   12+ per-symbol caps
+Cooldown Periods:         6 different cooldown types
+Advanced Analyzers:       5 multi-timeframe systems
+Risk Tiers:              3 equity-based tiers
+Symbol Configurations:   9 enabled symbols with individual overrides
+
+TOTAL BLOCKING LAYERS:    80+ potential rejection points
+
+================================================================================
+RECOMMENDATIONS FOR NEXT STEPS
+================================================================================
+
+1. Run proposal analysis:
+   $ tail -200 data/proposals_log.csv | grep -E "REJECT|BLOCK"
+
+2. Check symbol enablement:
+   $ grep "enabled:" config/overrides.yaml
+
+3. Verify recent signals:
+   $ cat data/latest_signals.json
+
+4. Check kill switch status:
+   $ cat data/daily_loss_state.json
+   $ cat data/circuit_breaker_state.json
+
+5. Run backtest with relaxed parameters:
+   → Temporarily set min_score: 6.0
+   → Temporarily set min_confluence: 3
+   → Temporarily disable hour filters
+
+6. If still no trades:
+   → Check if agents_snap.jsonl is being updated
+   → Verify proposals are being GENERATED (before filtering)
+
+================================================================================

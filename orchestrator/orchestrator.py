@@ -51,7 +51,7 @@ from utils.position_manager import PositionManager  # type: ignore
 from utils.config import get_symbol_profile, get_enabled_symbols, is_symbol_active_now, load_config, reload_global_config
 from utils.logger import logger
 from utils.mt5_client import MT5Client
-from utils.performance_tracker import PerformancePoint, default_tracker
+from utils.performance_tracker import PerformancePoint, default_tracker, get_tracker_for_symbol
 from utils.risk_manager import RiskManager
 from utils.gating import load_thresholds_for, should_allow_trade
 from utils.digest import daily_digest_for, format_digest_message
@@ -175,11 +175,12 @@ except Exception:
 
 # AUDIT 2025-12-27: Trade Outcome Tracker - Feedback loop P&L réel
 try:
-    from utils.trade_outcome_tracker import start_outcome_tracking, get_outcome_stats
+    from utils.trade_outcome_tracker import start_outcome_tracking, get_outcome_stats, get_qr_cooldown
     OUTCOME_TRACKER_AVAILABLE = True
 except Exception:
     start_outcome_tracking = None  # type: ignore
     get_outcome_stats = None  # type: ignore
+    get_qr_cooldown = None  # type: ignore
     OUTCOME_TRACKER_AVAILABLE = False
 
 # AUDIT 2025-12-27: Loss Pattern Analyzer - Analyse des trades perdants
@@ -209,7 +210,7 @@ CONFIG_PATH = pathlib.Path("config") / "config.yaml"
 # =============================================================================
 # Crypto bucket guard (BTC, ETH, LTC, BNB, ADA, SOL) - Mis à jour 2025-12-05
 # =============================================================================
-# Canoniques (profiles.yaml)
+# Canoniques (profiles.yaml) — valeurs par défaut, configurable via orchestrator.crypto_symbols
 CRYPTO_CANON = {"BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD"}
 # Noms Broker/MT5 (positions_get renvoie souvent les noms broker)
 CRYPTO_REAL  = {"BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD"}
@@ -363,10 +364,9 @@ def _send_tg(text: str, kind: str = "status", force: bool = False) -> bool:
             return False
 
 def _load_tg_token_chat() -> Tuple[Optional[str], Optional[int]]:
-    """Lit token/chat_id depuis config/config.yaml pour le long-polling callback."""
+    """Lit token/chat_id via load_config() (résout les ${VAR} depuis .env)."""
     try:
-        with open(os.path.join("config", "config.yaml"), encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+        cfg = load_config() or {}
         tg = cfg.get("telegram") or {}
         token = tg.get("token") or tg.get("bot_token")
         chat_id = tg.get("chat_id")
@@ -608,6 +608,50 @@ def _record_guard_event(symbol: str, tag: str, message: str) -> None:
 
 
 
+# ================================================================
+# FIX 2026-03-10: Lock HYBRIDE inter-orchestrateurs + Position Manager pour MT5 COM
+# Le COM MT5 est mono-thread : un seul thread peut l'utiliser à la fois
+# _MT5Lock supporte:
+#   - async with (coroutines asyncio) → attend sans bloquer l'event loop
+#   - with (threads BackgroundScheduler) → blocking classique
+# Les deux partagent le même threading.Lock() → exclusion mutuelle totale
+# Doit être au niveau MODULE (pas classe) pour être accessible partout
+# ================================================================
+import asyncio as _aio_mod
+import threading as _threading_mod
+
+
+class _MT5Lock:
+    """Lock hybride pour MT5 COM — fonctionne en async (coroutines) et sync (threads)."""
+
+    def __init__(self):
+        self._lock = _threading_mod.Lock()
+
+    # --- Mode sync (BackgroundScheduler threads: PM, sync_history) ---
+    def __enter__(self):
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, *args):
+        self._lock.release()
+
+    # --- Mode async (coroutines asyncio: _run_agents_and_decide, execute_trade) ---
+    async def __aenter__(self):
+        loop = _aio_mod.get_event_loop()
+        # Attendre le lock dans un thread executor → ne bloque PAS l'event loop
+        await loop.run_in_executor(None, self._lock.acquire)
+        return self
+
+    async def __aexit__(self, *args):
+        self._lock.release()
+
+
+_GLOBAL_MT5_SEMAPHORE = _MT5Lock()
+
+# FIX 2026-03-24 R16: Compteur streak momentum INVERSE par symbole+direction
+_MOMENTUM_STREAK: Dict[str, int] = {}  # clé = "SYMBOL_ACTION", valeur = nb blocages consécutifs
+_MOMENTUM_STREAK_THRESHOLD = 3  # Après 3 INVERSE consécutifs, bloquer aussi "net neutre"
+
 # =============================================================================
 # Orchestrateur
 # =============================================================================
@@ -634,6 +678,7 @@ class Orchestrator:
       max_trades_per_day: int
     """
     import threading
+
     _ORCH_LOCKS = {}
     def _sym_lock(sym: str) -> threading.Lock:
         lk = _ORCH_LOCKS.get(sym) # type: ignore
@@ -746,8 +791,42 @@ class Orchestrator:
 
         self.votes_required: int = int(self.ori_cfg.get("votes_required", 2))
         # FIX 2026-02-20: seuils relevés à 2.5 par défaut (étape 3.5)
-        self.min_confluence: float = float(self.ori_cfg.get("min_confluence", 2.5))
+        self.min_confluence: float = float(self.ori_cfg.get("min_confluence", 2.0))  # FIX 2026-03-08: 2.5→2.0
         self.min_score_for_proposal: float = float(self.ori_cfg.get("min_score_for_proposal", 2.5))
+
+        # ── Hard filters externalisés (2026-03-01) ──
+        _orch_cfg = self.cfg.get("orchestrator", {}) or {}
+        _hf = _orch_cfg.get("hard_filters") or {}
+        self._hf_min_score: float = float(_hf.get("min_score", 2.5))  # FIX 2026-03-06: default 8.0→2.5
+        self._hf_min_confluence: float = float(_hf.get("min_confluence", 2.0))  # FIX 2026-03-08: 3→2.0
+        self._hf_tracker_contradiction: float = float(_hf.get("tracker_contradiction", 0.25))
+        self._hf_disagree_block_pct: float = float(_hf.get("disagree_block_pct", 0.45))
+        self._hf_disagree_penalty_pct: float = float(_hf.get("disagree_penalty_pct", 0.35))
+        self._hf_min_rr: float = float(_hf.get("min_rr", 0.8))  # FIX 2026-03-08: 1.5→0.8
+        self._hf_counter_trend_min_score: float = float(_hf.get("counter_trend_min_score", 6.0))  # FIX R15: 10.0→6.0 (10.0 inatteignable)
+        self._hf_quiet_block_confidence: float = float(_hf.get("quiet_block_confidence", 0.7))
+
+        _session_cfg = _orch_cfg.get("session") or {}
+        self._hf_blocked_hours: list = list(_session_cfg.get("blocked_hours_utc", [0,1,2,3,4,5]))  # FIX 2026-03-06: default réduit
+        self._hf_blocked_hours_extended: list = list(_session_cfg.get("blocked_hours_extended_utc", [0,1,2,3,4,5,22,23]))  # FIX 2026-03-06: forex/indices
+        self._hf_crypto_symbols: set = set(_orch_cfg.get("crypto_symbols", ["BTCUSD","ETHUSD","LTCUSD","BNBUSD","ADAUSD","SOLUSD"]))
+
+        _pm_defaults = _orch_cfg.get("position_manager_defaults") or {}
+        self._hf_default_be_rr: float = float(_pm_defaults.get("be_rr", 1.0))
+
+        _risk_cfg = self.cfg.get("risk", {}) or {}
+        _ks_cfg = _risk_cfg.get("kill_switch") or {}
+        self._hf_kill_switch_usd: float = float(_ks_cfg.get("daily_loss_usd", 400.0))
+
+        self._hf_whale_max_vol_z: float = float(self.whale_cfg.get("max_vol_zscore", 3.0))
+
+        logger.info(
+            f"[HARD_FILTERS] min_score={self._hf_min_score} min_conf={self._hf_min_confluence} "
+            f"tracker_contra={self._hf_tracker_contradiction} disagree={self._hf_disagree_penalty_pct}/{self._hf_disagree_block_pct} "
+            f"min_rr={self._hf_min_rr} counter_trend={self._hf_counter_trend_min_score} "
+            f"quiet_conf={self._hf_quiet_block_confidence} kill_switch={self._hf_kill_switch_usd}USD "
+            f"be_rr={self._hf_default_be_rr} whale_vol_z={self._hf_whale_max_vol_z}"
+        )
         self.require_scalping_entry: bool = bool(self.ori_cfg.get("require_scalping_entry", False))
         self.require_swing_confirm: bool  = bool(self.ori_cfg.get("require_swing_confirm", False))
         self.confluence_weights: Dict[str, float] = {
@@ -785,7 +864,7 @@ class Orchestrator:
 
         mtf = self.ori_cfg.get("multi_timeframes", {}) or {}
         self.mtf_enabled: bool = bool(mtf.get("enabled", True))
-        self.tfs: List[str] = list(mtf.get("tfs", ["H4", "H1", "M30", "M15", "M5", "M1"]))
+        self.tfs: List[str] = list(mtf.get("tfs", ["H1", "M15", "M5"]))  # FIX 2026-03-06: réduit de 6→3 TFs pour éviter saturation MT5
         self.tf_weights: Dict[str, float] = dict(mtf.get("tf_weights", {}))
         self.whale_override_cfg: Dict[str, Any] = dict(self.ori_cfg.get("whale_override") or {})
         self._whale_trust_ewma: Optional[float] = None
@@ -828,9 +907,10 @@ class Orchestrator:
         # Cooldown et gating
         self._init_cooldown_and_gating()
 
-        # Agent error monitoring (audit fev2026)
+        # Agent error monitoring (audit fev2026) + réactivation auto (2026-03-01)
         self._agent_error_counts: Dict[str, int] = {}
-        self._agent_disabled: set = set()
+        self._agent_disabled_until: Dict[str, datetime] = {}
+        self._agent_cooldown_hours: Dict[str, float] = {}  # Cooldown progressif: 1h, 2h, 4h, 8h max
 
         # Health server (une seule fois)
         if not hasattr(self.__class__, "_health_started"):
@@ -938,7 +1018,7 @@ class Orchestrator:
         self._current_hour: int = datetime.now(timezone.utc).hour
 
         # Pacing & qualité d'entrée
-        self.min_rr = float(self.ori_cfg.get("min_rr", 1.5))
+        self.min_rr = float(self.ori_cfg.get("min_rr", 0.8))  # FIX 2026-03-08: 1.5→0.8
 
         # --- Scheduler (AsyncIO) ---
         loop = None
@@ -967,9 +1047,11 @@ class Orchestrator:
 
         # --- Cache d'agents & proposition / contexte ---
         self._agents: Dict[str, Any] = {}
-        self.tracker = default_tracker()
+        self._agent_cache: Dict[str, Any] = {}  # cache instances agents (Part A perf)
+        self.tracker = get_tracker_for_symbol(self.symbol)
         self._last_proposal: Optional[Dict[str, Any]] = None
         self._last_ctx: Optional[Dict[str, Any]] = None  # per_tf_signals / global_signals / indicators / market
+        self._last_trade_result: Optional[Dict[str, Any]] = None  # R17: Dernier résultat trade (direction, pnl, close_ts)
 
         # --- Position Manager ---
         try:
@@ -1055,9 +1137,9 @@ class Orchestrator:
             # RR breakeven (optionnel)
             try:
                 pm_cfg = ((self.profile.get("orchestrator") or {}).get("position_manager") or {})
-                be_rr = float((pm_cfg.get("break_even") or {}).get("rr", 1.0))
+                be_rr = float((pm_cfg.get("break_even") or {}).get("rr", self._hf_default_be_rr))
             except Exception:
-                be_rr = 1.0
+                be_rr = self._hf_default_be_rr
             msg = (
                 f"#NEW_TRADE | {sym} | {side} | entry {entry:.2f} | {lots:.3f} lots | "
                 f"SL {sl:.2f} | TP1 {tp1_str} | TP2 {tp2_str} | BE RR≥{be_rr:.1f} | {ts}"
@@ -1076,6 +1158,18 @@ class Orchestrator:
                    f"ticket {payload.get('ticket','?')} | {ts}")
             if self._tg_antispam_ok("trade_event", msg):
                 self._send_telegram(msg, kind="trade_event", force=True)
+
+            # R17: Stocker le résultat du dernier trade pour REVERSAL_COOLDOWN
+            try:
+                _pnl_close = float(str(payload.get("pnl_ccy", "0")).replace("+", ""))
+                _dir_close = payload.get("side") or payload.get("direction") or ""
+                self._last_trade_result = {
+                    "direction": _dir_close.upper() if _dir_close else "",
+                    "pnl": _pnl_close,
+                    "close_ts": time.time(),
+                }
+            except Exception as _ltr_err:
+                logger.debug(f"[REVERSAL_COOLDOWN] Erreur stockage résultat: {_ltr_err}")
 
             # FIX 2026-02-20: Circuit-Breaker record_loss/record_win (étape 2.4)
             try:
@@ -1151,9 +1245,7 @@ class Orchestrator:
         weekend_crypto_only = bool(engine_cfg.get("weekend_crypto_only", False))
 
         if is_weekend and weekend_crypto_only:
-            # Liste des cryptos autorisées le week-end
-            crypto_symbols = {"BTCUSD", "ETHUSD", "BNBUSD", "LTCUSD", "ADAUSD", "SOLUSD"}
-            if self.symbol.upper() not in crypto_symbols:
+            if self.symbol.upper() not in self._hf_crypto_symbols:
                 return False  # Bloquer les non-cryptos le week-end
             # Les cryptos peuvent trader le week-end - continuer les vérifications
 
@@ -1161,7 +1253,7 @@ class Orchestrator:
         if not bool(tw.get("enabled", False)):
             if enforce_weekdays and is_weekend:
                 # Si weekend_crypto_only est actif et c'est une crypto, on autorise
-                if weekend_crypto_only and self.symbol.upper() in {"BTCUSD", "ETHUSD", "BNBUSD", "LTCUSD", "ADAUSD", "SOLUSD"}:
+                if weekend_crypto_only and self.symbol.upper() in self._hf_crypto_symbols:
                     return True
                 return False
             return True  # pas de contrainte horaire supplémentaire
@@ -1196,8 +1288,7 @@ class Orchestrator:
     def _weekend_guard_blocked(self, now: Optional[datetime] = None) -> bool:
         """Retourne True si la garde week-end doit bloquer le trading."""
         # Les cryptos ne sont jamais bloquées par le weekend guard
-        crypto_symbols = {"BTCUSD", "ETHUSD", "BNBUSD", "LTCUSD", "ADAUSD", "SOLUSD"}
-        if self.symbol.upper() in crypto_symbols:
+        if self.symbol.upper() in self._hf_crypto_symbols:
             return False  # Cryptos tradent 24/7
 
         cfg = getattr(self, "weekend_guard_cfg", {}) or {}
@@ -1341,21 +1432,25 @@ class Orchestrator:
             logger.warning(f"[ORCH] Ecriture latest_signals.json échouée: {e}")
 
     # ---------------------------- RAPPORT PERIODIQUE ----------------------------
-    async def _send_status_report(self):
+    def _send_status_report(self):
         """Rapport court: heure locale, equity/balance, positions ouvertes du symbole, derniers trades."""
         try:
             tz = self._tz
             now_loc = datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
 
             # Compte
-            ai = getattr(self.mt5, "get_account_info", lambda: None)()
+            # FIX 2026-03-10 R6: Protéger l'appel MT5 avec le lock hybride (thread scheduler)
+            with _GLOBAL_MT5_SEMAPHORE:
+                ai = getattr(self.mt5, "get_account_info", lambda: None)()
             eq = float(getattr(ai, "equity", 0.0) or 0.0) if ai else 0.0
             bal = float(getattr(ai, "balance", 0.0) or 0.0) if ai else 0.0
 
             # Positions ouvertes pour ce symbole
             poss = []
             try:
-                poss_raw = _mt5.positions_get(symbol=self.broker_symbol) or []
+                # FIX 2026-03-10 R6: Protéger l'appel MT5 avec le lock hybride
+                with _GLOBAL_MT5_SEMAPHORE:
+                    poss_raw = _mt5.positions_get(symbol=self.broker_symbol) or []
                 for p in poss_raw:
                     typ = int(getattr(p, "type", 0))  # 0=BUY, 1=SELL
                     side = "BUY" if typ == 0 else "SELL"
@@ -1870,6 +1965,62 @@ class Orchestrator:
         except Exception as exc:
             logger.debug("[Journal] unable to append trade: %s", exc)
 
+    def _get_adaptive_score_boost(self) -> float:
+        """R17: Calcule un boost de min_score basé sur le win rate récent du symbole."""
+        try:
+            adaptive_cfg = (self.cfg.get("orchestrator", {})
+                           .get("hard_filters", {})
+                           .get("adaptive_score", {}))
+            if not adaptive_cfg.get("enabled", False):
+                return 0.0
+
+            # Lire les outcomes récents depuis trade_outcomes.csv
+            outcomes_path = pathlib.Path("data/trade_outcomes.csv")
+            if not outcomes_path.exists():
+                return 0.0
+
+            lookback = int(adaptive_cfg.get("lookback_trades", 15))
+            symbol_trades = []
+            with open(outcomes_path, "r") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row.get("symbol", "").upper() == self.symbol.upper():
+                        symbol_trades.append(row)
+
+            # Garder les N derniers
+            recent = symbol_trades[-lookback:] if len(symbol_trades) >= 5 else []
+            if len(recent) < 5:
+                return 0.0  # Pas assez de données
+
+            wins = sum(1 for t in recent if float(t.get("pnl", 0)) > 0)
+            hr = wins / len(recent)
+
+            hr_hard = float(adaptive_cfg.get("hr_threshold_boost_hard", 0.15))
+            hr_medium = float(adaptive_cfg.get("hr_threshold_boost_medium", 0.30))
+            boost_hard = float(adaptive_cfg.get("score_boost_hard", 3.0))
+            boost_medium = float(adaptive_cfg.get("score_boost_medium", 1.5))
+
+            if hr < hr_hard:
+                logger.info(
+                    f"[ADAPTIVE_SCORE] {self.symbol}: HR={hr:.0%} ({wins}/{len(recent)}) "
+                    f"< {hr_hard:.0%} → boost +{boost_hard}"
+                )
+                return boost_hard
+            elif hr < hr_medium:
+                logger.info(
+                    f"[ADAPTIVE_SCORE] {self.symbol}: HR={hr:.0%} ({wins}/{len(recent)}) "
+                    f"< {hr_medium:.0%} → boost +{boost_medium}"
+                )
+                return boost_medium
+            else:
+                logger.debug(
+                    f"[ADAPTIVE_SCORE] {self.symbol}: HR={hr:.0%} ({wins}/{len(recent)}) → pas de boost"
+                )
+                return 0.0
+        except Exception as e:
+            logger.debug(f"[ADAPTIVE_SCORE] {self.symbol}: erreur — {e}")
+            return 0.0
+
     def execute_trade(self, signal: str):
         symbol = self.symbol  # Utilise le symbole de l'orchestrateur
         # --------- GATING QUALITÉ (backtests/rapports récents) ----------
@@ -1942,7 +2093,73 @@ class Orchestrator:
                 logger.warning(f"[PHASE4] Correlation check failed: {e}, continuing anyway")
         # --- FIN PHASE 4 ---
 
+        # FIX 2026-03-23 R15: Vérification cooldown anti-QUICK_REVERSAL
+        if get_qr_cooldown is not None:
+            import time as _time_mod
+            _qr_until = get_qr_cooldown(symbol)
+            if _time_mod.time() < _qr_until:
+                _remaining = int((_qr_until - _time_mod.time()) / 60)
+                logger.warning(
+                    f"[COOLDOWN] {symbol}: trade bloqué — cooldown QUICK_REVERSAL "
+                    f"encore {_remaining} min"
+                )
+                return False
+
         sig = (signal or "").upper().strip()
+
+        # ══════════════════════════════════════════════════════════════════════
+        # FIX 2026-04-10 R18: REVERSAL COOLDOWN — Anti-whipsaw (corrigé)
+        # R17 original ne produisait jamais de log car les symboles LONG only
+        # ne peuvent pas avoir de reversal. Ajout de logs debug pour diagnostic.
+        # ══════════════════════════════════════════════════════════════════════
+        try:
+            _rev_cooldown_min = int(
+                (self.cfg.get("orchestrator", {}).get("cooldown", {})
+                 .get("reversal_cooldown_min", 60))
+            )
+            if _rev_cooldown_min > 0 and self._last_trade_result is not None:
+                _ltr = self._last_trade_result
+                _last_dir = _ltr.get("direction", "")
+                _last_pnl = float(_ltr.get("pnl", 0))
+                _last_ts = float(_ltr.get("close_ts", 0))
+                _now_ts = time.time()
+
+                if _last_pnl < 0 and _last_dir and _last_dir != sig and _last_ts > 0:
+                    _elapsed_min = (_now_ts - _last_ts) / 60.0
+                    if _elapsed_min < _rev_cooldown_min:
+                        _remaining = int(_rev_cooldown_min - _elapsed_min)
+                        logger.warning(
+                            f"[REVERSAL_COOLDOWN] {symbol}: {sig} bloqué — dernier trade "
+                            f"était {_last_dir} (perte ${abs(_last_pnl):.0f}), "
+                            f"cooldown encore {_remaining} min"
+                        )
+                        self._send_telegram(
+                            f"🔄 [ANTI-WHIPSAW] {symbol}: {sig} bloqué\n"
+                            f"Dernier trade: {_last_dir} (perte)\n"
+                            f"Cooldown inversé: encore {_remaining} min",
+                            kind="status", force=True
+                        )
+                        return False
+                    else:
+                        logger.debug(
+                            f"[REVERSAL_COOLDOWN] {symbol}: reversal {_last_dir}→{sig} "
+                            f"mais cooldown expiré ({_elapsed_min:.0f} min > {_rev_cooldown_min} min) → PASS"
+                        )
+                elif _last_dir == sig:
+                    logger.debug(
+                        f"[REVERSAL_COOLDOWN] {symbol}: même direction {sig} → pas de reversal → PASS"
+                    )
+                elif _last_pnl >= 0:
+                    logger.debug(
+                        f"[REVERSAL_COOLDOWN] {symbol}: dernier trade {_last_dir} était gagnant → PASS"
+                    )
+            elif self._last_trade_result is None:
+                logger.debug(
+                    f"[REVERSAL_COOLDOWN] {symbol}: aucun trade précédent enregistré → PASS"
+                )
+        except Exception as _rev_err:
+            logger.debug(f"[REVERSAL_COOLDOWN] {symbol}: erreur — {_rev_err}")
+        # ══════════════════════════════════════════════════════════════════════
         if sig not in ("LONG", "SHORT"):
             raise ValueError("Signal invalide")
 
@@ -1950,6 +2167,19 @@ class Orchestrator:
             logger.error("[EXEC] Aucun payload compatible en mémoire.")
             self._send_telegram("⚠️ Aucun trade prêt à exécuter.", kind="status")
             return False
+
+        # FIX 2026-03-24 R16: Anti-spam — pas de nouveau trade si position déjà ouverte même symbole
+        try:
+            if _mt5 is not None:
+                _existing_pos = _mt5.positions_get(symbol=self.broker_symbol)
+                if _existing_pos and len(_existing_pos) > 0:
+                    logger.info(
+                        f"[ANTI_SPAM] {self.symbol}: {len(_existing_pos)} position(s) déjà "
+                        f"ouverte(s) → pas de nouvel ordre"
+                    )
+                    return False
+        except Exception as _asp_err:
+            logger.debug(f"[ANTI_SPAM] {self.symbol}: check échoué ({_asp_err}) — PASS")
 
         # --- TTL ---
         try:
@@ -1980,6 +2210,7 @@ class Orchestrator:
             pass
 
         p = self._last_proposal
+        self._last_proposal = None  # FIX R16: Consommer la proposal (empêche re-exécution)
         symbol = p["symbol"]          # canonique
         broker_symbol = canon_to_broker(symbol) or self.broker_symbol
         entry = float(p.get("entry", 0.0))
@@ -1999,8 +2230,8 @@ class Orchestrator:
         blocked_hours = orch_cfg.get("blocked_hours_utc", [])
         allowed_hours = orch_cfg.get("allowed_hours_utc", None)
 
-        # Détection automatique du mode
-        hour_filter_mode = "WHITELIST" if allowed_hours is not None else "BLACKLIST" if blocked_hours else None
+        # Détection automatique du mode ([] = pas de restriction, donc pas de whitelist)
+        hour_filter_mode = "WHITELIST" if allowed_hours else "BLACKLIST" if blocked_hours else None
 
         # Mode blacklist: si l'heure est dans blocked_hours
         if blocked_hours and current_hour_utc in blocked_hours:
@@ -2016,8 +2247,9 @@ class Orchestrator:
             )
             return False
 
-        # Mode whitelist: si allowed_hours existe et l'heure n'y est pas
-        if allowed_hours is not None and current_hour_utc not in allowed_hours:
+        # Mode whitelist: si allowed_hours existe ET n'est pas vide, et l'heure n'y est pas
+        # FIX 2026-03-08: allowed_hours=[] signifie "toutes heures autorisées" (pas de restriction)
+        if allowed_hours and current_hour_utc not in allowed_hours:
             logger.info(
                 f"[HOUR_FILTER][WHITELIST] Trade {symbol} bloqué - heure {current_hour_utc}h UTC pas dans allowed_hours {allowed_hours}"
             )
@@ -2039,6 +2271,50 @@ class Orchestrator:
         # ══════════════════════════════════════════════════════════════════════
 
         # ══════════════════════════════════════════════════════════════════════
+        # FIX 2026-04-10 R18: ASIA BLOCK — Bloquer entries 00-07 UTC non-crypto
+        # Diagnostic 14j: session Asie = -$1,113 (93% des pertes), 13.3% HR
+        # ══════════════════════════════════════════════════════════════════════
+        try:
+            _asia_cfg = (self.cfg.get("orchestrator", {})
+                        .get("hard_filters", {})
+                        .get("asia_block", {}))
+            if _asia_cfg.get("enabled", False):
+                _asia_hours = _asia_cfg.get("hours_utc", [0, 1, 2, 3, 4, 5, 6, 7])
+                _asia_exempt = _asia_cfg.get("exempt_crypto", True)
+                _is_crypto_asia = symbol.upper() in self._hf_crypto_symbols
+
+                if current_hour_utc in _asia_hours and not (_asia_exempt and _is_crypto_asia):
+                    logger.warning(
+                        f"[ASIA_BLOCK] {symbol}: entry bloquée — heure {current_hour_utc}h UTC "
+                        f"en session Asie (00-07 UTC). Non-crypto interdit."
+                    )
+                    self._send_telegram(
+                        f"🌙 [ASIA_BLOCK] {symbol}: entry bloquée\n"
+                        f"Heure: {current_hour_utc}h UTC (session Asie)\n"
+                        f"→ Seules les cryptos sont autorisées 00-07 UTC",
+                        kind="status", force=True
+                    )
+                    return False
+                elif current_hour_utc in _asia_hours and _asia_exempt and _is_crypto_asia:
+                    logger.debug(
+                        f"[ASIA_BLOCK] {symbol}: crypto exemptée — heure {current_hour_utc}h UTC PASS"
+                    )
+        except Exception as _asia_err:
+            logger.debug(f"[ASIA_BLOCK] {symbol}: erreur — {_asia_err}")
+        # ══════════════════════════════════════════════════════════════════════
+
+        # ══════════════════════════════════════════════════════════════════════
+        # FIX 2026-04-10 R18: LOG PROBATION — Identifier les symboles en probation
+        # ══════════════════════════════════════════════════════════════════════
+        _is_probation = bool(self.ori_cfg.get("probation", False))
+        if _is_probation:
+            logger.info(
+                f"[PROBATION] {symbol}: symbole en MODE PROBATION — "
+                f"restrictions max (1 trade/jour, risk 0.1%, score 7.0+, 4 votes)"
+            )
+        # ══════════════════════════════════════════════════════════════════════
+
+        # ══════════════════════════════════════════════════════════════════════
         # HARD FILTERS - Qualité minimum absolue (FIX 2025-12-17)
         # Ces filtres ne peuvent PAS être contournés, même par auto_execute
         # ══════════════════════════════════════════════════════════════════════
@@ -2046,18 +2322,40 @@ class Orchestrator:
         confluence = int(p.get("confluence", 0) or 0)
         tracker_vote = float(p.get("tracker_vote", 0.0) or 0.0)
 
-        # 1) HARD FILTER: Score minimum absolu >= 8 (AUGMENTÉ 2026-01-06)
-        HARD_MIN_SCORE = 8.0
+        # R17: Adaptive score boost
+        _adaptive_boost = self._get_adaptive_score_boost()
+
+        # R18: Pénalité session basse liquidité (corrigé — R17 ne se déclenchait jamais)
+        _liq_penalty = 0.0
+        _hf_cfg_r17 = self.cfg.get("orchestrator", {}).get("hard_filters", {})
+        _liq_hours = _hf_cfg_r17.get("low_liquidity_hours_utc", [0, 1, 2, 3, 4, 5, 6, 7, 22, 23])
+        _is_crypto_r17 = symbol.upper() in self._hf_crypto_symbols
+        if not _is_crypto_r17 and current_hour_utc in _liq_hours:
+            _liq_penalty = float(_hf_cfg_r17.get("low_liquidity_score_penalty", 2.0))
+            logger.info(
+                f"[LIQ_PENALTY] {symbol}: heure {current_hour_utc}h UTC → "
+                f"penalty +{_liq_penalty} sur min_score"
+            )
+        else:
+            logger.debug(
+                f"[LIQ_PENALTY] {symbol}: heure {current_hour_utc}h UTC → "
+                f"pas de penalty (crypto={_is_crypto_r17}, in_liq_hours={current_hour_utc in _liq_hours})"
+            )
+
+        # 1) HARD FILTER: Score minimum absolu (config: orchestrator.hard_filters.min_score)
+        HARD_MIN_SCORE = self._hf_min_score + _adaptive_boost + _liq_penalty
+        if _adaptive_boost > 0 or _liq_penalty > 0:
+            logger.info(f"[ADAPTIVE_SCORE] {symbol}: min_score ajusté {self._hf_min_score} + adaptive={_adaptive_boost} + liq={_liq_penalty} = {HARD_MIN_SCORE}")
         if score_agr < HARD_MIN_SCORE:
-            logger.warning(f"[HARD_FILTER] {symbol}: score {score_agr:.1f} < {HARD_MIN_SCORE} → REJET")
+            logger.warning(f"[HARD_FILTER] {symbol}: score {score_agr:.4f} < {HARD_MIN_SCORE} → REJET")
             self._send_telegram(
                 f"⛔ [QUALITÉ] {symbol}: score {score_agr:.1f} trop faible (min={HARD_MIN_SCORE}) → rejet",
                 kind="status", force=True
             )
             return False
 
-        # 2) HARD FILTER: Confluence minimum absolue >= 5 (AUGMENTÉ 2025-12-24)
-        HARD_MIN_CONFLUENCE = 5
+        # 2) HARD FILTER: Confluence minimum absolue (config: orchestrator.hard_filters.min_confluence)
+        HARD_MIN_CONFLUENCE = self._hf_min_confluence
         if confluence < HARD_MIN_CONFLUENCE:
             logger.warning(f"[HARD_FILTER] {symbol}: confluence {confluence} < {HARD_MIN_CONFLUENCE} → REJET")
             self._send_telegram(
@@ -2068,7 +2366,7 @@ class Orchestrator:
 
         # 3) HARD FILTER: Tracker vote contradictoire
         # Si le tracker historique indique que les agents ont mal performé dans cette direction
-        TRACKER_CONTRADICTION_THRESHOLD = 0.25
+        TRACKER_CONTRADICTION_THRESHOLD = self._hf_tracker_contradiction
         tracker_contradicts = (
             (sig == "LONG" and tracker_vote < -TRACKER_CONTRADICTION_THRESHOLD) or
             (sig == "SHORT" and tracker_vote > TRACKER_CONTRADICTION_THRESHOLD)
@@ -2082,6 +2380,29 @@ class Orchestrator:
             return False
 
         logger.info(f"[HARD_FILTER] {symbol}: PASS score={score_agr:.1f} conf={confluence} tracker={tracker_vote:+.2f}")
+
+        # ══════════════════════════════════════════════════════════════════════
+        # FIX 2026-04-03 R17: SHORT PENALTY — Score plus élevé requis pour SHORT
+        # Données: SHORT 20.7% HR vs LONG 58.3% HR → asymétrie structurelle
+        # ══════════════════════════════════════════════════════════════════════
+        _short_penalty = float(
+            (self.cfg.get("orchestrator", {}).get("hard_filters", {})
+             .get("short_score_penalty", 1.5))
+        )
+        if sig == "SHORT" and _short_penalty > 0:
+            _short_min = HARD_MIN_SCORE + _short_penalty
+            if score_agr < _short_min:
+                logger.warning(
+                    f"[SHORT_PENALTY] {symbol}: score {score_agr:.4f} < "
+                    f"{_short_min:.1f} (base {HARD_MIN_SCORE} + penalty {_short_penalty}) → REJET SHORT"
+                )
+                self._send_telegram(
+                    f"⬇️ [SHORT_PENALTY] {symbol}: score {score_agr:.1f} trop faible pour SHORT "
+                    f"(min={_short_min:.1f}) → rejet",
+                    kind="status", force=True
+                )
+                return False
+            logger.info(f"[SHORT_PENALTY] {symbol}: score {score_agr:.1f} >= {_short_min:.1f} → SHORT autorisé")
         # ══════════════════════════════════════════════════════════════════════
 
         # ══════════════════════════════════════════════════════════════════════
@@ -2136,12 +2457,12 @@ class Orchestrator:
             vol_cfg = self.cfg.get("volatility_filter", {})
             if vol_cfg.get("avoid_low_liquidity", True):
                 current_hour_utc = datetime.now(timezone.utc).hour
-                blocked_hours = vol_cfg.get("low_liquidity_hours_utc", [0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23])
-
-                # Vérifier si c'est une crypto (exception)
-                is_crypto = symbol.upper() in ("BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD")
+                # FIX 2026-03-06: heures bloquées différenciées crypto vs forex/indices
+                is_crypto = symbol.upper() in self._hf_crypto_symbols
                 asset_override = vol_cfg.get("asset_overrides", {}).get("crypto", {})
                 crypto_exempt = is_crypto and not asset_override.get("avoid_low_liquidity", False)
+                blocked_hours = vol_cfg.get("low_liquidity_hours_utc",
+                                            self._hf_blocked_hours if is_crypto else self._hf_blocked_hours_extended)
 
                 if current_hour_utc in blocked_hours and not crypto_exempt:
                     logger.warning(f"[SESSION_FILTER] {symbol}: heure {current_hour_utc}h UTC bloquée → REJET")
@@ -2159,7 +2480,7 @@ class Orchestrator:
         # (2026-01-06) HARD FILTER 5: MTF CONFLUENCE - Blocage contre-tendance D1/H4
         # Utilise analyze_mtf_confluence pour vérifier l'alignement des TF supérieurs
         # ══════════════════════════════════════════════════════════════════════
-        if analyze_mtf_confluence is not None:
+        if False:  # FIX 2026-03-08: MTF filter désactivé — signature incompatible crash orchestrators
             try:
                 adv_cfg = self.cfg.get("advanced_analysis", {})
                 mtf_cfg = adv_cfg.get("mtf_confluence", {})
@@ -2405,20 +2726,62 @@ class Orchestrator:
                     return False
         except Exception as e:
             self._send_telegram(f"[LIVE GUARD] erreur: {e}", kind="status", force=False)
+        # --------- Variables communes dry-run / live ----------
+        volume = lots
+        side = sig
+        score = score_agr
+
+        # TP1/TP2 via RR partials du profile
+        tp1 = None
+        tp2 = None
+        try:
+            pm_cfg = ((self.profile.get("orchestrator") or {}).get("position_manager") or {})
+            pm_partials = pm_cfg.get("partials") or []
+            rr_partials = [float(x.get("rr")) for x in pm_partials if x.get("rr") is not None][:2]
+            risk_px = abs(entry - sl) if entry and sl else 0.0
+            if risk_px > 0:
+                def _rr_to_tp(rr_val):
+                    return entry + rr_val * risk_px if side == "LONG" else entry - rr_val * risk_px
+                tp1 = _rr_to_tp(rr_partials[0]) if len(rr_partials) >= 1 else tp
+                tp2 = _rr_to_tp(rr_partials[1]) if len(rr_partials) >= 2 else tp
+            else:
+                tp1 = tp
+                tp2 = tp
+        except Exception:
+            tp1 = tp
+            tp2 = tp
+
+        # Confluence breakdown & decision notes depuis le contexte
+        ctx = self._last_ctx or {}
+        confluence_breakdown = ctx.get("confluence_breakdown", {})
+        decision_notes = ctx.get("decision_notes", "")
+        confluences_list = []
+        if isinstance(confluence_breakdown, dict):
+            confluences_list = [k for k, v in confluence_breakdown.items() if v]
+        elif isinstance(confluence_breakdown, (list, tuple)):
+            confluences_list = [str(c) for c in confluence_breakdown]
+        # ------------------------------------------------------------------
+
         # --------- DRY RUN : pas d'envoi MT5, juste notification + audit ----------
         if getattr(self, "dry_run", False):
-            msg = (f"#NEW_TRADE_SIM | {symbol} | {side} | entry={entry} | vol={volume} | " # type: ignore
-                   f"SL={sl} | TP1={tp1} | TP2={tp2} | score={score} | confluences={','.join(confluences)[:120]}") # type: ignore
+            logger.info(f"[DRY_RUN] Signal {side} {symbol} score={score} lots={volume}")
+            tp1_str = f"{tp1:.2f}" if tp1 is not None else "N/A"
+            tp2_str = f"{tp2:.2f}" if tp2 is not None else "N/A"
+            msg = (f"#NEW_TRADE_SIM | {symbol} | {side} | entry={entry} | vol={volume} | "
+                   f"SL={sl} | TP1={tp1_str} | TP2={tp2_str} | score={score} | "
+                   f"confluences={','.join(confluences_list)[:120]}")
             self._send_telegram(msg, kind="status", force=True)
             audit_append("NEW_TRADE_SIM", {
                 "symbol": symbol,
-                "side": side, # type: ignore
+                "side": side,
                 "entry": entry,
-                "volume": volume, # type: ignore
+                "volume": volume,
                 "sl": sl,
-                "tp1": tp1, # type: ignore
-                "tp2": tp2, # pyright: ignore[reportUndefinedVariable]
-                "score": score, # type: ignore
+                "tp1": tp1,
+                "tp2": tp2,
+                "score": score,
+                "confluence_breakdown": confluence_breakdown,
+                "decision_notes": decision_notes,
                 "meta": {"dry_run": True}
             })
             self._record_performance_stats(self._last_proposal, executed=False, outcome=None, retcode=None)
@@ -2455,6 +2818,295 @@ class Orchestrator:
             )
             lots = max_volume_limit
         # ══════════════════════════════════════════════════════════════════════
+
+        # FIX 2026-03-15 R12: Garde-fou R:R — BLOQUE le trade si RR aberrant
+        _rr_trade_blocked = False
+        try:
+            _final_rr_min = max(0.50, float(getattr(self, '_hf_min_rr', 0.80)))
+            if action == "BUY":
+                _f_risk = abs(entry - sl) if (entry and sl and entry > sl) else 0
+                _f_reward = abs(tp - entry) if (entry and tp and tp > entry) else 0
+            else:
+                _f_risk = abs(sl - entry) if (entry and sl and sl > entry) else 0
+                _f_reward = abs(entry - tp) if (entry and tp and entry > tp) else 0
+
+            _f_rr = _f_reward / max(_f_risk, 1e-9) if _f_risk > 0 else 0
+
+            if _f_risk > 0 and _f_rr < _final_rr_min:
+                # Tenter de corriger le TP
+                _f_new_tp_dist = _f_risk * self._hf_min_rr
+                if action == "BUY":
+                    tp = entry + _f_new_tp_dist
+                else:
+                    tp = entry - _f_new_tp_dist
+                _f_new_rr = _f_new_tp_dist / max(_f_risk, 1e-9)
+                logger.warning(
+                    f"[RR_SAFETY] {symbol}: R:R {_f_rr:.3f} < {_final_rr_min} → "
+                    f"TP corrigé {tp:.5f} (R:R={_f_new_rr:.2f})"
+                )
+
+            # Vérifier que le RR est maintenant acceptable
+            if _f_risk > 0:
+                if action == "BUY":
+                    _f_reward_final = abs(tp - entry) if tp > entry else 0
+                else:
+                    _f_reward_final = abs(entry - tp) if entry > tp else 0
+                _f_rr_final = _f_reward_final / max(_f_risk, 1e-9)
+                if _f_rr_final < 0.30:
+                    # RR toujours aberrant après correction → BLOQUER
+                    _rr_trade_blocked = True
+                    logger.error(
+                        f"[RR_SAFETY] {symbol}: R:R TOUJOURS ABERRANT {_f_rr_final:.3f} "
+                        f"après correction — TRADE BLOQUÉ "
+                        f"(entry={entry}, sl={sl}, tp={tp})"
+                    )
+            elif entry and sl:
+                # Risk = 0 signifie SL = entry → trade sans risque ou bug
+                logger.warning(
+                    f"[RR_SAFETY] {symbol}: risk=0 (entry={entry}, sl={sl}) — suspect"
+                )
+
+        except Exception as _rr_safety_err:
+            logger.warning(f"[RR_SAFETY] {symbol}: Erreur guard — {_rr_safety_err}")
+
+        if _rr_trade_blocked:
+            logger.error(f"[RR_SAFETY] {symbol}: Trade REJETÉ (RR aberrant)")
+            return None
+
+        # FIX 2026-03-13 R9: Garde-fou risque absolu par trade
+        try:
+            _max_risk_usd = float((self.cfg.get("risk") or {}).get("max_risk_per_trade_usd", 300.0))
+            if sl and entry and lots:
+                _sl_dist = abs(entry - sl)
+                _point_val = 1.0
+                _sym_info = None
+                try:
+                    if _mt5:
+                        _sym_info = _mt5.symbol_info(broker_symbol)
+                        if _sym_info:
+                            _ts = getattr(_sym_info, "trade_tick_size", 0)
+                            _tv = getattr(_sym_info, "trade_tick_value", 0)
+                            if _ts > 0 and _tv > 0:
+                                _point_val = _tv / _ts
+                            # FIX 2026-03-18 R14: Fallback si tick_size/tick_value sont 0
+                            if _point_val == 1.0:
+                                _cs = getattr(_sym_info, "trade_contract_size", 0)
+                                _pt = getattr(_sym_info, "point", 0)
+                                if _cs > 0 and _pt > 0:
+                                    _point_val = _cs * _pt
+                                    logger.info(
+                                        f"[RISK_CAP] {symbol}: point_val fallback via "
+                                        f"contract_size={_cs} × point={_pt} = {_point_val}"
+                                    )
+                except Exception as _pv_err:
+                    logger.warning(f"[RISK_CAP] symbol_info({broker_symbol}) échoué: {_pv_err}")
+
+                # FIX 2026-03-23 R15: Override point_val pour indices CFD
+                # contract_size × point donne 0.01 pour SP500/NAS100
+                # mais le risque réel est ~$1/pt/lot (vérifié empiriquement)
+                _indices_point_val = {
+                    "SP500": 1.0, "SP500#1": 1.0,
+                    "NAS100": 1.0, "NAS100#1": 1.0,
+                    "DJ30": 1.0, "DJ30#1": 1.0,
+                    "GER40": 1.0, "UK100": 1.0,
+                }
+                _sym_upper = symbol.upper()
+                if _sym_upper in _indices_point_val:
+                    _old_pv = _point_val
+                    _point_val = _indices_point_val[_sym_upper]
+                    logger.info(
+                        f"[RISK_CAP] {symbol}: point_val override indices = {_point_val} "
+                        f"(était {_old_pv})"
+                    )
+
+                # FIX 2026-03-18 R13: Alerte si point_value reste au défaut
+                # FIX R16: Exclure les indices avec override (1.0 est correct pour eux)
+                if _point_val == 1.0 and symbol.upper() not in _indices_point_val:
+                    logger.warning(
+                        f"[RISK_CAP] {symbol}: _point_val=1.0 (défaut) — "
+                        f"risque possiblement sous-estimé. "
+                        f"sym_info={'OK' if _sym_info else 'None'}"
+                    )
+                    # Fallback conservateur pour les cryptos : bloquer si lots > 1.0
+                    if symbol.endswith("USD") and lots > 1.0:
+                        _risk_usd = _max_risk_usd + 1  # Forcer le cap
+                        logger.warning(
+                            f"[RISK_CAP] {symbol}: point_val inconnu + {lots:.2f} lots "
+                            f"→ forçage cap à {_max_risk_usd}$"
+                        )
+                _risk_usd = _sl_dist * lots * _point_val
+                if _risk_usd > _max_risk_usd:
+                    _old_lots = lots
+                    lots = (_max_risk_usd / (_sl_dist * _point_val))
+                    try:
+                        _vol_step = getattr(_sym_info, "volume_step", 0.01) if _sym_info else 0.01
+                        lots = max(_vol_step, round(lots / _vol_step) * _vol_step)
+                    except Exception:
+                        lots = max(0.01, round(lots, 2))
+                    logger.warning(
+                        f"[RISK_CAP] {symbol}: risque ${_risk_usd:.0f} > max ${_max_risk_usd:.0f} "
+                        f"→ lots réduits {_old_lots:.4f} → {lots:.4f}"
+                    )
+        except Exception as _risk_cap_err:
+            logger.debug(f"[RISK_CAP] Erreur: {_risk_cap_err}")
+
+        # FIX 2026-03-18 R13: Diagnostic TP avant order_send
+        logger.warning(
+            f"[TP_TRACE] {symbol} {action}: entry={entry}, sl={sl}, tp={tp}, lots={lots}, "
+            f"proposal_tp={float(p.get('tp', 0))}, "
+            f"rr_final={abs(tp - entry) / max(abs(entry - sl), 1e-9):.3f}"
+        )
+
+        # ═══════════════════════════════════════════════════════════════
+        # FIX 2026-03-20 R15: Filtre Momentum Pré-Exécution
+        # Vérifie que le prix se déplace dans la direction du signal
+        # sur les dernières 3 bougies M5. Bloque si momentum inverse.
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            _momentum_ok = True
+            # R17: Paramètres momentum asymétriques (SHORT plus strict)
+            _hf_cfg = self.cfg.get("orchestrator", {}).get("hard_filters", {})
+            if action == "SELL":
+                _momentum_bars = int(_hf_cfg.get("short_momentum_bars", 5))
+                _momentum_threshold = float(_hf_cfg.get("short_momentum_threshold", 0.7))
+            else:
+                _momentum_bars = 3
+                _momentum_threshold = 0.6
+
+            if hasattr(self.mt5, "get_rates"):
+                _m5_rates = self.mt5.get_rates(broker_symbol, "M5", count=_momentum_bars + 1)
+            else:
+                _m5_rates = None
+
+            if _m5_rates and len(_m5_rates) >= _momentum_bars + 1:
+                _closes = [float(r["close"]) for r in _m5_rates]
+                _confirms = 0
+
+                for i in range(1, len(_closes)):
+                    if action == "BUY" and _closes[i] > _closes[i - 1]:
+                        _confirms += 1
+                    elif action == "SELL" and _closes[i] < _closes[i - 1]:
+                        _confirms += 1
+
+                _confirm_ratio = _confirms / _momentum_bars if _momentum_bars > 0 else 0
+
+                if _confirm_ratio < _momentum_threshold:
+                    # Vérifier aussi la direction globale (close[-1] vs close[0])
+                    _net_move = _closes[-1] - _closes[0]
+                    _against = (action == "BUY" and _net_move < 0) or \
+                               (action == "SELL" and _net_move > 0)
+
+                    if _against:
+                        _streak_key = f"{symbol}_{action}"
+                        _MOMENTUM_STREAK[_streak_key] = _MOMENTUM_STREAK.get(_streak_key, 0) + 1
+                        logger.warning(
+                            f"[MOMENTUM_CHECK] {symbol} {action}: momentum INVERSE "
+                            f"({_confirm_ratio*100:.0f}% confirm, net={_net_move:.5f}). "
+                            f"Trade BLOQUÉ — streak={_MOMENTUM_STREAK[_streak_key]}"
+                        )
+                        _momentum_ok = False
+                    else:
+                        # FIX R16: Vérifier le streak avant de PASS
+                        _streak_key = f"{symbol}_{action}"
+                        _streak_count = _MOMENTUM_STREAK.get(_streak_key, 0)
+                        if _streak_count >= _MOMENTUM_STREAK_THRESHOLD:
+                            logger.warning(
+                                f"[MOMENTUM_CHECK] {symbol} {action}: momentum faible "
+                                f"({_confirm_ratio*100:.0f}% confirm) — BLOQUÉ car "
+                                f"streak={_streak_count} INVERSE consécutifs"
+                            )
+                            _momentum_ok = False
+                        else:
+                            logger.info(
+                                f"[MOMENTUM_CHECK] {symbol} {action}: momentum faible "
+                                f"({_confirm_ratio*100:.0f}% confirm) mais net neutre — PASS"
+                            )
+                else:
+                    _streak_key = f"{symbol}_{action}"
+                    _MOMENTUM_STREAK[_streak_key] = 0  # Reset streak
+                    logger.debug(
+                        f"[MOMENTUM_CHECK] {symbol} {action}: momentum OK "
+                        f"({_confirm_ratio*100:.0f}% confirm)"
+                    )
+            else:
+                logger.debug(f"[MOMENTUM_CHECK] {symbol}: données M5 indisponibles — PASS")
+
+            if not _momentum_ok:
+                return None
+
+        except Exception as _mom_err:
+            logger.debug(f"[MOMENTUM_CHECK] {symbol}: Erreur — {_mom_err}")
+            # En cas d'erreur, laisser passer (fail-open)
+
+        # ═══════════════════════════════════════════════════════════════
+        # FIX 2026-03-18 R14: Recalcul SL/TP sur prix actuel
+        # Les agents calculent SL/TP sur le prix au moment de l'analyse.
+        # Entre l'analyse et l'exécution, le marché bouge.
+        # On préserve les DISTANCES (risk/reward) mais on les applique
+        # au prix ACTUEL pour maintenir le R:R correct.
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            _current_price = None
+            try:
+                if _mt5:
+                    _tick = _mt5.symbol_info_tick(broker_symbol)
+                    if _tick:
+                        _current_price = float(_tick.ask if action == "BUY" else _tick.bid)
+            except Exception:
+                pass
+
+            if _current_price and _current_price > 0 and entry and entry > 0:
+                _sl_dist = abs(entry - sl) if sl else 0
+                _tp_dist = abs(tp - entry) if tp else 0
+                _price_drift = abs(_current_price - entry)
+
+                # Seuil : ne recalculer que si le drift est significatif
+                # (> 10% de la distance SL, sinon pas la peine)
+                _drift_threshold = _sl_dist * 0.10 if _sl_dist > 0 else 0
+
+                if _price_drift > _drift_threshold and _sl_dist > 0 and _tp_dist > 0:
+                    _old_entry = entry
+                    _old_sl = sl
+                    _old_tp = tp
+
+                    entry = _current_price
+                    if action == "BUY":
+                        sl = _current_price - _sl_dist
+                        tp = _current_price + _tp_dist
+                    else:  # SELL
+                        sl = _current_price + _sl_dist
+                        tp = _current_price - _tp_dist
+
+                    logger.warning(
+                        f"[ENTRY_REFRESH] {symbol} {action}: prix drifté de "
+                        f"{_price_drift:.2f} pts ({_price_drift/_sl_dist*100:.0f}% du SL). "
+                        f"Entry {_old_entry:.5f}→{entry:.5f} | "
+                        f"SL {_old_sl:.5f}→{sl:.5f} | "
+                        f"TP {_old_tp:.5f}→{tp:.5f} | "
+                        f"R:R préservé {_tp_dist/_sl_dist:.2f}"
+                    )
+                elif _price_drift > 0:
+                    logger.debug(
+                        f"[ENTRY_REFRESH] {symbol}: drift {_price_drift:.2f} < seuil "
+                        f"{_drift_threshold:.2f} — pas de recalcul"
+                    )
+        except Exception as _refresh_err:
+            logger.warning(f"[ENTRY_REFRESH] {symbol}: Erreur — {_refresh_err}")
+
+        # FIX R14: Vérification cohérence directionnelle post-refresh
+        if entry and sl and tp:
+            if action == "BUY" and (sl >= entry or tp <= entry):
+                logger.error(
+                    f"[DIR_CHECK] {symbol} BUY incohérent: "
+                    f"sl={sl} >= entry={entry} ou tp={tp} <= entry={entry} — SKIP"
+                )
+                return None
+            if action == "SELL" and (sl <= entry or tp >= entry):
+                logger.error(
+                    f"[DIR_CHECK] {symbol} SELL incohérent: "
+                    f"sl={sl} <= entry={entry} ou tp={tp} >= entry={entry} — SKIP"
+                )
+                return None
 
         # --- Envoi ordre ---
         result = self.mt5.place_order(broker_symbol, action, lots, price=None, sl=sl, tp=tp)
@@ -2535,6 +3187,9 @@ class Orchestrator:
             })
             return True
         else:
+            # FIX R16: Marquer le timestamp même en cas d'échec
+            # pour empêcher le gate de re-tenter dans les 300s
+            self._last_exec_ts = datetime.now(timezone.utc)
             self._send_telegram(
                 f"❌ Échec exécution trade {sig} sur {symbol} | retcode={result.get('retcode') if result else 'None'}",
                 kind="status",
@@ -2561,7 +3216,8 @@ class Orchestrator:
         self._event_loop = asyncio.get_running_loop()
         logger.info(f"[ORCH] {self.symbol} - Event loop stocké pour exécution async depuis scheduler")
 
-        interval_seconds = int(self.timeframes_cfg.get("orchestrator", 60))
+        # FIX 2026-03-09: Fallback 60→120 pour sémaphore MT5 (9 orchestrateurs sérialisés)
+        interval_seconds = int(self.timeframes_cfg.get("orchestrator", 120))
         job_id = f"orch_{self.symbol}"
 
         # Nettoyage d’anciens jobs, si existent
@@ -2571,14 +3227,21 @@ class Orchestrator:
             except Exception:
                 pass
 
+        # FIX 2026-03-06: Décaler les symboles pour ne pas saturer MT5
+        import hashlib
+        _sym_hash = int(hashlib.md5(self.symbol.encode()).hexdigest()[:4], 16)
+        _offset_secs = (_sym_hash % 9) * 7  # Décalage 0-56 secondes selon le symbole
+
         # Boucle principale de décision
         # Utiliser le wrapper synchrone qui exécute la coroutine async dans le bon event loop
+        from datetime import timedelta as _td
         self.scheduler.add_job(
             self._run_agents_and_decide_sync,
             "interval",
             seconds=interval_seconds,
             id=job_id,
             replace_existing=True,
+            next_run_time=datetime.now(timezone.utc) + _td(seconds=_offset_secs),  # FIX 2026-03-06: décalage
         )
 
         # Rapport toutes les N heures (2h par défaut via status_report_hours)
@@ -2626,8 +3289,17 @@ class Orchestrator:
         pm_secs = int((self.profile.get("position_manager") or {}).get("interval_secs", 20))
         try:
             if self.pm and hasattr(self.pm, "manage_open_positions"):
+                # FIX 2026-03-10: Wrapper le PM avec le lock hybride MT5
+                # Le PM tourne dans un thread APScheduler et fait des appels MT5 COM
+                # Sans le lock, il entre en conflit avec les coroutines asyncio → deadlock
+                _pm_ref = self.pm
+
+                def _pm_with_mt5_lock():
+                    with _GLOBAL_MT5_SEMAPHORE:
+                        _pm_ref.manage_open_positions()
+
                 self.scheduler.add_job(
-                    self.pm.manage_open_positions,
+                    _pm_with_mt5_lock,
                     "interval",
                     seconds=pm_secs,
                     id=f"pm_{self.symbol}",
@@ -2788,7 +3460,9 @@ class Orchestrator:
             max_positions = int(pos_limits.get("max_positions", 0) or 0)
             max_volume = float(pos_limits.get("max_volume", 0.0) or 0.0)
             max_net = float(pos_limits.get("max_net_volume", 0.0) or 0.0)
-            count, volume, net = self._current_position_stats()
+            # FIX 2026-03-10 R6: Appel MT5 sync → to_thread + lock (event loop non bloqué)
+            async with _GLOBAL_MT5_SEMAPHORE:
+                count, volume, net = await asyncio.to_thread(self._current_position_stats)
             reasons = []
             if max_positions and count >= max_positions:
                 reasons.append(f"positions {count}/{max_positions}")
@@ -2812,9 +3486,11 @@ class Orchestrator:
         except Exception:
             equity_start = 100000.0
 
-        pnl_today_ccy = self._today_pnl_currency()                      # P/L réalisé aujourd’hui (ce symbole)
-        daily_loss_pct = pnl_today_ccy / max(equity_start, 1e-9)        # ex: -0.012 = -1.2%
-        consec_losses = int(self._current_losing_streak())              # série de pertes consécutives
+        # FIX 2026-03-10 R6: Appels MT5 sync → to_thread + lock (groupés pour minimiser les locks)
+        async with _GLOBAL_MT5_SEMAPHORE:
+            pnl_today_ccy = await asyncio.to_thread(self._today_pnl_currency)  # P/L réalisé (ce symbole)
+            consec_losses = int(await asyncio.to_thread(self._current_losing_streak))  # série de pertes
+        daily_loss_pct = pnl_today_ccy / max(equity_start, 1e-9)        # ex: -0.012 = -1.2% (pas d’appel MT5)
 
         # Limite journalière absolue (en devise)
         try:
@@ -2839,7 +3515,9 @@ class Orchestrator:
                 floating_pnl = 0.0
                 if _mt5 is not None:  # FIX 2026-02-24: était 'mt5' → '_mt5'
                     broker_sym = self.broker_symbol or self.symbol
-                    open_positions = _mt5.positions_get(symbol=broker_sym)  # FIX 2026-02-24
+                    # FIX 2026-03-10: Protéger l'accès COM avec le sémaphore global
+                    async with _GLOBAL_MT5_SEMAPHORE:
+                        open_positions = await asyncio.to_thread(_mt5.positions_get, symbol=broker_sym)
                     if open_positions:
                         floating_pnl = sum(float(getattr(p, "profit", 0.0) or 0.0) for p in open_positions)
                 total_pnl = pnl_today_ccy + floating_pnl
@@ -2896,7 +3574,9 @@ class Orchestrator:
 
         try:
             # Snapshot régulier d’equity pour suivi du DD/P&L
-            self._log_equity_snapshot()
+            # FIX 2026-03-10 R6: _log_equity_snapshot fait account_info() → to_thread + lock
+            async with _GLOBAL_MT5_SEMAPHORE:
+                await asyncio.to_thread(self._log_equity_snapshot)
 
             symbol = self.symbol
 
@@ -2921,7 +3601,7 @@ class Orchestrator:
             if get_global_kill_switch is not None:
                 try:
                     _global_cfg = (self.overrides_all or {}).get("GLOBAL", {})
-                    _ks_limit = float((_global_cfg.get("risk") or {}).get("global_daily_loss_limit", 400.0))
+                    _ks_limit = float((_global_cfg.get("risk") or {}).get("global_daily_loss_limit", self._hf_kill_switch_usd))
                     _ks = get_global_kill_switch(_ks_limit)
                     _floating = 0.0
                     try:
@@ -2970,46 +3650,61 @@ class Orchestrator:
                     if should_close_eod(symbol, _eod_close_time):
                         logger.info(f"[EOD_CLOSE] {symbol}: fermeture EOD demandée ({_eod_close_time} UTC)")
                         # FIX 2026-02-20: Fermeture effective via MT5 (étape 2.3)
+                        # FIX 2026-03-09: Toute la logique EOD dans asyncio.to_thread (appels MT5 synchrones)
                         try:
                             if _mt5 is not None:  # FIX 2026-02-24: était 'mt5' → '_mt5' (Directive 11)
                                 _broker_sym = getattr(self, "broker_symbol", symbol)
-                                _eod_positions = _mt5.positions_get(symbol=_broker_sym) or []  # FIX 2026-02-24
-                                for _eod_p in _eod_positions:
-                                    _eod_ticket = int(getattr(_eod_p, "ticket", 0) or 0)
-                                    _eod_vol = float(getattr(_eod_p, "volume", 0) or 0)
-                                    _eod_type = int(getattr(_eod_p, "type", 0))
-                                    _eod_profit = float(getattr(_eod_p, "profit", 0) or 0)
-                                    if _eod_ticket <= 0 or _eod_vol <= 0:
-                                        continue
-                                    _eod_side = "BUY" if _eod_type == 0 else "SELL"
-                                    _eod_order_type = _mt5.ORDER_TYPE_SELL if _eod_side == "BUY" else _mt5.ORDER_TYPE_BUY  # FIX 2026-02-24
-                                    _eod_tick = _mt5.symbol_info_tick(_broker_sym)  # FIX 2026-02-24
-                                    _eod_price = (_eod_tick.bid if _eod_side == "BUY" else _eod_tick.ask) if _eod_tick else 0
-                                    if _eod_price <= 0:
-                                        continue
-                                    _eod_req = {
-                                        "action": _mt5.TRADE_ACTION_DEAL,  # FIX 2026-02-24
-                                        "position": _eod_ticket,
-                                        "symbol": _broker_sym,
-                                        "volume": _eod_vol,
-                                        "type": _eod_order_type,
-                                        "price": _eod_price,
-                                        "deviation": 30,
-                                        "magic": 0,
-                                        "comment": "eod_close",
-                                        "type_filling": _mt5.ORDER_FILLING_IOC,  # FIX 2026-02-24
-                                        "type_time": _mt5.ORDER_TIME_GTC,  # FIX 2026-02-24
-                                    }
-                                    _eod_result = _mt5.order_send(_eod_req)  # FIX 2026-02-24
-                                    if _eod_result and _eod_result.retcode == _mt5.TRADE_RETCODE_DONE:  # FIX 2026-02-24
-                                        logger.info(f"[EOD_CLOSE] {symbol} ticket {_eod_ticket} fermé (P&L: {_eod_profit:+.2f})")
+
+                                def _eod_close_sync(_sym, _bsym, _close_time):
+                                    """Bloc synchrone pour fermer les positions EOD via MT5 COM."""
+                                    _closed = []
+                                    _positions = _mt5.positions_get(symbol=_bsym) or []
+                                    for _p in _positions:
+                                        _ticket = int(getattr(_p, "ticket", 0) or 0)
+                                        _vol = float(getattr(_p, "volume", 0) or 0)
+                                        _type = int(getattr(_p, "type", 0))
+                                        _profit = float(getattr(_p, "profit", 0) or 0)
+                                        if _ticket <= 0 or _vol <= 0:
+                                            continue
+                                        _side = "BUY" if _type == 0 else "SELL"
+                                        _order_type = _mt5.ORDER_TYPE_SELL if _side == "BUY" else _mt5.ORDER_TYPE_BUY
+                                        _tick = _mt5.symbol_info_tick(_bsym)
+                                        _price = (_tick.bid if _side == "BUY" else _tick.ask) if _tick else 0
+                                        if _price <= 0:
+                                            continue
+                                        _req = {
+                                            "action": _mt5.TRADE_ACTION_DEAL,
+                                            "position": _ticket,
+                                            "symbol": _bsym,
+                                            "volume": _vol,
+                                            "type": _order_type,
+                                            "price": _price,
+                                            "deviation": 30,
+                                            "magic": 0,
+                                            "comment": "eod_close",
+                                            "type_filling": _mt5.ORDER_FILLING_IOC,
+                                            "type_time": _mt5.ORDER_TIME_GTC,
+                                        }
+                                        _result = _mt5.order_send(_req)
+                                        if _result and _result.retcode == _mt5.TRADE_RETCODE_DONE:
+                                            _closed.append((_ticket, _profit, True, ""))
+                                        else:
+                                            _err = _result.comment if _result else "Unknown"
+                                            _closed.append((_ticket, _profit, False, _err))
+                                    return _closed
+
+                                # FIX 2026-03-10: Protéger les appels COM EOD avec le sémaphore
+                                async with _GLOBAL_MT5_SEMAPHORE:
+                                    _eod_results = await asyncio.to_thread(_eod_close_sync, symbol, _broker_sym, _eod_close_time)
+                                for _ticket, _profit, _ok, _err in _eod_results:
+                                    if _ok:
+                                        logger.info(f"[EOD_CLOSE] {symbol} ticket {_ticket} fermé (P&L: {_profit:+.2f})")
                                         self._send_telegram(
-                                            f"[EOD_CLOSE] {symbol} #{_eod_ticket} fermé à {_eod_close_time} UTC (P&L: {_eod_profit:+.2f})",
+                                            f"[EOD_CLOSE] {symbol} #{_ticket} fermé à {_eod_close_time} UTC (P&L: {_profit:+.2f})",
                                             kind="trade_event", force=True
                                         )
                                     else:
-                                        _eod_err_msg = _eod_result.comment if _eod_result else "Unknown"
-                                        logger.warning(f"[EOD_CLOSE] Échec fermeture {symbol} #{_eod_ticket}: {_eod_err_msg}")
+                                        logger.warning(f"[EOD_CLOSE] Échec fermeture {symbol} #{_ticket}: {_err}")
                         except Exception as _eod_mt5_err:
                             logger.warning(f"[EOD_CLOSE] Erreur MT5: {_eod_mt5_err}")
                         return  # Pas de nouveau trade après EOD close
@@ -3017,7 +3712,7 @@ class Orchestrator:
                     logger.debug(f"[EOD_CLOSE] Erreur: {_eod_close_err}")
 
             # 1) Collecte des signaux agents + indicateurs (+ hints SL/TP/PRICE)
-            per_tf_signals, global_signals, indicators, market = self._gather_agent_signals(symbol)
+            per_tf_signals, global_signals, indicators, market = await self._gather_agent_signals(symbol)
 
             # Sauvegarde pour dashboard live
             self.save_signals_to_json(symbol, global_signals)
@@ -3026,9 +3721,12 @@ class Orchestrator:
             price = market.get("price")
 
             # Fallback prix robuste
+            # FIX 2026-03-09: Wrapper dans asyncio.to_thread pour ne pas bloquer le event loop
             if price is None:
                 try:
-                    price = self.mt5.get_last_price(symbol, side="BUY")
+                    # FIX 2026-03-10 R6: Protéger l'appel COM avec le lock
+                    async with _GLOBAL_MT5_SEMAPHORE:
+                        price = await asyncio.to_thread(self.mt5.get_last_price, symbol, "BUY")
                 except Exception:
                     price = None
 
@@ -3052,6 +3750,12 @@ class Orchestrator:
                 per_tf_signals, global_signals, indicators
             )
             regime_label, tracker_input = self._build_tracker_signals(per_tf_signals, global_signals)
+
+            # FIX 2026-03-23 R15: Log décision finale
+            logger.info(
+                f"[DECISION] {symbol}: {direction or 'NEUTRAL'} score={score_agr:.2f} "
+                f"conf={confluence} regime={regime_label}"
+            )
             tracker_vote_raw = 0.0
             confluence_components: Dict[str, float] = {"agents": confluence}
             decision_notes: List[str] = []
@@ -3102,7 +3806,7 @@ class Orchestrator:
                     min_trust = float(over_cfg.get("min_trust", self.whale_cfg.get("min_trust", self.min_trust)))
                     min_signal = float(over_cfg.get("min_signal", self.whale_cfg.get("min_signal", self.min_signal)))
                     allow_vol = bool(over_cfg.get("allow_in_vol_spike", self.whale_cfg.get("allow_in_vol_spike", self.whale_allow_in_vol_spike)))
-                    vol_limit = float(over_cfg.get("volatility_z_th", 3.0))
+                    vol_limit = float(over_cfg.get("volatility_z_th", self._hf_whale_max_vol_z))
                     vol_z = float(self._whale_market_ctx.get(self.symbol, {}).get("volatility_zscore", 0.0) or 0.0)
                     if trust_val >= min_trust and signal_val >= min_signal:
                         if allow_vol or vol_z <= vol_limit:
@@ -3188,7 +3892,10 @@ class Orchestrator:
                 except Exception as e:
                     logger.debug(f"[ECON_CAL] Erreur verification: {e}")
 
-            if self._weekend_guard_blocked():
+            # FIX 2026-03-10 R6: weekend guard fait des appels MT5 (close_positions) → to_thread + lock
+            async with _GLOBAL_MT5_SEMAPHORE:
+                _wg_blocked = await asyncio.to_thread(self._weekend_guard_blocked)
+            if _wg_blocked:
                 reasons.append("forex_weekend_guard")
                 decision_notes.append("forex_weekend_guard")
 
@@ -3251,8 +3958,11 @@ class Orchestrator:
             atr = indicators.get("ATR_H1") or indicators.get("ATR_M30")
             if direction in ("LONG", "SHORT"):
                 # FIX 2026-02-23: Recalculer si atr est None, 0 ou 0.0 (Directive 5)
+                # FIX 2026-03-09: Wrapper dans asyncio.to_thread (appels MT5 synchrones)
                 if not atr or atr <= 0:
-                    atr = self._compute_atr(symbol, timeframe="H1") or self._compute_atr(symbol, timeframe="M30")
+                    # FIX 2026-03-10: Protéger les appels COM ATR avec le sémaphore
+                    async with _GLOBAL_MT5_SEMAPHORE:
+                        atr = await asyncio.to_thread(self._compute_atr, symbol, "H1") or await asyncio.to_thread(self._compute_atr, symbol, "M30")
 
                 # Fallback ATR si manque SL/TP
                 # FIX 2026-02-23: Test explicite atr > 0 (Directive 5)
@@ -3280,7 +3990,9 @@ class Orchestrator:
                 broker_min = 0.0
                 try:
                     if hasattr(self.mt5, "_min_stop_distance_points"):
-                        min_pts_candidate = float(self.mt5._min_stop_distance_points(self.symbol))  # type: ignore[attr-defined]
+                        # FIX 2026-03-10: Protéger l'accès COM avec le sémaphore
+                        async with _GLOBAL_MT5_SEMAPHORE:
+                            min_pts_candidate = float(await asyncio.to_thread(self.mt5._min_stop_distance_points, self.symbol))  # type: ignore[attr-defined]
                         broker_min = max(broker_min, min_pts_candidate * pt)
                 except Exception:
                     broker_min = broker_min or 0.0
@@ -3311,6 +4023,28 @@ class Orchestrator:
                 if direction in ("LONG", "SHORT") and price is not None:
                     sl, tp = ensure_min_distance(price, sl, tp, direction)
 
+                    # FIX 2026-03-10: Si le R:R agent est trop bas, recalculer TP via ATR
+                    # Les agents fournissent parfois des SL/TP trop conservateurs (R:R 0.40-0.70)
+                    if sl is not None and tp is not None and price:
+                        try:
+                            _fb_atr = atr if (atr and atr > 0) else est_atr
+                            if direction == "LONG":
+                                _rr_check = (tp - price) / max(price - sl, 1e-9)
+                            else:
+                                _rr_check = (price - tp) / max(sl - price, 1e-9)
+                            if _rr_check < self._hf_min_rr and _fb_atr > 0:
+                                _desired_tp_dist = abs(price - sl) * self._hf_min_rr
+                                _atr_tp_dist = mul_tp * _fb_atr
+                                _new_tp_dist = max(_desired_tp_dist, _atr_tp_dist)
+                                if direction == "LONG":
+                                    tp = price + _new_tp_dist
+                                else:
+                                    tp = price - _new_tp_dist
+                                _new_rr = _new_tp_dist / max(abs(price - sl), 1e-9)
+                                logger.info(f"[RR_FIX] {symbol}: R:R {_rr_check:.2f} → {_new_rr:.2f} (TP recalculé via ATR)")
+                        except Exception as _rr_e:
+                            logger.debug(f"[RR_FIX] {symbol}: erreur recalcul: {_rr_e}")
+
                 # Calcul lots si possible
                 if (lots is None or lots <= 0) and sl is not None:
                     equity = market.get("equity")
@@ -3338,10 +4072,10 @@ class Orchestrator:
             # Refuse les trades avec un ratio Risk/Reward insuffisant
             # ══════════════════════════════════════════════════════════════════
             try:
-                # Priorité: config orchestrator, sinon ori_cfg, sinon 1.5 par défaut
-                min_rr = float(self.ori_cfg.get("min_rr_required") or self.ori_cfg.get("min_rr") or 1.5)
+                # Priorité: config orchestrator, sinon hard_filters.min_rr
+                min_rr = float(self.ori_cfg.get("min_rr_required") or self.ori_cfg.get("min_rr") or self._hf_min_rr)
             except Exception:
-                min_rr = 1.5  # Défaut OPTIMISATION 2025-12-13
+                min_rr = self._hf_min_rr
 
             if sl is not None and tp is not None and price is not None and direction in ("LONG","SHORT"):
                 if direction == "LONG":
@@ -3386,13 +4120,23 @@ class Orchestrator:
                                 reasons.append(f"regime_against_short:{regime_type}")
                                 logger.debug(f"[REGIME] {symbol} SHORT bloqué: régime={regime_type}")
                             # Avertir si marché trop volatile
-                            elif regime_type == "volatile" and regime_confidence > 0.7:
+                            elif regime_type == "volatile" and regime_confidence > self._hf_quiet_block_confidence:
                                 decision_notes.append("volatile_market_caution")
-                            # FIX 2026-02-20: Bloquer en régime QUIET (étape 5.3)
-                            elif regime_type == "quiet" and regime_confidence > 0.7:
+                            # FIX 2026-02-20: Bloquer en régime QUIET (config: hard_filters.quiet_block_confidence)
+                            elif regime_type == "quiet" and regime_confidence > self._hf_quiet_block_confidence:
                                 reasons.append(f"regime_quiet(conf={regime_confidence:.2f})")
                                 decision_notes.append("quiet_regime_blocked")
                                 logger.info(f"[REGIME] {symbol} bloqué: régime QUIET (conf={regime_confidence:.2f})")
+                            # R17: SHORT en régime non-trending_down = interdit sauf score élevé
+                            elif direction == "SHORT" and regime_type not in ("trending_down",) and regime_confidence > 0.5:
+                                _short_regime_min = self._hf_counter_trend_min_score
+                                if score_agr < _short_regime_min:
+                                    reasons.append(f"short_not_trending_down:{regime_type}")
+                                    decision_notes.append(f"short_regime_blocked:{regime_type}")
+                                    logger.info(
+                                        f"[REGIME] {symbol} SHORT bloqué: régime={regime_type} "
+                                        f"(pas trending_down), score={score_agr:.1f}<{_short_regime_min}"
+                                    )
 
                         # ══════════════════════════════════════════════════════════════
                         # OPTIMISATION 2025-12-30: Renforcer filtre contre-tendance BUY
@@ -3400,14 +4144,14 @@ class Orchestrator:
                         # ══════════════════════════════════════════════════════════════
                         if regime_type == "trending_down" and direction == "LONG":
                             current_score = score_agr  # FIX 2026-02-24: était confidence (nombre confluences 2-5) au lieu du score réel
-                            min_score_counter_trend = 10.0
+                            min_score_counter_trend = self._hf_counter_trend_min_score
                             if regime_confidence > 0.4 and current_score < min_score_counter_trend:
                                 reasons.append(f"counter_trend_low_score:{current_score:.1f}<{min_score_counter_trend}")
                                 decision_notes.append(f"buy_against_downtrend_blocked")
                                 logger.info(f"[COUNTER_TREND] {symbol} BUY bloqué: score={current_score:.1f} < {min_score_counter_trend} en downtrend (conf={regime_confidence:.2f})")
                         elif regime_type == "trending_up" and direction == "SHORT":
                             current_score = score_agr  # FIX 2026-02-24: était confidence (nombre confluences 2-5) au lieu du score réel
-                            min_score_counter_trend = 10.0
+                            min_score_counter_trend = self._hf_counter_trend_min_score
                             if regime_confidence > 0.4 and current_score < min_score_counter_trend:
                                 reasons.append(f"counter_trend_low_score:{current_score:.1f}<{min_score_counter_trend}")
                                 decision_notes.append(f"short_against_uptrend_blocked")
@@ -3439,7 +4183,9 @@ class Orchestrator:
             cb_cfg = (self.profile.get("orchestrator") or {}).get("crypto_bucket") or {}
             if _is_crypto_canon(symbol) and bool(cb_cfg.get("enabled", True)):
                 # Limite de positions simultanées
-                open_crypto = _count_open_crypto_positions()  # type: ignore
+                # FIX 2026-03-10: Wrapper sync → to_thread + sémaphore
+                async with _GLOBAL_MT5_SEMAPHORE:
+                    open_crypto = await asyncio.to_thread(_count_open_crypto_positions)
                 max_open = int(cb_cfg.get("max_open", 2))
                 if open_crypto >= max_open:
                     self._send_telegram(f"⛔ Crypto cap: {open_crypto} positions déjà ouvertes (max {max_open}) → skip", kind="status", force=False)
@@ -3454,14 +4200,18 @@ class Orchestrator:
                         cap = cap_override
                 except Exception:
                     pass
-                used = _crypto_bucket_risk_used(get_symbol_profile)
+                # FIX 2026-03-10: Wrapper sync → to_thread + sémaphore
+                async with _GLOBAL_MT5_SEMAPHORE:
+                    used = await asyncio.to_thread(_crypto_bucket_risk_used, get_symbol_profile)
                 room = max(0.0, cap - used)
 
                 # risque prévu pour le trade courant (approx comme dans _crypto_bucket_risk_used)
                 inst = (self.profile.get("instrument") or {})
                 point = float(inst.get("point") or 0.0)
                 pip_value = float(inst.get("pip_value") or 0.0)
-                ai = _mt5.account_info()
+                # FIX 2026-03-10: Protéger l'accès COM avec le sémaphore
+                async with _GLOBAL_MT5_SEMAPHORE:
+                    ai = await asyncio.to_thread(_mt5.account_info)
                 equity = float(getattr(ai, "equity", 0.0) or 0.0)
                 risk_ratio_planned = 0.0
                 try:
@@ -3561,8 +4311,11 @@ class Orchestrator:
                     except Exception:
                         pass
 
-                    # FIX 2026-02-24: logger executed APRÈS execute_trade pour refléter le vrai statut
-                    trade_ok = self.execute_trade(direction)
+                    # FIX 2026-03-10: execute_trade fait ~4 appels MT5 COM (account_info, positions_get,
+                    # is_trade_blocked_by_inter_market, _count_open_crypto_positions)
+                    # → sémaphore obligatoire pour éviter le deadlock COM inter-thread
+                    async with _GLOBAL_MT5_SEMAPHORE:
+                        trade_ok = await asyncio.to_thread(self.execute_trade, direction)
                     self._log_proposal_csv(direction, price, sl, tp, lots, score_agr, confluence, self.proposal_ttl_secs, expired=False, executed=bool(trade_ok))
                 else:
                     # Snapshot "proposed"
@@ -3787,18 +4540,94 @@ class Orchestrator:
         except Exception as exc:
             logger.warning("[Whale] CEX handler error: %s", exc)
 
-    def _gather_agent_signals(
+    # ------------------------------------------------------------------ agent cache
+    def _get_or_load_agent(self, module_name: str, class_name: str, *, symbol: Optional[str] = None):
+        """Charge un agent depuis le cache ou l'instancie (Part A perf)."""
+        key = f"{module_name}.{class_name}"
+
+        # Skip si en cooldown erreur (réactivation auto après délai)
+        if class_name in self._agent_disabled_until:
+            if datetime.now(timezone.utc) > self._agent_disabled_until[class_name]:
+                del self._agent_disabled_until[class_name]
+                logger.info(f"[AGENT] {class_name} réactivé après cooldown")
+                self._send_telegram(
+                    f"🔄 [AGENT REACTIVATED] {class_name} réactivé après cooldown pour {self.symbol}",
+                    kind="status", force=True
+                )
+            else:
+                return None
+
+        if key in self._agent_cache:
+            return self._agent_cache[key]
+
+        try:
+            mod = importlib.import_module(f"agents.{module_name}")
+            cls = getattr(mod, class_name, None)
+            if cls is None:
+                logger.warning(f"[AGENT] Classe introuvable: agents.{module_name}.{class_name}")
+                return None
+
+            init = getattr(cls, "__init__", None)
+            if init is None:
+                agent = cls()
+                self._agent_cache[key] = agent
+                return agent
+
+            sig = inspect.signature(init)
+            accepted = set(sig.parameters.keys())
+
+            params: Dict[str, Any] = {}
+            if "symbol" in accepted:
+                params["symbol"] = symbol or self.symbol
+            for k in ("mt5", "client", "mt5_client"):
+                if k in accepted:
+                    params[k] = self.mt5
+                    break
+            for k in ("profile", "cfg", "config", "conf"):
+                if k in accepted:
+                    params[k] = self.profile
+                    break
+
+            agent = cls(**params)
+            self._agent_cache[key] = agent
+            return agent
+        except Exception as e:
+            logger.warning(f"[AGENT] Chargement agents.{module_name}.{class_name} a échoué: {e}")
+            return None
+
+    def _invalidate_agent_cache(self, agent_class_name: Optional[str] = None) -> None:
+        """Vide le cache d'agents. Si agent_class_name est fourni, ne retire que celui-là."""
+        if agent_class_name is None:
+            self._agent_cache.clear()
+            logger.info("[AGENT] Cache agents vidé intégralement.")
+        else:
+            keys_to_remove = [k for k in self._agent_cache if k.endswith(f".{agent_class_name}")]
+            for k in keys_to_remove:
+                del self._agent_cache[k]
+            if keys_to_remove:
+                logger.info(f"[AGENT] Cache invalidé pour {agent_class_name}.")
+
+    async def _gather_agent_signals(
         self, symbol: str
     ) -> Tuple[Dict[str, Dict[str, str]], Dict[str, str], Dict[str, float], Dict[str, Any]]:
         """
         Récupère les signaux par agent/TF + signaux globaux + indicateurs + contexte de marché.
+
+        Les agents sont exécutés en parallèle via asyncio.gather + to_thread (Part B perf).
         """
+        _AGENT_TIMEOUT = 45      # FIX 2026-03-06: augmenté 10→45s pour agents MT5
+        _API_AGENT_TIMEOUT = 15  # FIX 2026-03-09: timeout réduit pour agents API (HTTP requests)
+
         # --- Contexte marché ---
-        price = self._get_last_price(symbol)
+        # FIX 2026-03-10 R6: _get_last_price fait ~8 appels MT5 → protéger avec le lock
+        async with _GLOBAL_MT5_SEMAPHORE:
+            price = await asyncio.to_thread(self._get_last_price, symbol)
         equity = None
         try:
             if hasattr(self.mt5, "get_account_info"):
-                ai = self.mt5.get_account_info()
+                # FIX 2026-03-10 R6: Protéger l'appel COM avec le lock
+                async with _GLOBAL_MT5_SEMAPHORE:
+                    ai = await asyncio.to_thread(self.mt5.get_account_info)
                 if ai and hasattr(ai, "equity"):
                     equity = float(ai.equity)
         except Exception:
@@ -3806,9 +4635,15 @@ class Orchestrator:
 
         agents_cfg = (self.profile.get("agents") or {})
 
+        # FIX 2026-03-10: fundamental/macro disabled par défaut si pas dans la config
+        # Évite que les profils sans ces clés (SP500, NAS100...) les lancent
+        _AGENTS_DEFAULT_DISABLED = {"fundamental", "macro"}
+
         def agent_enabled(name: str) -> bool:
             try:
-                cfg = agents_cfg.get(name) or {}
+                cfg = agents_cfg.get(name)
+                if cfg is None:
+                    return name not in _AGENTS_DEFAULT_DISABLED
                 return bool(cfg.get("enabled", True))
             except Exception:
                 return True
@@ -3817,7 +4652,7 @@ class Orchestrator:
             "technical": {},
             "scalping": {},
             "swing": {},
-            "structure": {},     # Price Action (BOS/CHoCH/FBO/AMD via StructureAgent/ScalpingAgent)
+            "structure": {},
             "fundamental": {},
             "sentiment": {},
             "smc": {},
@@ -3835,48 +4670,26 @@ class Orchestrator:
         structure_details: Dict[str, Dict[str, float]] = {}
         whale_details: Dict[str, Dict[str, float]] = {}
 
-        # --- Loader dynamique ---
+        # --- Loader dynamique (utilise cache self._agent_cache) ---
         def load_agent(module_name: str, class_name: str):
-            try:
-                mod = importlib.import_module(f"agents.{module_name}")
-                cls = getattr(mod, class_name, None)
-                if cls is None:
-                    logger.warning(f"[AGENT] Classe introuvable: agents.{module_name}.{class_name}")
-                    return None
-
-                init = getattr(cls, "__init__", None)
-                if init is None:
-                    return cls()
-
-                sig = inspect.signature(init)
-                accepted = set(sig.parameters.keys())
-
-                params = {}
-                if "symbol" in accepted:
-                    params["symbol"] = symbol
-                for k in ("mt5", "client", "mt5_client"):
-                    if k in accepted:
-                        params[k] = self.mt5
-                        break
-                for k in ("profile", "cfg", "config", "conf"):
-                    if k in accepted:
-                        params[k] = self.profile
-                        break
-
-                return cls(**params)
-            except Exception as e:
-                logger.warning(f"[AGENT] Chargement agents.{module_name}.{class_name} a échoué: {e}")
-                return None
+            return self._get_or_load_agent(module_name, class_name, symbol=symbol)
 
         # --- Runner générique ---
         def call_agent(agent, timeframe: Optional[str] = None) -> Optional[Dict[str, Any]]:
             if agent is None:
                 return None
 
-            # Skip agents désactivés par monitoring erreurs (audit fev2026)
             agent_name = type(agent).__name__
-            if agent_name in self._agent_disabled:
-                return None
+            if agent_name in self._agent_disabled_until:
+                if datetime.now(timezone.utc) > self._agent_disabled_until[agent_name]:
+                    del self._agent_disabled_until[agent_name]
+                    logger.info(f"[AGENT] {agent_name} réactivé après cooldown")
+                    self._send_telegram(
+                        f"🔄 [AGENT REACTIVATED] {agent_name} réactivé après cooldown pour {self.symbol}",
+                        kind="status", force=True
+                    )
+                else:
+                    return None
 
             try:
                 if timeframe and hasattr(agent, "params") and isinstance(getattr(agent, "params"), dict):
@@ -3929,14 +4742,19 @@ class Orchestrator:
                 except Exception as e:
                     logger.error(f"[AGENT] {agent_name} erreur sur méthode {name}: {e}", exc_info=True)
                     last_err = e
-                    # Monitoring erreurs (audit fev2026)
+                    # Monitoring erreurs + cooldown progressif (2026-03-01)
                     self._agent_error_counts[agent_name] = self._agent_error_counts.get(agent_name, 0) + 1
                     if self._agent_error_counts[agent_name] >= 5:
-                        self._agent_disabled.add(agent_name)
-                        logger.error(f"[AGENT] {agent_name} désactivé après {self._agent_error_counts[agent_name]} erreurs")
+                        prev_cd = self._agent_cooldown_hours.get(agent_name, 0.5)
+                        cooldown_h = min(prev_cd * 2, 8.0)  # Double: 1h, 2h, 4h, 8h max
+                        self._agent_cooldown_hours[agent_name] = cooldown_h
+                        self._agent_disabled_until[agent_name] = datetime.now(timezone.utc) + timedelta(hours=cooldown_h)
+                        self._agent_error_counts[agent_name] = 0
+                        self._invalidate_agent_cache(agent_name)
+                        logger.error(f"[AGENT] {agent_name} désactivé pour {cooldown_h:.0f}h après 5 erreurs")
                         self._send_telegram(
-                            f"⚠️ [AGENT DISABLED] {agent_name} désactivé pour {self.symbol} "
-                            f"après {self._agent_error_counts[agent_name]} erreurs consécutives",
+                            f"⚠️ [AGENT COOLDOWN] {agent_name} désactivé pour {cooldown_h:.0f}h ({self.symbol}) "
+                            f"— réactivation auto à {self._agent_disabled_until[agent_name].strftime('%H:%M UTC')}",
                             kind="status", force=True
                         )
                     continue
@@ -3974,195 +4792,417 @@ class Orchestrator:
                         return cand
             return {}
 
-        # 1) Technical
-        technical = load_agent("technical", "TechnicalAgent") if agent_enabled("technical") else None
-        if technical:
+        # ================================================================
+        # Blocs agents isolés (chacun retourne un dict partiel de résultats)
+        # Exécutés en parallèle via asyncio.gather + to_thread
+        # ================================================================
+
+        def _run_technical() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "indicators": {}, "details": {}}
+            agent = load_agent("technical", "TechnicalAgent") if agent_enabled("technical") else None
+            if not agent:
+                return r
             for tf in self.tfs:
-                out = call_agent(technical, timeframe=tf)
+                out = call_agent(agent, timeframe=tf)
                 if isinstance(out, dict):
-                    per_tf_signals["technical"][tf] = _norm(out.get("signal"))
+                    r["per_tf"][tf] = _norm(out.get("signal"))
                     for k in ("ATR_H1", "ATR_M30", f"ATR_{tf}"):
                         if k in out and isinstance(out[k], (int, float)):
-                            indicators[k] = float(out[k])
-                    store_details(tech_details, tf, out)
-        else:
-            logger.info("[AGENTS] Technical désactivé via profile.")
+                            r["indicators"][k] = float(out[k])
+                    sl = self._safe_float(out.get("sl"))
+                    tp = self._safe_float(out.get("tp"))
+                    pr = self._safe_float(out.get("price"))
+                    if sl is not None or tp is not None or pr is not None:
+                        d: Dict[str, float] = {}
+                        if sl is not None: d["sl"] = sl
+                        if tp is not None: d["tp"] = tp
+                        if pr is not None: d["price"] = pr
+                        r["details"][tf] = d
+            return r
 
-        # 2) Scalping
-        scalping = load_agent("scalping", "ScalpingAgent") if agent_enabled("scalping") else None
-        if scalping:
+        def _run_scalping() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "details": {}}
+            agent = load_agent("scalping", "ScalpingAgent") if agent_enabled("scalping") else None
+            if not agent:
+                return r
             for tf in self.tfs:
-                out = call_agent(scalping, timeframe=tf)
+                out = call_agent(agent, timeframe=tf)
                 if isinstance(out, dict):
-                    per_tf_signals["scalping"][tf] = _norm(out.get("signal"))
-                    store_details(scalp_details, tf, out)
-        else:
-            logger.info("[AGENTS] Scalping désactivé via profile.")
+                    r["per_tf"][tf] = _norm(out.get("signal"))
+                    sl = self._safe_float(out.get("sl"))
+                    tp = self._safe_float(out.get("tp"))
+                    pr = self._safe_float(out.get("price"))
+                    if sl is not None or tp is not None or pr is not None:
+                        d: Dict[str, float] = {}
+                        if sl is not None: d["sl"] = sl
+                        if tp is not None: d["tp"] = tp
+                        if pr is not None: d["price"] = pr
+                        r["details"][tf] = d
+            return r
 
-        # 3) Swing
-        swing = load_agent("swing", "SwingAgent") if agent_enabled("swing") else None
-        swing_votes = {"LONG": 0, "SHORT": 0}
-        if swing:
+        def _run_swing() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "global": {}, "details": {}}
+            agent = load_agent("swing", "SwingAgent") if agent_enabled("swing") else None
+            if not agent:
+                return r
+            votes = {"LONG": 0, "SHORT": 0}
             for tf in self.tfs:
-                out = call_agent(swing, timeframe=tf)
-                if isinstance(out, dict):
-                    s = _norm(out.get("signal"))
-                    if s:
-                        per_tf_signals["swing"][tf] = s
-                        swing_votes[s] += 1
-                    store_details(swing_details, tf, out)
-            if swing_votes["LONG"] > swing_votes["SHORT"]:
-                global_signals["swing"] = "LONG"
-            elif swing_votes["SHORT"] > swing_votes["LONG"]:
-                global_signals["swing"] = "SHORT"
-        else:
-            logger.info("[AGENTS] Swing désactivé via profile.")
-
-        # 3.5) Structure (BOS/CHoCH/FBO/AMD)
-        structure = load_agent("structure", "StructureAgent") if agent_enabled("structure") else None
-        structure_votes = {"LONG": 0, "SHORT": 0}
-        smc_votes = {"LONG": 0, "SHORT": 0}
-        if structure:
-            for tf in self.tfs:
-                out = call_agent(structure, timeframe=tf)
+                out = call_agent(agent, timeframe=tf)
                 if isinstance(out, dict):
                     s = _norm(out.get("signal"))
                     if s:
-                        per_tf_signals["structure"][tf] = s
-                        structure_votes[s] += 1
-                    store_details(structure_details, tf, out)
+                        r["per_tf"][tf] = s
+                        votes[s] += 1
+                    sl = self._safe_float(out.get("sl"))
+                    tp = self._safe_float(out.get("tp"))
+                    pr = self._safe_float(out.get("price"))
+                    if sl is not None or tp is not None or pr is not None:
+                        d: Dict[str, float] = {}
+                        if sl is not None: d["sl"] = sl
+                        if tp is not None: d["tp"] = tp
+                        if pr is not None: d["price"] = pr
+                        r["details"][tf] = d
+            if votes["LONG"] > votes["SHORT"]:
+                r["global"]["swing"] = "LONG"
+            elif votes["SHORT"] > votes["LONG"]:
+                r["global"]["swing"] = "SHORT"
+            return r
+
+        def _run_structure() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "smc_tf": {}, "global": {}, "details": {}, "market": {}}
+            agent = load_agent("structure", "StructureAgent") if agent_enabled("structure") else None
+            if not agent:
+                return r
+            structure_v = {"LONG": 0, "SHORT": 0}
+            smc_v = {"LONG": 0, "SHORT": 0}
+            for tf in self.tfs:
+                out = call_agent(agent, timeframe=tf)
+                if isinstance(out, dict):
+                    s = _norm(out.get("signal"))
+                    if s:
+                        r["per_tf"][tf] = s
+                        structure_v[s] += 1
+                    sl = self._safe_float(out.get("sl"))
+                    tp = self._safe_float(out.get("tp"))
+                    pr = self._safe_float(out.get("price"))
+                    if sl is not None or tp is not None or pr is not None:
+                        d: Dict[str, float] = {}
+                        if sl is not None: d["sl"] = sl
+                        if tp is not None: d["tp"] = tp
+                        if pr is not None: d["price"] = pr
+                        r["details"][tf] = d
                     smc = _norm(out.get("smc_signal"))
                     if smc:
-                        per_tf_signals.setdefault("smc", {})[tf] = smc
-                        smc_votes[smc] += 1
+                        r["smc_tf"][tf] = smc
+                        smc_v[smc] += 1
                     if out.get("smc_events"):
-                        market.setdefault("smc_events", {})[tf] = out["smc_events"]
+                        r["market"].setdefault("smc_events", {})[tf] = out["smc_events"]
                     if out.get("smc_meta"):
-                        market.setdefault("smc_meta", {})[tf] = out["smc_meta"]
-            if structure_votes["LONG"] > structure_votes["SHORT"]:
-                global_signals["structure"] = "LONG"
-            elif structure_votes["SHORT"] > structure_votes["LONG"]:
-                global_signals["structure"] = "SHORT"
-            if smc_votes["LONG"] > smc_votes["SHORT"]:
-                global_signals["smc"] = "LONG"
-            elif smc_votes["SHORT"] > smc_votes["LONG"]:
-                global_signals["smc"] = "SHORT"
-        else:
-            logger.info("[AGENTS] Structure désactivé via profile.")
+                        r["market"].setdefault("smc_meta", {})[tf] = out["smc_meta"]
+            if structure_v["LONG"] > structure_v["SHORT"]:
+                r["global"]["structure"] = "LONG"
+            elif structure_v["SHORT"] > structure_v["LONG"]:
+                r["global"]["structure"] = "SHORT"
+            if smc_v["LONG"] > smc_v["SHORT"]:
+                r["global"]["smc"] = "LONG"
+            elif smc_v["SHORT"] > smc_v["LONG"]:
+                r["global"]["smc"] = "SHORT"
+            return r
 
-        # 3.6) Whale agent (copy trading)
-        whale = getattr(self, "whale_agent", None)
-        if whale:
+        def _run_whale() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "global": {}, "indicators": {}, "details": {}, "market": {}}
+            whale = getattr(self, "whale_agent", None)
+            if not whale:
+                return r
             out = whale.generate_signal()
             if isinstance(out, dict):
                 s = _norm(out.get("signal"))
                 if s and s != "WAIT":
-                    per_tf_signals.setdefault("whale", {})["GLOBAL"] = s
-                    global_signals["whale"] = s
-                    indicators["WHALE_TRUST_SCORE"] = float(out.get("trust_score", 0.0))
-                    indicators["WHALE_SIGNAL_SCORE"] = float(out.get("signal_score", 0.0))
-                    indicators["WHALE_LATENCY_MS"] = float(out.get("latency_ms", 0.0))
-                    whale_details["GLOBAL"] = {
+                    r["per_tf"]["GLOBAL"] = s
+                    r["global"]["whale"] = s
+                    r["indicators"]["WHALE_TRUST_SCORE"] = float(out.get("trust_score", 0.0))
+                    r["indicators"]["WHALE_SIGNAL_SCORE"] = float(out.get("signal_score", 0.0))
+                    r["indicators"]["WHALE_LATENCY_MS"] = float(out.get("latency_ms", 0.0))
+                    r["details"]["GLOBAL"] = {
                         "lots": float(out.get("lots", 0.0) or 0.0),
                         "sl": float(out.get("sl", 0.0) or 0.0),
                         "tp": float(out.get("tp", 0.0) or 0.0),
                     }
-                    market.setdefault("whale", {}).update(
-                        {
-                            "wallet": out.get("wallet"),
-                            "source": out.get("source"),
-                            "latency_ms": out.get("latency_ms"),
-                        }
-                    )
+                    r["market"]["whale"] = {
+                        "wallet": out.get("wallet"),
+                        "source": out.get("source"),
+                        "latency_ms": out.get("latency_ms"),
+                    }
                     alpha = float(self.whale_cfg.get("ewma_alpha", 0.2))
                     self._whale_trust_ewma = ewma(self._whale_trust_ewma, float(out.get("trust_score", 0.0)), alpha=alpha)
                     if self._whale_trust_ewma is not None:
                         record_whale_trust_ewma(self.symbol, float(self._whale_trust_ewma))
-                    indicators["WHALE_TRUST_EWMA"] = float(self._whale_trust_ewma or 0.0)
-        else:
-            logger.info("[AGENTS] Whale agent désactivé via config.")
+                    r["indicators"]["WHALE_TRUST_EWMA"] = float(self._whale_trust_ewma or 0.0)
+            return r
 
-        # 4) News
-        news = load_agent("news", "NewsAgent") if agent_enabled("news") else None
-        if news:
+        def _run_news() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"global": {}}
+            agent = load_agent("news", "NewsAgent") if agent_enabled("news") else None
+            if not agent:
+                return r
             s = ""
-            out_g = call_agent(news, timeframe=None)
+            out_g = call_agent(agent, timeframe=None)
             if isinstance(out_g, dict):
                 s = _norm(out_g.get("signal"))
             if s:
-                global_signals["news"] = s
-            if "news" not in global_signals:
+                r["global"]["news"] = s
+            if "news" not in r["global"]:
                 votes = {"LONG": 0, "SHORT": 0}
                 for tf in self.tfs:
-                    out = call_agent(news, timeframe=tf)
+                    out = call_agent(agent, timeframe=tf)
                     if isinstance(out, dict):
                         s = _norm(out.get("signal"))
                         if s:
                             votes[s] += 1
                 if votes["LONG"] > votes["SHORT"]:
-                    global_signals["news"] = "LONG"
+                    r["global"]["news"] = "LONG"
                 elif votes["SHORT"] > votes["LONG"]:
-                    global_signals["news"] = "SHORT"
-        else:
-            logger.info("[AGENTS] News désactivé via profile.")
+                    r["global"]["news"] = "SHORT"
+            return r
 
-        # 5) Sentiment
-        sentiment = load_agent("sentiment", "SentimentAgent") if agent_enabled("sentiment") else None
-        if sentiment:
-            out_g = call_agent(sentiment, timeframe=None)
+        def _run_sentiment() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"global": {}}
+            agent = load_agent("sentiment", "SentimentAgent") if agent_enabled("sentiment") else None
+            if not agent:
+                return r
+            out_g = call_agent(agent, timeframe=None)
             if isinstance(out_g, dict):
                 s = _norm(out_g.get("signal"))
                 if s:
-                    global_signals["sentiment"] = s
-            if "sentiment" not in global_signals:
+                    r["global"]["sentiment"] = s
+            if "sentiment" not in r["global"]:
                 votes = {"LONG": 0, "SHORT": 0}
                 for tf in self.tfs:
-                    out = call_agent(sentiment, timeframe=tf)
+                    out = call_agent(agent, timeframe=tf)
                     if isinstance(out, dict):
                         s = _norm(out.get("signal"))
                         if s:
                             votes[s] += 1
                 if votes["LONG"] > votes["SHORT"]:
-                    global_signals["sentiment"] = "LONG"
+                    r["global"]["sentiment"] = "LONG"
                 elif votes["SHORT"] > votes["LONG"]:
-                    global_signals["sentiment"] = "SHORT"
-        else:
-            logger.info("[AGENTS] Sentiment désactivé via profile.")
+                    r["global"]["sentiment"] = "SHORT"
+            return r
 
-        # 6) Fundamental
-        fundamental = load_agent("fundamental", "FundamentalAgent") if agent_enabled("fundamental") else None
-        if fundamental:
+        def _run_fundamental() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "global": {}}
+            agent = load_agent("fundamental", "FundamentalAgent") if agent_enabled("fundamental") else None
+            if not agent:
+                return r
             votes = {"LONG": 0, "SHORT": 0}
             for tf in self.tfs:
-                out = call_agent(fundamental, timeframe=tf)
+                out = call_agent(agent, timeframe=tf)
                 if isinstance(out, dict):
                     s = _norm(out.get("signal"))
                     if s:
-                        per_tf_signals["fundamental"][tf] = s
+                        r["per_tf"][tf] = s
                         votes[s] += 1
             if votes["LONG"] == 0 and votes["SHORT"] == 0:
-                out_g = call_agent(fundamental, timeframe=None)
+                out_g = call_agent(agent, timeframe=None)
                 if isinstance(out_g, dict):
                     s = _norm(out_g.get("signal"))
                     if s:
-                        global_signals["fundamental"] = s
-        else:
-            logger.info("[AGENTS] Fundamental désactivé via profile.")
+                        r["global"]["fundamental"] = s
+            return r
 
-        # 7) Macro (blocage news + biais)
-        macro = load_agent("macro", "MacroAgent") if agent_enabled("macro") else None
-        if macro:
-            out_g = call_agent(macro, timeframe=None)
+        def _run_macro() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"global": {}, "indicators": {}}
+            agent = load_agent("macro", "MacroAgent") if agent_enabled("macro") else None
+            if not agent:
+                return r
+            out_g = call_agent(agent, timeframe=None)
             if isinstance(out_g, dict):
-                # blocage (indicateur)
                 if bool(out_g.get("block")):
-                    indicators["MACRO_BLOCK"] = 1.0
+                    r["indicators"]["MACRO_BLOCK"] = 1.0
                 s = _norm(out_g.get("signal"))
                 if s:
-                    # injecte comme 'fundamental' global
-                    global_signals["fundamental"] = s
+                    r["global"]["fundamental"] = s
+            return r
+
+        # ================================================================
+        # FIX 2026-03-06: Exécution séquentielle des agents MT5 + parallèle API
+        # L'API MT5 COM est mono-thread → paralléliser cause des embouteillages
+        # ================================================================
+
+        # FIX 2026-03-09: Filtrer les agents désactivés AVANT de les lancer
+        # Évite de gaspiller 45s de timeout par agent désactivé
+        # Agents qui utilisent MT5 (copy_rates) — doivent tourner séquentiellement
+        mt5_agents = [
+            (n, fn) for n, fn in [
+                ("technical", _run_technical),
+                ("scalping", _run_scalping),
+                ("swing", _run_swing),
+                ("structure", _run_structure),
+            ] if agent_enabled(n)
+        ]
+
+        # Agents qui utilisent des API externes (HTTP) — peuvent tourner en parallèle
+        api_agents = [
+            (n, fn) for n, fn in [
+                ("whale", _run_whale),
+                ("news", _run_news),
+                ("sentiment", _run_sentiment),
+                ("fundamental", _run_fundamental),
+                ("macro", _run_macro),
+            ] if agent_enabled(n)
+        ]
+        logger.debug(f"[AGENTS] {symbol}: MT5={[n for n,_ in mt5_agents]} API={[n for n,_ in api_agents]}")
+
+        async def _run_with_timeout(name: str, fn):
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(fn),
+                    timeout=_AGENT_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[AGENT] {name} timeout ({_AGENT_TIMEOUT}s) pour {self.symbol}")
+                return None
+            except Exception as e:
+                logger.warning(f"[AGENT] {name} erreur pour {self.symbol}: {e}")
+                return None
+
+        # ================================================================
+        # FIX 2026-03-09: Skip agents MT5 si le marché est fermé
+        # Évite de monopoliser le sémaphore pendant 180s (4×45s timeout)
+        # Les cryptos tradent 24/7, les forex/indices seulement en semaine
+        # ================================================================
+        _skip_mt5 = False
+        if mt5_agents:
+            try:
+                _is_crypto = self.symbol.upper() in self._hf_crypto_symbols
+                if not _is_crypto:
+                    # FIX 2026-03-10 R6: Protéger l'appel COM avec le lock
+                    async with _GLOBAL_MT5_SEMAPHORE:
+                        _test_tick = await asyncio.to_thread(
+                            self.mt5.get_tick, self.broker_symbol or self.symbol
+                        )
+                    if _test_tick is None:
+                        _skip_mt5 = True
+                        logger.info(f"[MARKET_CHECK] {symbol}: pas de tick MT5 (marché fermé?) → skip agents MT5")
+            except Exception as _mc_err:
+                logger.debug(f"[MARKET_CHECK] {symbol}: erreur vérification: {_mc_err}")
+
+        if _skip_mt5:
+            mt5_results = [None] * len(mt5_agents)
         else:
-            logger.info("[AGENTS] Macro désactivé via profile.")
+            # ================================================================
+            # FIX 2026-03-08: Verrou global — un seul orchestrateur accède au COM à la fois
+            # ================================================================
+            async with _GLOBAL_MT5_SEMAPHORE:
+                # 1) Agents MT5 séquentiellement (évite saturation COM)
+                mt5_results = []
+                for name, fn in mt5_agents:
+                    result = await _run_with_timeout(name, fn)
+                    mt5_results.append(result)
+
+                # FIX 2026-03-10: Détection freeze MT5 — vérifier les VRAIS résultats
+                # Les agents retournent {"per_tf": {...}, "global": {...}, ...} — PAS de clé "score"
+                # Un agent qui a échoué retourne soit None, soit un dict avec per_tf/global vides
+                def _agent_result_empty(r) -> bool:
+                    if r is None:
+                        return True
+                    if not isinstance(r, dict):
+                        return True
+                    ptf = r.get("per_tf") or {}
+                    gs = r.get("global") or {}
+                    smc = r.get("smc_tf") or {}
+                    return not ptf and not gs and not smc
+
+                _mt5_all_failed = all(
+                    _agent_result_empty(r) for r in mt5_results
+                )
+                if _mt5_all_failed and len(mt5_results) >= 2:
+                    logger.warning(f"[MT5_HEALTH] {self.symbol} — Tous les agents MT5 ont retourné des résultats vides, tentative reconnexion COM")
+                    try:
+                        from utils.mt5_client import MT5Client as _MC
+                        _MC.shutdown_if_needed()
+                        await asyncio.sleep(3)
+                        _MC.initialize_if_needed(force=True)
+                        logger.info(f"[MT5_HEALTH] {self.symbol} — Reconnexion MT5 réussie")
+                    except Exception as _re:
+                        logger.error(f"[MT5_HEALTH] {self.symbol} — Reconnexion échouée: {_re}")
+
+        # 2) Agents API en parallèle HORS du sémaphore (pas de contrainte mono-thread)
+        async def _run_api_with_timeout(name: str, fn):
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(fn),
+                    timeout=_API_AGENT_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[AGENT] {name} API timeout ({_API_AGENT_TIMEOUT}s) pour {self.symbol}")
+                return None
+            except Exception as e:
+                logger.warning(f"[AGENT] {name} API erreur pour {self.symbol}: {e}")
+                return None
+
+        api_results = await asyncio.gather(
+            *[_run_api_with_timeout(name, fn) for name, fn in api_agents],
+            return_exceptions=True,
+        )
+
+        # Fusionner les résultats dans l'ordre original
+        agent_tasks = mt5_agents + api_agents
+        results = mt5_results + list(api_results)
+
+        # ================================================================
+        # Fusion des résultats dans les structures existantes
+        # ================================================================
+        agent_names = [name for name, _ in agent_tasks]
+        for i, name in enumerate(agent_names):
+            res = results[i]
+            if isinstance(res, BaseException):
+                logger.warning(f"[AGENT] {name} exception gather pour {self.symbol}: {res}")
+                continue
+            if res is None:
+                continue
+
+            # per_tf signals
+            ptf = res.get("per_tf") or {}
+            if ptf:
+                if name == "whale":
+                    per_tf_signals.setdefault("whale", {}).update(ptf)
+                elif name in per_tf_signals:
+                    per_tf_signals[name].update(ptf)
+
+            # smc per_tf (structure only)
+            smc_tf = res.get("smc_tf") or {}
+            if smc_tf:
+                per_tf_signals.setdefault("smc", {}).update(smc_tf)
+
+            # global signals
+            gs = res.get("global") or {}
+            global_signals.update(gs)
+
+            # indicators
+            ind = res.get("indicators") or {}
+            indicators.update(ind)
+
+            # details → typed buckets
+            details = res.get("details") or {}
+            if name == "technical":
+                tech_details.update(details)
+            elif name == "scalping":
+                scalp_details.update(details)
+            elif name == "swing":
+                swing_details.update(details)
+            elif name == "structure":
+                structure_details.update(details)
+            elif name == "whale":
+                whale_details.update(details)
+
+            # market context
+            mkt = res.get("market") or {}
+            for mk, mv in mkt.items():
+                if isinstance(mv, dict):
+                    market.setdefault(mk, {}).update(mv)
+                else:
+                    market[mk] = mv
 
         # Nettoyage: enlever les agents vides pour la confluence
         per_tf_signals = {k: v for k, v in per_tf_signals.items() if any(_norm(s) for s in v.values())}
@@ -4324,18 +5364,37 @@ class Orchestrator:
         direction = "LONG" if score_long > score_short else ("SHORT" if score_short > score_long else "")
         score_agr = max(score_long, score_short)
 
-        # FIX 2026-02-20: Pénalité de dispersion (étape 3.3)
-        # -0.5 si >35% des agents désaccord, -1.0 block si >45%
+        # FIX 2026-03-08: Diagnostic logging — scores individuels par agent
+        _per_agent_detail = []
+        for _aname, _atf_map in per_tf_signals.items():
+            _al = sum(w(tf) for tf, sig in _atf_map.items() if _norm(sig) == "LONG")
+            _as = sum(w(tf) for tf, sig in _atf_map.items() if _norm(sig) == "SHORT")
+            _aw = float(_agent_w.get(_aname, 1.0))
+            _net = round((_al - _as) * _aw, 2)
+            _per_agent_detail.append(f"{_aname}={_net:+.2f}")
+        _globals_detail = []
+        for _gk, _gv in (global_signals or {}).items():
+            _gn = _norm(_gv)
+            if _gn in ("LONG", "SHORT"):
+                _globals_detail.append(f"{_gk}={_gn}")
+        logger.info(
+            f"[SCORE_DIAG] {self.symbol}: dir={direction} score_L={score_long:.2f} score_S={score_short:.2f} "
+            f"conf={confluence:.1f} regime={_regime_label} "
+            f"agents=[{', '.join(_per_agent_detail)}] "
+            f"globals=[{', '.join(_globals_detail)}]"
+        )
+
+        # FIX 2026-02-20: Pénalité de dispersion (config: orchestrator.hard_filters.disagree_*)
         details: Dict[str, Any] = {}
         if _agent_dirs and direction in ("LONG", "SHORT"):
             _total_agents = len(_agent_dirs)
             _disagree = sum(1 for d in _agent_dirs if d not in (direction, "NEUTRAL"))
             _disagree_pct = _disagree / _total_agents if _total_agents > 0 else 0.0
-            if _disagree_pct > 0.45:
+            if _disagree_pct > self._hf_disagree_block_pct:
                 score_agr -= 1.0
                 details["dispersion_penalty"] = -1.0
                 details["disagree_pct"] = round(_disagree_pct, 2)
-            elif _disagree_pct > 0.35:
+            elif _disagree_pct > self._hf_disagree_penalty_pct:
                 score_agr -= 0.5
                 details["dispersion_penalty"] = -0.5
                 details["disagree_pct"] = round(_disagree_pct, 2)
@@ -4612,7 +5671,7 @@ class Orchestrator:
             logger.warning(f"[LOG] equity_log.csv erreur: {e}")
 
     # ---------------------------- Nightly Optuna optimization ----------------------------
-    async def _nightly_backtest_and_optimize(self):
+    def _nightly_backtest_and_optimize(self):
         """Lance une optimisation Optuna globale puis recharge la config."""
         if not self._is_primary_optimizer:
             return
@@ -4641,6 +5700,7 @@ class Orchestrator:
             reload_global_config(str(CONFIG_PATH))
             self.cfg = load_config(str(CONFIG_PATH)) or self.cfg
             self.optimization_cfg = dict(self.cfg.get("optimization") or {})
+            self._invalidate_agent_cache()
             logger.info("[NightlyOpt] Config rechargée après optimisation.")
         except Exception as exc:
             logger.warning(f"[NightlyOpt] Reload config failed: {exc}")
@@ -4658,9 +5718,12 @@ class Orchestrator:
             if _mt5 is None:
                 return
 
+            # FIX 2026-03-10: Acquérir le lock MT5 pour éviter le deadlock COM
+            # _sync_history_job tourne dans un thread APScheduler, pas dans l'event loop
             end = datetime.now(timezone.utc)
             start = end - timedelta(days=1)  # Dernier jour seulement pour les syncs fréquentes
-            deals = _mt5.history_deals_get(start, end) or []
+            with _GLOBAL_MT5_SEMAPHORE:
+                deals = _mt5.history_deals_get(start, end) or []
 
             if not deals:
                 return
@@ -4740,7 +5803,7 @@ class Orchestrator:
             logger.warning(f"[SYNC] history sync error: {e}")
 
     # ---------------------------- Auto-optimisation nocturne ----------------------------
-    async def _auto_optimize_job(self):
+    def _auto_optimize_job(self):
         """
         1) sync MT5 deals -> data/deals_history.csv
         2) run tuner -> proposals/profiles_patch.yaml
@@ -4750,7 +5813,9 @@ class Orchestrator:
         try:
             # sécurité: ne pas modifier si position ouverte sur ce symbole
             try:
-                poss = _mt5.positions_get(symbol=self.broker_symbol) or []
+                # FIX 2026-03-10 R6: Protéger l'appel MT5 avec le lock hybride
+                with _GLOBAL_MT5_SEMAPHORE:
+                    poss = _mt5.positions_get(symbol=self.broker_symbol) or []
                 if poss:
                     return
             except Exception:
@@ -4860,11 +5925,11 @@ async def run_for_symbols(symbols: List[str]):
             logger.info("[/healthz] ready on :9108")
         except Exception as e:
             logger.warning(f"[health] start failed: {e}")
-        # 1) Charger .env / .env.local (sans écraser les env existants)
-        load_dotenv_env("config/.env", extra_paths=("config/.env.local",), overwrite=False)
+        # 1) Charger .env à la racine (sans écraser les env existants)
+        load_dotenv_env(path=".env", extra_paths=(), overwrite=False)
         # 2) Valider la présence des secrets essentiels (on tolère l'absence en mode dry)
         try:
-            get_required("MT5_LOGIN","MT5_PASSWORD","MT5_SERVER","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID")
+            get_required("MT5_ACCOUNT","MT5_PASSWORD","MT5_SERVER","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID")
         except RuntimeError as e:
             # En démo/dry-run, on peut logguer un warning et continuer
             logger.warning(f"[CONFIG] Secrets incomplets: {e}")

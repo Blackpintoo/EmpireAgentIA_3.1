@@ -69,38 +69,38 @@ def _now() -> float:
 
 @dataclass
 class ScalpingParams:
-    timeframe: str = "M1"
+    timeframe: str = "M5"
     session_hours: List[int] = None
     max_spread: float = 100.0
-    max_trades_per_hour: int = 6  # (optionnel: non utilisé ici, l’orchestrateur garde déjà)
-    # FIX 2026-02-20: RSI period 9, EMA 13, RSI 72/28 (étape 4.2)
-    rsi_period: int = 9
+    max_trades_per_hour: int = 6
+    rsi_period: int = 14
     ema_period: int = 13
     atr_period: int = 14
-    rsi_overbought: float = 72
-    rsi_oversold: float = 28
-    tp_mult: float = 2.0
-    sl_mult: float = 1.5
+    rsi_overbought: float = 70
+    rsi_oversold: float = 30
+    tp_mult: float = 2.5
+    sl_mult: float = 1.8
     vol_window: int = 20
     vol_spike_ratio: float = 1.2
+    spread_atr_max_ratio: float = 0.25
     notify_telegram: bool = True
-    cooldown_seconds: int = 60
+    cooldown_seconds: int = 300
     per_bar_only: bool = True
     higher_timeframes: List[str] = None
-    regime_lookback: int = 120
+    regime_lookback: int = 60
 
     def __post_init__(self):
         if self.session_hours is None:
             self.session_hours = list(range(0, 24))
         if self.higher_timeframes is None:
-            self.higher_timeframes = ["M5", "M15"]
+            self.higher_timeframes = ["M15"]
 
 
 class ScalpingAgent:
     """
-    Agent de scalping robuste (M1 par défaut) :
-      - filtres : heures session, spread, volatilité, anti-spam par bougie, cooldown court
-      - signaux RSI/EMA + confirmation micro-trend
+    Agent de scalping robuste (M5 par défaut) :
+      - filtres : heures session, spread, spread/ATR ratio, volatilité, anti-spam par bougie, cooldown 5min
+      - signaux RSI/EMA + confirmation micro-trend + confirmation M15 bias
       - SL/TP en ATR (params.sl_mult/tp_mult)
       - fournit hints: price/sl/tp
     API flexible : l’orchestrateur peut appeler .generate_signal(timeframe=...), .run(), .get_signal(), etc.
@@ -112,25 +112,25 @@ class ScalpingAgent:
         self.profile = profile or get_symbol_profile(self.symbol)
 
         defaults = {
-            "timeframe": "M1",
+            "timeframe": "M5",
             "session_hours": list(range(7, 23)),
             "max_spread": 35.0,
             "max_trades_per_hour": 6,
-            # FIX 2026-02-20: RSI period 9, EMA 13, RSI 72/28 (étape 4.2)
-            "rsi_period": 9,
+            "rsi_period": 14,
             "ema_period": 13,
             "atr_period": 14,
-            "rsi_overbought": 72,
-            "rsi_oversold": 28,
-            "tp_mult": 2.0,
-            "sl_mult": 1.6,
+            "rsi_overbought": 70,
+            "rsi_oversold": 30,
+            "tp_mult": 2.5,
+            "sl_mult": 1.8,
             "vol_window": 20,
             "vol_spike_ratio": 1.2,
+            "spread_atr_max_ratio": 0.25,
             "notify_telegram": True,
-            "cooldown_seconds": 90,
+            "cooldown_seconds": 300,
             "per_bar_only": True,
-            "higher_timeframes": ["M5", "M15"],
-            "regime_lookback": 120,
+            "higher_timeframes": ["M15"],
+            "regime_lookback": 60,
         }
         p_raw = merge_agent_params(self.symbol, "scalping", defaults)
 
@@ -156,6 +156,7 @@ class ScalpingAgent:
             sl_mult=float(p_raw.get("sl_mult", defaults["sl_mult"])),
             vol_window=int(p_raw.get("vol_window", defaults["vol_window"])),
             vol_spike_ratio=float(p_raw.get("vol_spike_ratio", defaults["vol_spike_ratio"])),
+            spread_atr_max_ratio=float(p_raw.get("spread_atr_max_ratio", defaults["spread_atr_max_ratio"])),
             notify_telegram=bool(p_raw.get("notify_telegram", defaults["notify_telegram"])),
             cooldown_seconds=int(p_raw.get("cooldown_seconds", defaults["cooldown_seconds"])),
             per_bar_only=bool(p_raw.get("per_bar_only", defaults["per_bar_only"])),
@@ -171,7 +172,7 @@ class ScalpingAgent:
     def _key(self, timeframe: str) -> str:
         return f"{self.symbol}:{timeframe}"
 
-    def _get_rates(self, timeframe: str, count: int = 250) -> Optional[pd.DataFrame]:
+    def _get_rates(self, timeframe: str, count: int = 150) -> Optional[pd.DataFrame]:  # FIX 2026-03-06: 250→150 pour éviter timeouts
         """
         Essaie d'abord via MT5Client (utils.mt5_client), puis MetaTrader5 direct si dispo.
         Retourne DataFrame avec colonnes: time, open, high, low, close.
@@ -332,8 +333,10 @@ class ScalpingAgent:
             lookback = max(30, int(self.params.regime_lookback))
             window = df.tail(lookback)
             close = window["close"]
-            ema_fast = _ema(close, min(len(close), 34))
-            ema_slow = _ema(close, min(len(close), 89))
+            regime_fast = max(2, int(round(self.params.ema_period * 2.6)))
+            regime_slow = max(2, int(round(self.params.ema_period * 6.8)))
+            ema_fast = _ema(close, min(len(close), regime_fast))
+            ema_slow = _ema(close, min(len(close), regime_slow))
             if ema_fast.empty or ema_slow.empty:
                 return "range"
             if len(ema_fast) > 5:
@@ -352,6 +355,22 @@ class ScalpingAgent:
         except Exception:
             return "unknown"
         return "range"
+
+    def _m15_bias(self) -> Optional[str]:
+        """Confirmation M15 : retourne 'UP', 'DOWN' ou None."""
+        df = self._get_rates("M15", count=100)
+        if df is None or df.empty or len(df) < 20:
+            return None
+        close = df["close"]
+        ema_fast = _ema(close, 13)
+        ema_slow = _ema(close, 34)
+        if ema_fast.empty or ema_slow.empty:
+            return None
+        if float(ema_fast.iloc[-1]) > float(ema_slow.iloc[-1]):
+            return "UP"
+        if float(ema_fast.iloc[-1]) < float(ema_slow.iloc[-1]):
+            return "DOWN"
+        return None
 
     def _higher_timeframe_bias(self, signal: str, regime: str) -> float:
         target = {"LONG": 1, "SHORT": -1}.get(signal, 0)
@@ -398,7 +417,7 @@ class ScalpingAgent:
 
     # Méthode principale appelée par l’orchestrateur
     def generate_signal(self, timeframe: Optional[str] = None) -> Dict[str, Any]:
-        tf = (timeframe or self.params.timeframe or "M1").upper()
+        tf = (timeframe or self.params.timeframe or "M5").upper()
         regime = "unknown"
 
         if not self._session_ok():
@@ -441,6 +460,13 @@ class ScalpingAgent:
         atr_raw = atr.iloc[-1]
         atr_v = float(atr_raw) if not math.isnan(float(atr_raw)) else None
 
+        # Spread/ATR ratio filter
+        if spr is not None and atr_v is not None and atr_v > 0 and self.point > 0:
+            spread_price = spr * self.point
+            spread_atr_ratio = spread_price / atr_v
+            if spread_atr_ratio > float(self.params.spread_atr_max_ratio):
+                return self._wait_response(tf, f"spread_atr_ratio>{spread_atr_ratio:.3f}", regime="unknown")
+
         regime = self._detect_regime(df)
         bias = self._trend_bias(close, ema)
 
@@ -454,6 +480,13 @@ class ScalpingAgent:
                 signal = "LONG"
             elif bias == "DOWN" and price < ema_v and rsi_v > 40:
                 signal = "SHORT"
+
+        # M15 confirmation bias — bloque les signaux contre la tendance M15
+        m15_dir = self._m15_bias()
+        if signal == "LONG" and m15_dir == "DOWN":
+            return self._wait_response(tf, "m15_bearish_no_long", regime=regime)
+        if signal == "SHORT" and m15_dir == "UP":
+            return self._wait_response(tf, "m15_bullish_no_short", regime=regime)
 
         if signal == "WAIT":
             return self._wait_response(tf, "no_setup", regime=regime)

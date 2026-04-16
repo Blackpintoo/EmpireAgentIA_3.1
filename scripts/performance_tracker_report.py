@@ -1,12 +1,17 @@
-"""Generate insights from data/performance/performance_tracker.json."""
+"""Generate insights from performance tracker data (per-symbol + global fallback)."""
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Dict, Any, List
 
-TRACKER_PATH = Path("data") / "performance" / "performance_tracker.json"
+# Add project root to path so we can import utils
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+TRACKER_DIR = Path("data") / "performance"
+TRACKER_PATH = TRACKER_DIR / "performance_tracker.json"  # legacy global
 
 
 def parse_args() -> argparse.Namespace:
@@ -20,6 +25,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_tracker() -> Dict[str, Any]:
+    """Load all per-symbol tracker files, fallback to global if none exist."""
+    try:
+        from utils.performance_tracker import load_all_tracker_data
+        data = load_all_tracker_data()
+        if data:
+            return data
+    except ImportError:
+        pass
+
+    # Fallback: read global file directly
     if not TRACKER_PATH.exists():
         raise SystemExit(f"Tracker file not found: {TRACKER_PATH}")
     return json.loads(TRACKER_PATH.read_text(encoding="utf-8"))

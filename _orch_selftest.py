@@ -17,7 +17,7 @@ class TestOrch(Orchestrator):
         ok = await self.execute_trade(direction)
         print("→ Exécution:", ok)
 
-    def _gather_agent_signals(self, symbol):
+    async def _gather_agent_signals(self, symbol):
         # Fabrication d'un contexte "bullish" pour déclencher
         price = self.mt5.get_last_price(symbol, side="BUY") or 0.0
         atr   = self._compute_atr(symbol, "H1") or (abs(price) * 0.002)  # fallback 0.2%

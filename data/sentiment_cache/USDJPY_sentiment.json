@@ -1,9 +1,16 @@
 {
-  "timestamp": "2026-02-24T05:03:02.994578+00:00",
+  "timestamp": "2026-04-16T04:08:43.588779+00:00",
   "symbol": "USDJPY",
-  "retail": {
-    "long_percentage": 51.0,
-    "short_percentage": 49.0,
-    "source": "simulated"
+  "cot": {
+    "report_date": "2026-04-07T00:00:00+00:00",
+    "commercial_long": 192103,
+    "commercial_short": 101707,
+    "commercial_net": 90396,
+    "noncommercial_long": 91560,
+    "noncommercial_short": 185302,
+    "noncommercial_net": -93742,
+    "open_interest": 349373,
+    "noncommercial_net_change": -20870,
+    "commercial_net_change": 19689
   }
 }

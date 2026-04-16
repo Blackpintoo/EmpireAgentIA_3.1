@@ -72,8 +72,8 @@ def _parse_env_lines(lines: Iterable[str], base: Dict[str, str]) -> Dict[str, st
         acc[key] = rhs
     return acc
 
-def load_dotenv_env(path: str | None = "config/.env",
-                    extra_paths: Iterable[str] | None = ("config/.env.local",),
+def load_dotenv_env(path: str | None = ".env",
+                    extra_paths: Iterable[str] | None = (),
                     overwrite: bool = False) -> Dict[str, Any]:
     """
     Charge .env/.env.local sans dépendre de python-dotenv.
@@ -108,6 +108,35 @@ def load_dotenv_env(path: str | None = "config/.env",
     # Dict "typé" à renvoyer (utile pour du code Python)
     typed: Dict[str, Any] = {k: _coerce(v) for k, v in all_env_raw.items()}
     return typed
+
+def expand_env_vars(data: Any) -> Any:
+    """
+    Parcourt récursivement un dict/list issu de YAML et remplace
+    les chaînes de la forme ${VAR_NAME} par os.environ[VAR_NAME].
+
+    Lève ValueError si une variable référencée n'existe pas dans l'environnement.
+    """
+    if isinstance(data, dict):
+        return {k: expand_env_vars(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [expand_env_vars(item) for item in data]
+    if isinstance(data, str):
+        def _replace(m):
+            key = m.group(1)
+            val = os.environ.get(key)
+            if val is None:
+                raise ValueError(
+                    f"Variable d'environnement manquante : ${{{key}}}. "
+                    f"Vérifiez votre fichier .env ou vos variables d'environnement."
+                )
+            return val
+        expanded = _EXPAND_RE.sub(_replace, data)
+        # Tenter la coercion si la chaîne entière était un placeholder
+        if expanded != data and _EXPAND_RE.fullmatch(data.strip().replace(expanded, "")):
+            return _coerce(expanded)
+        return expanded
+    return data
+
 
 def get_required(*keys: str) -> Dict[str, str]:
     """Récupère une liste de clés obligatoires depuis os.environ, lève une erreur lisible si manquantes."""

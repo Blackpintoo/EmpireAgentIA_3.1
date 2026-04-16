@@ -1,0 +1,352 @@
+================================================================================
+EMPIRE AGENT IA v3 - CONFIGURATION AUDIT INDEX
+Complete Directory of Debugging & Configuration Analysis
+================================================================================
+Created: 2026-03-05
+Purpose: Debug zero-trade execution issue with complete configuration review
+
+================================================================================
+QUICK START - READ THESE FIRST
+================================================================================
+
+1. START HERE: EXECUTIVE_SUMMARY.txt (14 KB)
+   ├─ High-level overview of the problem
+   ├─ Root cause analysis (why zero trades)
+   ├─ Key findings & recommendations
+   └─ 10-minute read
+
+2. VISUAL GUIDE: FILTER_CHAIN_DIAGRAM.txt (27 KB)
+   ├─ Flow chart showing sequential filters
+   ├─ 34+ blocking points visualized
+   ├─ Probability analysis
+   └─ 15-minute read
+
+3. QUICK LOOKUP: THRESHOLDS_QUICK_REFERENCE.txt (13 KB)
+   ├─ All thresholds in tabular format
+   ├─ Easy copy-paste for debugging
+   ├─ Ranked by restrictiveness
+   └─ 5-minute lookup
+
+================================================================================
+DETAILED REFERENCES
+================================================================================
+
+4. DEEP DIVE: CONFIG_DEBUG_REPORT.md (18 KB)
+   ├─ Complete configuration audit
+   ├─ Section 1: Orchestrator Quality Thresholds
+   │   └─ min_score, min_confluence, min_rr, voting weights
+   ├─ Section 2: Session/Hour Filters (CRITICAL!)
+   │   └─ Global blocks, low-liquidity, symbol-specific
+   ├─ Section 3: Volatility & Market Filters
+   │   └─ ATR spike, news blackout, MTF confluence
+   ├─ Section 4: Symbol-Specific Overrides
+   │   └─ Individual settings for 9 active symbols
+   ├─ Section 5: Risk & Position Limits
+   │   └─ Daily loss, equity tiers, position caps
+   ├─ Section 6: Agent Quality Filters
+   │   └─ Weighted voting, advanced analyzers
+   ├─ Section 7: Cooldown & Anti-Spam
+   │   └─ Lockout periods, penalty cooldowns
+   ├─ Section 8: Data Directory Files
+   │   └─ State files, trade history
+   └─ 45-minute comprehensive read
+
+5. FILE REFERENCE: CONFIG_FILES_ANALYZED.txt (10 KB)
+   ├─ Complete list of all 7 config files read
+   ├─ Line number references for each section
+   ├─ Data directory inventory
+   ├─ Key files for debugging
+   ├─ Configuration history notes
+   └─ Quick index
+
+================================================================================
+CRITICAL SECTIONS BY PROBLEM
+================================================================================
+
+IF ZERO TRADES ARE BEING GENERATED:
+  → Check: EXECUTIVE_SUMMARY.txt (Section: "Most Likely Root Cause")
+  → Check: CONFIG_DEBUG_REPORT.md (Section: "Orchestrator Quality Thresholds")
+  → Check: THRESHOLDS_QUICK_REFERENCE.txt (Section 1)
+  → Action: Relax min_score from 8.0 to 6.5 and test
+
+IF SPECIFIC HOURS ARE BLOCKED:
+  → Check: CONFIG_DEBUG_REPORT.md (Section: "Session/Hour Filters")
+  → Check: THRESHOLDS_QUICK_REFERENCE.txt (Section 2)
+  → Check: FILTER_CHAIN_DIAGRAM.txt (Tier 3)
+  → List: /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/config.yaml:315
+  → List: /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/config.yaml:126
+
+IF SPECIFIC SYMBOL NOT TRADING:
+  → Check: CONFIG_DEBUG_REPORT.md (Section: "Symbol-Specific Overrides")
+  → Check: THRESHOLDS_QUICK_REFERENCE.txt (Section 4)
+  → File: /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/overrides.yaml
+  → Look for "enabled: false" or restricted hours for that symbol
+
+IF TOO MANY TRADES GET REJECTED:
+  → Check: FILTER_CHAIN_DIAGRAM.txt (All Tiers)
+  → Check: CONFIG_DEBUG_REPORT.md (Sections 4-7)
+  → Problem: Likely too many concurrent filters
+  → Solution: Start by relaxing Tier 2 (Quality Gates)
+
+IF TRADING STOPS AFTER LOSSES:
+  → Check: THRESHOLDS_QUICK_REFERENCE.txt (Section 6: Cooldown)
+  → Check: FILTER_CHAIN_DIAGRAM.txt (Tier 6)
+  → Problem: Cooldown periods preventing recovery
+  → Solution: Reduce after_loss_min and after_streak_min
+
+IF CIRCUIT BREAKER TRIGGERED:
+  → Check: FILTER_CHAIN_DIAGRAM.txt (Tier 7)
+  → File: /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/data/circuit_breaker_state.json
+  → File: /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/data/daily_loss_state.json
+  → Solution: Reset state and restart orchestrator
+
+================================================================================
+CONFIGURATION FILES ANALYZED
+================================================================================
+
+ALL FILES READ (7 main configurations):
+
+1. /config/config.yaml (578 lines)
+   ├─ Main orchestrator configuration
+   ├─ Quality gates, volatility filters, advanced analysis
+   ├─ Risk tiers, agent parameters
+   └─ Key: Lines 303-312 (Hard Filters), 315 (Blocked Hours)
+
+2. /config/overrides.yaml (764 lines)
+   ├─ CRITICAL: Symbol-specific overrides
+   ├─ BTCUSD, LTCUSD, BNBUSD, XAUUSD, ETHUSD, EURUSD, SOLUSD, SP500, etc.
+   ├─ Trading windows, cooldowns, volume limits
+   └─ Key: Lines 30-763 (Per-symbol settings)
+
+3. /config/asset_config.yaml (289 lines)
+   ├─ Asset-type configuration (CRYPTOS, FOREX, INDICES, COMMODITIES)
+   ├─ Session-specific parameters
+   ├─ Pair/commodity-specific settings
+   └─ Key: Lines 7-264 (Asset settings)
+
+4. /config/profiles.yaml (partial read)
+   ├─ Individual symbol profiles
+   ├─ Legacy configurations
+   └─ Less critical than overrides.yaml
+
+5. /config/auto_optimization.yaml (175 lines)
+   ├─ Automatic parameter optimization (Optuna)
+   ├─ Schedule: Weekly on Sunday 02:00
+   └─ Key: Lines 8-145 (Settings)
+
+6. /config/econ_calendar.yaml (DEPRECATED)
+   └─ Old static calendar (now uses EventGuard)
+
+7. /config/presets/overrides.live.yaml (227 lines)
+   ├─ Live trading preset
+   ├─ GLOBAL settings, BTCUSD, ETHUSD, LNKUSD, BNBUSD, EURUSD, XAUUSD
+   └─ Key: Lines 4-226
+
+DATA FILES SAMPLED:
+  ├─ data/latest_signals.json - Current signal state
+  ├─ data/circuit_breaker_state.json - System status
+  ├─ data/daily_loss_state.json - Loss tracking
+  ├─ data/proposals_log.csv (14.5 MB) - All proposals + rejections
+  ├─ data/agents_snap.jsonl (494 MB) - Agent snapshots
+  └─ data/deals_history.csv, trades_log.csv, equity_log.csv - Trade history
+
+================================================================================
+KEY NUMBERS TO REMEMBER
+================================================================================
+
+QUALITY GATES (These are the MOST RESTRICTIVE):
+  • min_score_for_proposal: 8.0/10 (on a 0-10 scale)
+  • min_confluence: 5 agents (out of 8 agents)
+  • min_rr_required: 1.8
+  • weighted_threshold: 3.0
+
+SESSION HOURS (WHEN TRADING IS ALLOWED):
+  • Global blocked: [0,1,2,3,4,5,18,19,20,21,22,23] = 12 hours blocked
+  • Also avoid: [0,1,5,6,7,9,10,11,13,14,17,19,20,21] = 14 hours for liquidity
+  • Effective window: ~4-8 hours per day
+
+SYMBOL STATUS:
+  • 9 symbols enabled (BTCUSD, ETHUSD, BNBUSD, XAUUSD, EURUSD, SP500, NAS100, USDJPY, SOLUSD)
+  • 2 symbols disabled (LTCUSD, AUDUSD)
+  • BNBUSD: SHORT only (LONG disabled)
+  • GBPUSD, UK100: max 1 trade per day
+  • SOLUSD: only 2 hours allowed
+
+POSITION LIMITS:
+  • Max 2 concurrent positions
+  • Phase 1 (< $5K): 0.5% risk per trade, max 1 position
+  • Daily loss limit: $400 USD (kill switch)
+
+COOLDOWN PENALTIES:
+  • After any trade: 10-15 minutes
+  • After loss: 30-60 minutes
+  • After 3 consecutive losses: 120 minutes (2-HOUR LOCKOUT!)
+
+================================================================================
+HOW TO USE THESE DOCUMENTS
+================================================================================
+
+SCENARIO 1: Quick Debug (5 min)
+  → Read: EXECUTIVE_SUMMARY.txt
+  → Action: Check daily_loss_state.json and circuit_breaker_state.json
+  → Likely fix: Relax min_score or min_confluence
+
+SCENARIO 2: Understand the System (30 min)
+  → Read: EXECUTIVE_SUMMARY.txt
+  → Read: FILTER_CHAIN_DIAGRAM.txt
+  → Read: THRESHOLDS_QUICK_REFERENCE.txt
+  → Action: Identify which tier(s) are blocking trades
+
+SCENARIO 3: Comprehensive Analysis (2 hours)
+  → Read: All 5 documents in order
+  → Reference: CONFIG_DEBUG_REPORT.md for detailed settings
+  → Review: Original config files (line numbers provided)
+  → Action: Create patch to relax most restrictive filters
+
+SCENARIO 4: Specific Problem Solving
+  → Use INDEX above: "IF [PROBLEM]"
+  → Cross-reference: Document name and section
+  → Check: Original config file with line numbers
+  → Test: Modify one setting at a time
+
+================================================================================
+TESTING CHANGES
+================================================================================
+
+To test configuration changes:
+
+1. Pick ONE parameter to modify
+   Example: min_score_for_proposal: 8.0 → 6.5
+
+2. Edit the file (create backup first):
+   $ cp config/config.yaml config/config.yaml.backup
+   $ # Edit and change value
+
+3. Restart orchestrator:
+   $ # (Depends on how orchestrator is started)
+
+4. Monitor for 1-2 hours:
+   $ tail -f data/proposals_log.csv
+   $ # Watch for more proposals being accepted
+
+5. If improvement:
+   └─ Keep change, test more changes
+
+6. If regression:
+   └─ Revert change, try different parameter
+
+================================================================================
+MOST EFFECTIVE CHANGES (RANKED BY IMPACT)
+================================================================================
+
+Rank 1: Reduce min_score_for_proposal
+  Current: 8.0
+  Suggest: 6.5 or 6.0
+  Impact: +50-100% trades
+  Risk: May increase false signals
+
+Rank 2: Reduce min_confluence
+  Current: 5
+  Suggest: 3 or 4
+  Impact: +40-80% trades
+  Risk: Relies on fewer agents
+
+Rank 3: Expand session hours
+  Current: [0,1,2,3,4,5,18,19,20,21,22,23] blocked
+  Suggest: Remove some blocks
+  Impact: +20-40% trades
+  Risk: May trade in low liquidity
+
+Rank 4: Reduce cooldown penalties
+  Current: after_loss_min: 60, after_streak_min: 120
+  Suggest: after_loss_min: 30, after_streak_min: 60
+  Impact: +30-60% trades
+  Risk: May overtrade during losing streaks
+
+Rank 5: Re-enable disabled symbols
+  Current: LTCUSD, AUDUSD disabled
+  Suggest: Enable with cautious settings
+  Impact: +15-25% more symbols
+  Risk: Symbols were disabled for poor performance
+
+================================================================================
+DOCUMENTATION SUMMARY
+================================================================================
+
+Document             Size    Purpose                        Read Time
+─────────────────────────────────────────────────────────────────────────
+EXECUTIVE_SUMMARY    14 KB   High-level overview            10 min
+FILTER_CHAIN_DIAGRAM 27 KB   Visual flow & analysis         15 min
+THRESHOLDS_QR        13 KB   Quick reference table          5 min
+CONFIG_DEBUG_REPORT  18 KB   Detailed audit                 45 min
+CONFIG_FILES_ANALYZED 10 KB  File index & references        10 min
+────────────────────────────────────────────────────────────────────────
+TOTAL                82 KB   Complete analysis              ~85 min
+
+================================================================================
+ORIGINAL CONFIG FILES (For Reference)
+================================================================================
+
+Location: /sessions/dreamy-modest-tesla/mnt/EmpireAgentIA_3/config/
+
+Main Files:
+  • config.yaml              (578 lines, 26.6 KB)  - Primary config
+  • overrides.yaml           (764 lines, 29.5 KB)  - Symbol overrides
+  • asset_config.yaml        (289 lines, 9.7 KB)   - Asset settings
+  • profiles.yaml            (25.8 KB)             - Profile configs
+  • auto_optimization.yaml   (175 lines, 5.2 KB)  - Auto optimization
+  • econ_calendar.yaml       (23 lines)            - Calendar (deprecated)
+  • macro.yaml               (2 lines)             - Macro settings
+  • presets/overrides.live.yaml (227 lines)       - Live preset
+
+================================================================================
+RECOMMENDATIONS FOR NEXT STEPS
+================================================================================
+
+IMMEDIATE (Today):
+  1. Read EXECUTIVE_SUMMARY.txt
+  2. Check daily_loss_state.json and circuit_breaker_state.json
+  3. Verify latest_signals.json shows signals are being generated
+  4. Check proposals_log.csv for rejection patterns
+
+SHORT-TERM (This week):
+  1. Implement one threshold reduction (min_score 8.0→6.5)
+  2. Test for 24 hours
+  3. Monitor trade execution and profitability
+  4. Adjust further if needed
+
+MEDIUM-TERM (This month):
+  1. Expand session hours
+  2. Re-enable LTCUSD with strict settings
+  3. Run comprehensive backtest
+  4. Optimize cooldown periods
+
+LONG-TERM (Ongoing):
+  1. Balance between profit taking and capital preservation
+  2. Document all changes and their impact
+  3. Establish feedback loop: change → test → results → iterate
+  4. Consider separate profiles for different market conditions
+
+================================================================================
+CONTACT & SUPPORT
+================================================================================
+
+These documents were generated by comprehensive configuration audit of the
+EmpireAgentIA_3 trading system.
+
+For questions about specific settings:
+  → Check the document index above
+  → Reference: CONFIG_DEBUG_REPORT.md
+  → Original: /config/config.yaml, /config/overrides.yaml
+
+For understanding the filter logic:
+  → FILTER_CHAIN_DIAGRAM.txt shows complete flow
+  → All 34+ filters are documented
+
+For quick lookups:
+  → THRESHOLDS_QUICK_REFERENCE.txt (tabular format)
+  → Has symbol-specific limits and rankings
+
+================================================================================
+END OF INDEX
+================================================================================

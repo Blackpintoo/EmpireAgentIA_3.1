@@ -1,18 +1,18 @@
 {
-  "timestamp": "2026-02-24T05:14:19.436021+00:00",
-  "symbol": "BTCUSD",
+  "timestamp": "2026-04-16T04:31:00.481142+00:00",
+  "symbol": "SOLUSD",
   "signals": {
     "swing": {
-      "signal": "SHORT",
-      "intensity": null,
-      "reason": ""
-    },
-    "structure": {
-      "signal": "SHORT",
+      "signal": "LONG",
       "intensity": null,
       "reason": ""
     },
     "smc": {
+      "signal": "LONG",
+      "intensity": null,
+      "reason": ""
+    },
+    "news": {
       "signal": "LONG",
       "intensity": null,
       "reason": ""

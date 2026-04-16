@@ -1,0 +1,432 @@
+================================================================================
+EMPIRE AGENT IA v3 - FILTER CHAIN DIAGRAM
+================================================================================
+Visual representation of how trades flow through filter layers
+
+This shows the sequential filtering that EACH trade proposal must pass through
+to be executed. If ANY filter blocks the trade, it is rejected.
+
+================================================================================
+TIER 1: SIGNAL GENERATION
+================================================================================
+
+         [AGENTS GENERATE SIGNALS]
+                    ↓
+         ┌─────────────────────────┐
+         │ • TechnicalAgent        │
+         │ • ScalpingAgent         │
+         │ • SwingAgent            │
+         │ • StructureAgent        │
+         │ • SmartMoneyAgent       │
+         │ • NewsAgent             │
+         │ • SentimentAgent        │
+         │ • FundamentalAgent      │
+         └─────────────────────────┘
+                    ↓
+            [POOL OF SIGNALS]
+                    ↓
+
+================================================================================
+TIER 2: PROPOSAL GENERATION & QUALITY GATES
+================================================================================
+
+         [ORCHESTRATOR AGGREGATES SIGNALS]
+                    ↓
+         ┌─────────────────────────────────────────┐
+         │ CALCULATE:                              │
+         │ • Composite Score (0-10 scale)          │
+         │ • Confluence (# agents agreeing)        │
+         │ • Risk:Reward ratio                     │
+         │ • Entry/SL/TP levels                    │
+         └─────────────────────────────────────────┘
+                    ↓
+         [CHECK HARD FILTERS]
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 1: MINIMUM SCORE                        ║
+    ║ ├─ min_score_for_proposal: 8.0                ║
+    ║ └─ ❌ REJECT if Score < 8.0                   ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 2: MINIMUM CONFLUENCE                   ║
+    ║ ├─ min_confluence: 5 agents                    ║
+    ║ └─ ❌ REJECT if < 5 agents aligned            ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 3: AGENT DISAGREEMENT PENALTY           ║
+    ║ ├─ >45% disagree: score -1.0 (BLOCK)          ║
+    ║ ├─ >35% disagree: score -0.5 (PENALTY)        ║
+    ║ └─ ❌ REJECT if heavily disagreed             ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 4: WEIGHTED VOTING THRESHOLD            ║
+    ║ ├─ threshold: 3.0                             ║
+    ║ ├─ weights: Technical(1.2), Structure(1.1),   ║
+    ║ │   Swing(1.0), SmartMoney(1.0), Scalp(0.8)  ║
+    ║ └─ ❌ REJECT if weighted_score < 3.0          ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 5: MINIMUM R:R                          ║
+    ║ ├─ min_rr_required: 1.8                        ║
+    ║ └─ ❌ REJECT if RR < 1.8                       ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 6: VOTES REQUIRED                       ║
+    ║ ├─ votes_required: 2                           ║
+    ║ └─ ❌ REJECT if < 2 votes                      ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+         ✓ PROPOSAL CREATED
+         (Ready for market filters)
+                    ↓
+
+================================================================================
+TIER 3: MARKET & TIME FILTERS
+================================================================================
+
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 7: SESSION HOUR CHECK (UTC)             ║
+    ║ ├─ blocked_hours_utc:                          ║
+    ║ │  [0,1,2,3,4,5,18,19,20,21,22,23]            ║
+    ║ └─ ❌ REJECT if current_hour in blocked       ║
+    ║    → 12 hours per day blocked!                 ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 8: LOW LIQUIDITY HOURS (UTF)            ║
+    ║ ├─ avoid_low_liquidity_hours:                  ║
+    ║ │  [0,1,5,6,7,9,10,11,13,14,17,19,20,21]      ║
+    ║ └─ ❌ REJECT if in low-liquidity period        ║
+    ║    → Further reduces available hours           ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 9: SYMBOL-SPECIFIC HOURS                ║
+    ║ ├─ Some symbols have WHITELIST hours:          ║
+    ║ │  LTCUSD: [8,18,22] (only 3 hours!)          ║
+    ║ │  SOLUSD: [13,23] (only 2 hours!)            ║
+    ║ ├─ Some symbols have BLACKLIST hours:          ║
+    ║ │  BTCUSD: blocked [16,17,18,20,22]           ║
+    ║ │  BNBUSD: blocked [0-5,18-23] (most hours!)  ║
+    ║ └─ ❌ REJECT if outside allowed hours         ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 10: NEWS BLACKOUT WINDOWS               ║
+    ║ ├─ HIGH impact: ±30 minutes blocked            ║
+    ║ ├─ MEDIUM impact: ±15 minutes blocked          ║
+    ║ └─ ❌ REJECT if within news event window      ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+
+================================================================================
+TIER 4: VOLATILITY & MARKET CONDITION FILTERS
+================================================================================
+
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 11: ATR SPIKE DETECTION                 ║
+    ║ ├─ atr_spike_threshold: 2.0                    ║
+    ║ └─ ❌ REJECT if ATR > 2x the 20-bar MA        ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 12: SPREAD CHECK                        ║
+    ║ ├─ max_spread_atr_ratio: 0.3                   ║
+    ║ └─ ❌ REJECT if spread > 30% of ATR           ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 13: GAP DETECTION                       ║
+    ║ ├─ gap_threshold_atr: 0.5                      ║
+    ║ └─ ❌ REJECT if gap > 50% of ATR              ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 14: MARKET REGIME DETECTION             ║
+    ║ ├─ ADX trend threshold: 25.0                   ║
+    ║ ├─ min_confidence_to_block: 0.6                ║
+    ║ └─ ❌ REJECT if regime contradicts signal     ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 15: MULTI-TIMEFRAME CONFLUENCE          ║
+    ║ ├─ min_alignment_ratio: 0.7 (70%!)             ║
+    ║ ├─ require_higher_tf_confirm: true             ║
+    ║ ├─ block_counter_trend: true (vs D1/H4)       ║
+    ║ └─ ❌ REJECT if < 70% of TFs aligned          ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 16: SENTIMENT ANALYSIS                  ║
+    ║ ├─ extreme_long_threshold: 75%                 ║
+    ║ ├─ extreme_short_threshold: 25%                ║
+    ║ ├─ min_score_to_block: 0.7                     ║
+    ║ └─ ❌ REJECT if sentiment contradicts         ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 17: INTER-MARKET CORRELATION            ║
+    ║ ├─ correlation_period: 20 bars                 ║
+    ║ ├─ strong_correlation_threshold: 0.7           ║
+    ║ └─ ❌ REJECT if correlated assets moving      ║
+    ║    against signal                              ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+
+================================================================================
+TIER 5: POSITION & VOLUME LIMITS
+================================================================================
+
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 18: OPEN POSITION CHECKS                ║
+    ║ ├─ max_open_total: 2                           ║
+    ║ ├─ max_open_per_side: 1                        ║
+    ║ ├─ allow_stacking: false                       ║
+    ║ └─ ❌ REJECT if max open positions reached   ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 19: SYMBOL VOLUME CAP                   ║
+    ║ ├─ BTCUSD: 0.10 lots max                       ║
+    ║ ├─ ETHUSD: 0.06 lots max                       ║
+    ║ ├─ XAUUSD: 0.15 lots max                       ║
+    ║ ├─ (varies by symbol)                          ║
+    ║ └─ ❌ REJECT if trade size exceeds cap        ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 20: CRYPTO BUCKET LIMIT                 ║
+    ║ ├─ cap: 6% of total capital                    ║
+    ║ └─ ❌ REJECT if crypto exposure at max        ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 21: DAILY TRADES PER SYMBOL             ║
+    ║ ├─ BTCUSD: max 6/day                           ║
+    ║ ├─ GBPUSD: max 1/day (!!)                      ║
+    ║ ├─ (varies by symbol)                          ║
+    ║ └─ ❌ REJECT if daily limit reached           ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 22: HOURLY TRADE LIMIT                  ║
+    ║ ├─ max_trades_per_hour: 3                      ║
+    ║ └─ ❌ REJECT if 3 trades already this hour    ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+
+================================================================================
+TIER 6: ANTI-SPAM & COOLDOWN FILTERS
+================================================================================
+
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 23: ANTI-SPAM - ONE SIGNAL PER CANDLE   ║
+    ║ ├─ per_bar_only: true                          ║
+    ║ └─ ❌ REJECT if signal in current candle      ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 24: COOLDOWN AFTER TRADE                ║
+    ║ ├─ after_trade_min: 15 min                     ║
+    ║ └─ ❌ REJECT if < 15 min since last trade     ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 25: COOLDOWN AFTER LOSS                 ║
+    ║ ├─ after_loss_min: 30-60 min (symbol varies)  ║
+    ║ └─ ❌ REJECT if < 30-60 min since loss       ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 26: COOLDOWN AFTER WIN                  ║
+    ║ ├─ after_win_min: 4-10 min (varies)            ║
+    ║ └─ ❌ REJECT if < cooldown since win          ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 27: COOLDOWN AFTER REJECT               ║
+    ║ ├─ after_reject_min: 2-5 min                   ║
+    ║ └─ ❌ REJECT if < 5 min since rejection       ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 28: STREAK COOLDOWN                     ║
+    ║ ├─ after_streak_n: 3 consecutive losses        ║
+    ║ ├─ after_streak_min: 120 min (2 HOURS!)        ║
+    ║ └─ ❌ REJECT if 3 losses in row (2-hr lock)   ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 29: PRICE MOVEMENT CHECK                ║
+    ║ ├─ price_delta_bps: 5 bps minimum              ║
+    ║ └─ ❌ REJECT if price hasn't moved 5 bps      ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 30: CONFIDENCE CHANGE                   ║
+    ║ ├─ confidence_delta: 0.05                      ║
+    ║ └─ ❌ REJECT if confidence unchanged          ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 31: AVOID IF OPEN POSITION              ║
+    ║ ├─ avoid_if_open_position: true                ║
+    ║ └─ ❌ REJECT if position already open         ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+
+================================================================================
+TIER 7: RISK & CIRCUIT BREAKER
+================================================================================
+
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 32: DAILY LOSS LIMIT (KILL SWITCH)      ║
+    ║ ├─ daily_loss_usd: $400                        ║
+    ║ └─ ❌ BLOCK ALL TRADES if daily loss > $400  ║
+    ║    → Stops entire system!                      ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 33: CIRCUIT BREAKER                     ║
+    ║ ├─ window_seconds: 60 sec                      ║
+    ║ ├─ max_errors: 5 errors                        ║
+    ║ └─ ❌ BLOCK ALL TRADES if > 5 errors/min     ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+    ╔════════════════════════════════════════════════╗
+    ║ FILTER 34: RISK PER TRADE                      ║
+    ║ ├─ Phase 1 (< $5K): 0.5% per trade             ║
+    ║ ├─ Phase 2 ($5-15K): 0.75% per trade           ║
+    ║ ├─ Phase 3 (> $15K): 1% per trade              ║
+    ║ └─ ❌ REJECT if exceeds equity tier limit     ║
+    ╚════════════════════════════════════════════════╝
+                    ↓
+
+================================================================================
+FINAL EXECUTION
+================================================================================
+
+              ✓ ALL FILTERS PASSED
+                    ↓
+         [SEND ORDER TO MT5]
+                    ↓
+         [EXECUTION PHASE]
+         • Set entry level
+         • Set stop loss
+         • Set take profit
+                    ↓
+         [POSITION MANAGEMENT]
+         • Break-even at RR=1.2
+         • Partials at RR=1.5 (30%) & RR=2.5 (30%)
+         • Trailing stop
+         • Max duration timeout (4-8 hours)
+                    ↓
+         ✓ TRADE EXECUTED
+
+================================================================================
+PROBLEM ANALYSIS: WHY ZERO TRADES?
+================================================================================
+
+Multiple filters working in SEQUENCE means EACH ONE is a potential blocker.
+
+With 34+ filters, the probability of a trade passing ALL is EXTREMELY LOW.
+
+Estimated blocking probability:
+  If each filter has 90% pass rate:
+    0.9^34 = 3% chance of trade passing ALL filters
+    (Realistic: 0.5-1% chance)
+
+CRITICAL CHOKE POINTS (in order of severity):
+
+1. TIER 2 (Quality Gates) - Blocks ~80-90% of signals
+   └─ min_score: 8.0 is VERY high (standard: 2-3)
+   └─ min_confluence: 5 is VERY high (standard: 2-3)
+   └─ weighted_threshold: 3.0 is restrictive
+
+2. TIER 3 (Time Filters) - Blocks ~60% of time
+   └─ Global hours: 12 hours blocked per day
+   └─ Low-liquidity: 14 more hours avoided
+   └─ Symbol-specific: Some only 2-3 hours available
+
+3. TIER 4 (Market Filters) - Blocks ~30-50%
+   └─ MTF confluence: 70% alignment very restrictive
+   └─ Sentiment extremes: Rare
+   └─ Regime detection: May contradict signal
+
+4. TIER 6 (Cooldown) - Blocks recovery
+   └─ 15-min cooldown after every trade
+   └─ 60-min cooldown after losses
+   └─ 120-min cooldown after 3 losses (2-hour lock!)
+
+5. TIER 7 (Kill Switch) - Stops everything
+   └─ If daily loss > $400, ALL trading stops
+
+================================================================================
+CUMULATIVE BLOCKING EFFECT
+================================================================================
+
+Example: BNBUSD on 2026-03-05 at 15:00 UTC
+
+Check: Is BNBUSD tradable at 15:00 UTC?
+
+1. Is BNBUSD enabled?
+   └─ Yes, but...
+
+2. Is 15:00 UTC in blocked_hours? [0,1,2,3,4,5,18,19,20,21,22,23]
+   └─ No, 15:00 is OPEN ✓
+
+3. Is 15:00 UTC in low_liquidity_hours? [0,1,5,6,7,9,10,11,13,14,17,19,20,21]
+   └─ No, 15:00 is OPEN ✓
+
+4. Is BNBUSD-specific blocked_hours? [0,1,2,3,4,5,18,19,20,21,22,23]
+   └─ No, 15:00 is OPEN ✓
+
+5. Score ≥ 8.0?
+   └─ Requires VERY strong signal (rare)
+
+6. Confluence ≥ 5?
+   └─ Requires 5+ agents aligned (rare)
+
+7. Weighted score ≥ 3.0?
+   └─ Restrictive threshold
+
+8. MTF confluence ≥ 0.7?
+   └─ 70% of timeframes must align
+
+9. Open positions < 2?
+   └─ Depends on current state
+
+10. No cooldown active?
+    └─ Depends on recent trades
+
+11. No loss cooldown?
+    └─ Depends on recent losses
+
+12. Daily loss < $400?
+    └─ Depends on day's P&L
+
+RESULT: Even if time is acceptable, must pass 9+ additional quality/risk checks
+        Probability: <5% for each proposal
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+To increase trade execution rate, prioritize relaxing (in order):
+
+1. Min score threshold (lower from 8.0 to 6.0 or 5.0)
+2. Min confluence (lower from 5 to 3 or 4)
+3. Weighted voting threshold (lower from 3.0 to 2.0)
+4. MTF confluence ratio (lower from 0.7 to 0.6)
+5. Session hour filters (enable more trading hours)
+6. Cooldown periods (reduce from 15→10 min, 60→30 min)
+7. Symbol-specific hour restrictions (whitelist fewer hours)
+
+Approach: Relax ONE parameter at a time and test.
+
+================================================================================

@@ -1,0 +1,2 @@
+timestamp,symbol,side,lots,entry,sl,tp,score,confluence,rr_estimate,weighted_vote,tracker_vote,retcode
+2026-03-02T13:35:06.117504+00:00,SOLUSD,SHORT,5.0,83.39850000000001,84.98207142857144,80.7592142857143,14.1,5,1.6666666666666667,14.1,-0.8106057779645425,10009

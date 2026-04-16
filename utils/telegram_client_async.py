@@ -9,6 +9,7 @@ from typing import Optional, Iterable
 import json
 import os
 import sys
+import time
 import requests
 
 class AsyncTelegramClient:
@@ -42,6 +43,11 @@ class AsyncTelegramClient:
         self.logger = logging.getLogger("AsyncTelegramClient")
         self.orchestrator = orchestrator
 
+        # FIX 2026-03-06: circuit-breaker Telegram pour éviter boucles d'erreur
+        self._consecutive_errors = 0
+        self._max_consecutive_errors = 10
+        self._error_pause_until = None
+
         self._cfg = self._load_cfg()
         cfg_kinds = set((self._cfg.get("telegram", {}) or {}).get("allow_kinds", []) or [])
         self.allowed_kinds = (cfg_kinds | self.DEFAULT_ALLOWED_KINDS)
@@ -51,9 +57,13 @@ class AsyncTelegramClient:
     @staticmethod
     def _load_cfg() -> dict:
         try:
-            return yaml.safe_load(open("config/config.yaml", encoding="utf-8")) or {}
+            from utils.config import load_config as _lc
+            return _lc() or {}
         except Exception:
-            return {}
+            try:
+                return yaml.safe_load(open("config/config.yaml", encoding="utf-8")) or {}
+            except Exception:
+                return {}
 
     def _reload_cfg(self):
         self._cfg = self._load_cfg()
@@ -91,7 +101,11 @@ class AsyncTelegramClient:
         return await asyncio.to_thread(self._send_sync, text, buttons)
 
     def _send_sync(self, text: str, buttons: Optional[Iterable[dict]] = None) -> bool:
-        """Envoi synchrone via requests."""
+        """Envoi synchrone via requests avec circuit-breaker."""
+        # FIX 2026-03-06: circuit-breaker — pause après trop d'erreurs consécutives
+        if self._error_pause_until and time.time() < self._error_pause_until:
+            return False  # En pause après trop d'erreurs
+
         try:
             url = f'https://api.telegram.org/bot{self.token}/sendMessage'
             payload = {
@@ -106,9 +120,24 @@ class AsyncTelegramClient:
                 payload['reply_markup'] = json.dumps({"inline_keyboard": keyboard})
 
             resp = requests.post(url, json=payload, timeout=30)
-            return resp.status_code == 200
+            if resp.status_code == 200:
+                self._consecutive_errors = 0  # FIX 2026-03-06: reset on success
+                self._error_pause_until = None
+                return True
+            else:
+                self._consecutive_errors += 1
+                if self._consecutive_errors >= self._max_consecutive_errors:
+                    self._error_pause_until = time.time() + 300  # Pause 5 minutes
+                    self.logger.warning(f"[TG] {self._consecutive_errors} erreurs consécutives — pause 5 min")
+                    self._consecutive_errors = 0
+                return False
         except Exception as e:
             self.logger.error(f"[TG] Erreur envoi: {e}")
+            self._consecutive_errors += 1
+            if self._consecutive_errors >= self._max_consecutive_errors:
+                self._error_pause_until = time.time() + 300  # Pause 5 minutes
+                self.logger.warning(f"[TG] {self._consecutive_errors} erreurs consécutives — pause 5 min")
+                self._consecutive_errors = 0
             return False
 
     # ------------------- Handlers (pour boutons) -------------------

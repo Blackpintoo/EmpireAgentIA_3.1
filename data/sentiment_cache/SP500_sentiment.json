@@ -1,9 +1,4 @@
 {
-  "timestamp": "2026-02-24T05:04:51.565996+00:00",
-  "symbol": "SP500",
-  "retail": {
-    "long_percentage": 50.0,
-    "short_percentage": 50.0,
-    "source": "simulated"
-  }
+  "timestamp": "2026-04-16T03:33:54.334616+00:00",
+  "symbol": "SP500"
 }

@@ -2,8 +2,17 @@
 Dynamic performance tracker used to derive adaptive weights for voting and analytics.
 
 The tracker stores lightweight exponential moving averages per (symbol, agent,
-timeframe, regime) bucket. It is safe to call from multiple agents/orchestrator
-components and backs its state with ``data/performance/performance_tracker.json``.
+timeframe, regime) bucket.
+
+FIX 2026-03-01: chaque orchestrateur (par symbole) utilise désormais son propre
+fichier ``data/performance/tracker_{SYMBOL}.json``.  Le fichier global
+``performance_tracker.json`` est conservé pour rétro-compatibilité et est alimenté
+par ``default_tracker()`` / ``record_trade_event()``.
+
+Fonctions clés:
+  - ``get_tracker_for_symbol(symbol)`` : instance séparée par symbole (cache)
+  - ``load_all_tracker_data()``        : fusionne tous les fichiers pour les reports
+  - ``migrate_to_per_symbol()``        : migration unique global → par symbole
 """
 
 from __future__ import annotations
@@ -16,6 +25,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 _DEFAULT_PATH = Path("data") / "performance" / "performance_tracker.json"
+_PER_SYMBOL_DIR = Path("data") / "performance"
 _SUCCESS_CODES = {10009, 10008}
 
 
@@ -155,6 +165,9 @@ class PerformanceTracker:
             return
         try:
             last_dt = datetime.fromisoformat(str(last_raw))
+            # Ensure timezone-aware (old entries may lack tzinfo)
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
         except Exception:
             return
         delta = _now_utc() - last_dt
@@ -310,6 +323,127 @@ def default_tracker() -> PerformanceTracker:
     return _DEFAULT_TRACKER
 
 
+# ============================================================================
+# PER-SYMBOL TRACKER INSTANCES (FIX 2026-03-01)
+# ============================================================================
+
+_SYMBOL_TRACKERS: Dict[str, PerformanceTracker] = {}
+
+
+def _symbol_tracker_path(symbol: str) -> Path:
+    """Retourne le chemin du fichier tracker pour un symbole donné."""
+    safe = symbol.upper().replace("/", "_").replace("\\", "_")
+    return _PER_SYMBOL_DIR / f"tracker_{safe}.json"
+
+
+def get_tracker_for_symbol(symbol: str) -> PerformanceTracker:
+    """
+    Retourne (ou crée) une instance PerformanceTracker dédiée au symbole.
+
+    Chaque symbole a son propre fichier :
+      data/performance/tracker_BTCUSD.json
+      data/performance/tracker_EURUSD.json
+      etc.
+
+    Les instances sont mises en cache en mémoire.
+    """
+    key = symbol.upper()
+    if key not in _SYMBOL_TRACKERS:
+        path = _symbol_tracker_path(key)
+        _SYMBOL_TRACKERS[key] = PerformanceTracker(storage_path=path)
+    return _SYMBOL_TRACKERS[key]
+
+
+def load_all_tracker_data() -> Dict[str, Any]:
+    """
+    Fusionne les données de tous les fichiers tracker_*.json en un seul dict.
+
+    Utilisé par les scripts de reporting (audit_weekly, performance_tracker_report)
+    pour avoir une vue globale.
+
+    Returns:
+        Dict unifié {SYMBOL: {agent: {bucket: leaf}}}
+    """
+    merged: Dict[str, Any] = {}
+    try:
+        _PER_SYMBOL_DIR.mkdir(parents=True, exist_ok=True)
+        for path in sorted(_PER_SYMBOL_DIR.glob("tracker_*.json")):
+            try:
+                raw = path.read_text(encoding="utf-8")
+                if not raw.strip():
+                    continue
+                data = json.loads(raw)
+                for symbol, agents in data.items():
+                    if symbol not in merged:
+                        merged[symbol] = {}
+                    for agent, buckets in (agents or {}).items():
+                        if agent not in merged[symbol]:
+                            merged[symbol][agent] = {}
+                        merged[symbol][agent].update(buckets or {})
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Fallback : si aucun fichier per-symbol, lire le global
+    if not merged and _DEFAULT_PATH.exists():
+        try:
+            raw = _DEFAULT_PATH.read_text(encoding="utf-8")
+            if raw.strip():
+                merged = json.loads(raw)
+        except Exception:
+            pass
+
+    return merged
+
+
+def migrate_to_per_symbol() -> int:
+    """
+    Migration unique : découpe le fichier global performance_tracker.json
+    en fichiers séparés par symbole.
+
+    Ne migre que si le fichier global existe et qu'aucun fichier per-symbol
+    n'existe encore (évite d'écraser des données).
+
+    Returns:
+        Nombre de fichiers symbole créés.
+    """
+    if not _DEFAULT_PATH.exists():
+        return 0
+
+    try:
+        raw = _DEFAULT_PATH.read_text(encoding="utf-8")
+        if not raw.strip():
+            return 0
+        global_data = json.loads(raw)
+    except Exception:
+        return 0
+
+    created = 0
+    _PER_SYMBOL_DIR.mkdir(parents=True, exist_ok=True)
+
+    for symbol, agents_data in global_data.items():
+        path = _symbol_tracker_path(symbol)
+        if path.exists():
+            continue  # Ne pas écraser un fichier existant
+
+        per_symbol = {symbol.upper(): agents_data}
+        try:
+            path.write_text(
+                json.dumps(per_symbol, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            created += 1
+        except Exception:
+            continue
+
+    return created
+
+
+# ============================================================================
+# CONVENIENCE WRAPPERS
+# ============================================================================
+
 def record_trade_event(
     symbol: str,
     agent: str,
@@ -321,6 +455,9 @@ def record_trade_event(
 ) -> None:
     """
     Convenience wrapper for orchestrator callbacks.
+
+    Enregistre dans le tracker per-symbol si possible,
+    sinon fallback sur default_tracker().
     """
     executed = retcode in _SUCCESS_CODES if retcode is not None else None
     point = PerformancePoint(
@@ -332,7 +469,15 @@ def record_trade_event(
         outcome=outcome_r_multiple,
         executed=executed,
     )
-    default_tracker().record(point)
+    get_tracker_for_symbol(symbol).record(point)
 
 
-__all__ = ["PerformanceTracker", "PerformancePoint", "default_tracker", "record_trade_event"]
+__all__ = [
+    "PerformanceTracker",
+    "PerformancePoint",
+    "default_tracker",
+    "get_tracker_for_symbol",
+    "load_all_tracker_data",
+    "migrate_to_per_symbol",
+    "record_trade_event",
+]

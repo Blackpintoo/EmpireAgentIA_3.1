@@ -3,12 +3,16 @@ import os, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path: sys.path.insert(0, ROOT)
 
+# Charger .env AVANT tout import qui en dépend
+from utils.config_loader import load_dotenv_env
+load_dotenv_env(path=os.path.join(ROOT, ".env"), extra_paths=(), overwrite=False)
+
 import yaml
 import asyncio
 from orchestrator.orchestrator import Orchestrator
 from utils.telegram_client_async import AsyncTelegramClient
 from utils.telegram_client import send_telegram_message
-from utils.config import get_enabled_symbols
+from utils.config import get_enabled_symbols, load_config
 from utils.logger import logger
 
 # =============================================================================
@@ -29,7 +33,7 @@ except ImportError:
     LOSS_ANALYZER_AVAILABLE = False
 
 if __name__ == "__main__":
-    cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))
+    cfg = load_config()
     tg_token = cfg["telegram"]["token"]
     tg_chat_id = cfg["telegram"]["chat_id"]
     tg_client = AsyncTelegramClient(tg_token, tg_chat_id)
@@ -115,7 +119,8 @@ if __name__ == "__main__":
                     id=job_id,
                     hour=hh,
                     minute=mm,
-                    args=(hh, mm)
+                    args=(hh, mm),
+                    replace_existing=True  # FIX 2026-03-05: ajusté pour débloquer trading
                 )
                 logger.info(f"[DIGEST] ✅ Job programmé : {time_str}")
             except Exception as e:

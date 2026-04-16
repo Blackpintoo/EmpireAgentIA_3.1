@@ -192,39 +192,20 @@ if %ERRORLEVEL% EQU 0 (
 
 REM Afficher les symboles actifs
 echo.
-echo   Symboles actifs (16):
-echo   - CRYPTOS  : BTCUSD, ETHUSD, BNBUSD, LTCUSD, ADAUSD, SOLUSD
-echo   - FOREX    : EURUSD, GBPUSD, USDJPY, AUDUSD
-echo   - INDICES  : DJ30, NAS100, GER40
-echo   - COMMODITIES: XAUUSD, XAGUSD, CL-OIL
+echo   Symboles actifs (9) — configuration profiles.yaml :
+echo   - INDICES     : NAS100, SP500
+echo   - FOREX       : AUDUSD, USDJPY
+echo   - COMMODITES  : XAUUSD
+echo   - CRYPTOS     : BTCUSD, BNBUSD, LTCUSD, SOLUSD
 echo.
 
 REM ============================================================================
-REM ETAPE 6 : Selection du profil de trading
+REM ETAPE 6 : Profil de trading
 REM ============================================================================
 
-echo [6/6] Selection du profil de trading...
-echo.
-echo   Quel profil souhaitez-vous utiliser ?
-echo   1. AUTO - Les deux profils (recommande)
-echo      SCALPING pour M5/M15/M30, SWING pour H1/H4/D1
-echo   2. SCALPING uniquement (M5/M15/M30)
-echo   3. SWING uniquement (H1/H4/D1)
-echo.
-set "PROFILE_CHOICE=1"
-set /p PROFILE_CHOICE=  Choix (1, 2 ou 3, Enter=1):
-
+echo [6/6] Profil de trading...
+echo   [OK] Mode AUTO - Timeframes: H4, H1, M15, M5 (config.yaml)
 set "TRADING_PROFILE=AUTO"
-if "!PROFILE_CHOICE!"=="2" set "TRADING_PROFILE=SCALPING"
-if "!PROFILE_CHOICE!"=="3" set "TRADING_PROFILE=SWING"
-
-if "!TRADING_PROFILE!"=="SCALPING" (
-    echo   [OK] Profil SCALPING uniquement - M5/M15/M30
-) else if "!TRADING_PROFILE!"=="SWING" (
-    echo   [OK] Profil SWING uniquement - H1/H4/D1
-) else (
-    echo   [OK] Mode AUTO - SCALPING + SWING selon timeframe
-)
 
 REM ============================================================================
 REM LANCEMENT
@@ -261,43 +242,30 @@ echo   Python      : %PYTHON_CMD%
 echo   Config      : config\config.yaml
 echo   Mode        : %MODE_TEXT%
 echo   Profil      : %TRADING_PROFILE%
-echo   Symboles    : 16 actifs
+echo   Symboles    : 9 actifs
 echo   Health URL  : http://localhost:9108/healthz
 echo.
 echo ============================================================================
 echo.
 
-REM Confirmer lancement
-echo   Appuyez sur une touche pour lancer le bot...
-echo   (Ctrl+C pour annuler^)
-pause >nul
+REM Lancer le bot avec redemarrage automatique
+set TRADING_PROFILE=%TRADING_PROFILE%
 
-REM Lancer le bot avec la variable d'environnement du profil
-echo [INFO] Demarrage du bot en mode %TRADING_PROFILE%...
+:restart_loop
+echo [INFO] Demarrage du bot...
 echo.
 
-set TRADING_PROFILE=%TRADING_PROFILE%
 %PYTHON_CMD% main.py
 
-REM Verifier si erreur
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo ============================================================================
-    echo   [ERREUR] Le bot s'est arrete avec une erreur
-    echo ============================================================================
-    echo.
-    echo   Consultez les logs dans : logs\
-    echo.
-    pause
-    exit /b 1
-)
-
 echo.
 echo ============================================================================
-echo   Bot arrete proprement
+echo   [WARN] Le bot s'est arrete (code retour: %ERRORLEVEL%)
+echo   Redemarrage automatique dans 10 secondes...
+echo   (Ctrl+C pour annuler)
 echo ============================================================================
 echo.
-pause
+timeout /t 10 /nobreak >nul
+goto :restart_loop
 
 endlocal
 exit /b 0

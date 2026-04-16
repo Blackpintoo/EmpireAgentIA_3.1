@@ -17,6 +17,7 @@ import math
 import os
 import json
 import logging
+import threading
 import pytz
 from datetime import datetime, timezone
 
@@ -55,6 +56,9 @@ except Exception:  # pragma: no cover
 _GUARDS_LOG_PATH = os.path.join("logs", "guards.log")
 _DAILY_LOSS_STATE_PATH = os.path.join("data", "daily_loss_state.json")
 
+# Verrou thread-safe pour accès concurrent au fichier d'état
+_FILE_LOCK = threading.Lock()
+
 
 def _log_guard(message: str) -> None:
     """Log guard events to logs/guards.log"""
@@ -87,27 +91,33 @@ def _round_step(value: float, step: float) -> float:
 class GlobalKillSwitch:
     """Kill switch global journalier — bloque tout trading si perte > seuil."""
 
-    def __init__(self, limit_usd: float = 400.0):
+    def __init__(self, limit_usd: float = 400.0, floating_limit_usd: float = 0.0):
         self.limit_usd = abs(limit_usd) if limit_usd else 400.0
+        # FIX 2026-03-12 R8: Seuil séparé pour le floating (0 = désactivé, utilise 2x realized)
+        self.floating_limit_usd = abs(floating_limit_usd) if floating_limit_usd else (self.limit_usd * 2.0)
         self._state = self._load_state()
         self._check_day_reset()
 
     def _load_state(self) -> Dict[str, Any]:
-        try:
-            if os.path.exists(_DAILY_LOSS_STATE_PATH):
-                with open(_DAILY_LOSS_STATE_PATH, "r", encoding="utf-8") as f:
-                    return json.load(f) or {}
-        except Exception:
-            pass
+        with _FILE_LOCK:
+            try:
+                if os.path.exists(_DAILY_LOSS_STATE_PATH):
+                    with open(_DAILY_LOSS_STATE_PATH, "r", encoding="utf-8") as f:
+                        return json.load(f) or {}
+            except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
+                logger.warning(f"[STATE] Erreur I/O {_DAILY_LOSS_STATE_PATH}: {e}")
         return {}
 
     def _save_state(self) -> None:
-        try:
-            os.makedirs(os.path.dirname(_DAILY_LOSS_STATE_PATH), exist_ok=True)
-            with open(_DAILY_LOSS_STATE_PATH, "w", encoding="utf-8") as f:
-                json.dump(self._state, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+        with _FILE_LOCK:
+            try:
+                os.makedirs(os.path.dirname(_DAILY_LOSS_STATE_PATH), exist_ok=True)
+                tmp_path = _DAILY_LOSS_STATE_PATH + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(self._state, f, indent=2, ensure_ascii=False)
+                os.replace(tmp_path, _DAILY_LOSS_STATE_PATH)
+            except (IOError, OSError) as e:
+                logger.warning(f"[STATE] Erreur I/O écriture {_DAILY_LOSS_STATE_PATH}: {e}")
 
     def _today_utc(self) -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -133,6 +143,7 @@ class GlobalKillSwitch:
     def check_kill_switch(self, floating_pnl: float = 0.0) -> Tuple[bool, str]:
         """
         Vérifie si le kill switch doit être activé.
+        FIX 2026-03-12 R8: Seuils séparés realized vs floating.
 
         Args:
             floating_pnl: P&L flottant actuel (positions ouvertes)
@@ -147,19 +158,32 @@ class GlobalKillSwitch:
             return True, "GLOBAL_DAILY_LOSS_LIMIT (already triggered)"
 
         realized = float(self._state.get("realized_pnl", 0.0))
-        total_pnl = realized + float(floating_pnl)
+        floating = float(floating_pnl)
+        total_pnl = realized + floating
 
-        if total_pnl <= -self.limit_usd:
+        # FIX 2026-03-12 R8: Seuil 1 — realized seul (pertes confirmées)
+        if realized <= -self.limit_usd:
             self._state["kill_switch_triggered"] = True
             self._state["trigger_time"] = datetime.now(timezone.utc).isoformat()
+            self._state["trigger_type"] = "realized"
             self._save_state()
-
-            msg = (f"GLOBAL_DAILY_LOSS_LIMIT: total_pnl={total_pnl:.2f} "
-                   f"(realized={realized:.2f} + floating={floating_pnl:.2f}) "
-                   f"<= -${self.limit_usd:.0f}")
+            msg = (f"DAILY_REALIZED_LIMIT: realized={realized:.2f} <= -${self.limit_usd:.0f}")
             logger.warning(f"[KILL_SWITCH] {msg}")
             _log_guard(f"KILL_SWITCH_TRIGGERED: {msg}")
-            return True, "GLOBAL_DAILY_LOSS_LIMIT"
+            return True, "DAILY_REALIZED_LIMIT"
+
+        # FIX 2026-03-12 R8: Seuil 2 — floating (laisser respirer les positions)
+        if total_pnl <= -self.floating_limit_usd:
+            self._state["kill_switch_triggered"] = True
+            self._state["trigger_time"] = datetime.now(timezone.utc).isoformat()
+            self._state["trigger_type"] = "floating"
+            self._save_state()
+            msg = (f"DAILY_FLOATING_LIMIT: total={total_pnl:.2f} "
+                   f"(realized={realized:.2f} + floating={floating:.2f}) "
+                   f"<= -${self.floating_limit_usd:.0f}")
+            logger.warning(f"[KILL_SWITCH] {msg}")
+            _log_guard(f"KILL_SWITCH_TRIGGERED: {msg}")
+            return True, "DAILY_FLOATING_LIMIT"
 
         return False, ""
 
@@ -178,11 +202,11 @@ class GlobalKillSwitch:
 _global_kill_switch: Optional[GlobalKillSwitch] = None
 
 
-def get_global_kill_switch(limit_usd: float = 400.0) -> GlobalKillSwitch:
+def get_global_kill_switch(limit_usd: float = 400.0, floating_limit_usd: float = 0.0) -> GlobalKillSwitch:
     """Récupère ou crée l'instance globale du kill switch."""
     global _global_kill_switch
     if _global_kill_switch is None:
-        _global_kill_switch = GlobalKillSwitch(limit_usd)
+        _global_kill_switch = GlobalKillSwitch(limit_usd, floating_limit_usd)
     return _global_kill_switch
 
 

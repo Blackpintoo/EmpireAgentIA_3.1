@@ -8,6 +8,7 @@ import time
 import yaml
 from utils.logger import logger
 from utils.config import load_config
+from utils.config_loader import expand_env_vars
 from utils.order_result import to_dict as _ordict
 from utils.telegram_client import _CFG_PATH
 from datetime import datetime, timezone
@@ -91,6 +92,33 @@ def _use_sim() -> bool:
     return False
 
 
+class TTLCache:
+    """Cache thread-safe avec TTL par clé (secondes)."""
+
+    def __init__(self):
+        self._cache: Dict[str, Tuple[Any, float]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str, ttl: float):
+        with self._lock:
+            if key in self._cache:
+                val, ts = self._cache[key]
+                if time.time() - ts < ttl:
+                    return val
+        return None
+
+    def set(self, key: str, value):
+        with self._lock:
+            self._cache[key] = (value, time.time())
+
+    def invalidate(self, prefix: str = ""):
+        with self._lock:
+            if prefix:
+                self._cache = {k: v for k, v in self._cache.items() if not k.startswith(prefix)}
+            else:
+                self._cache.clear()
+
+
 class MT5Client:
     """
     Client MetaTrader5 robuste (thread-safe).
@@ -98,7 +126,7 @@ class MT5Client:
       - mapping symboles logiques -> broker si nécessaire
       - helpers OHLC/ticks/prix
       - place_order() MARKET avec gestion des retcodes, requotes, invalid stops
-      - parse_timeframe() compatible 'M1'..'D1' + constants
+      - parse_timeframe() compatible ‘M1’..’D1’ + constants
       - fetch_ohlc()/get_rates() adaptés aux agents (DataFrame prêt à l’emploi côté agent)
 
     Méthodes clés utilisées par tes agents/orchestrateur :
@@ -106,7 +134,7 @@ class MT5Client:
       - fetch_ohlc(symbol, tf_code, count)
       - get_rates(symbol, timeframe, count) -> List[dict]
       - get_tick(symbol)
-      - get_last_price(symbol, side='BUY')
+      - get_last_price(symbol, side=’BUY’)
       - ensure_symbol(symbol)
       - place_order(symbol, side, lot, price=None, sl=None, tp=None, deviation=None, **kwargs)
     """
@@ -146,6 +174,7 @@ class MT5Client:
         self._inst_cache = {}
         self._last_ping = None
         self._recent_orders = deque(maxlen=128)
+        self._ttl_cache = TTLCache()
 
         # 4) Dry-run via config (execution.dry_run)
         if (self.cfg.get('execution') or {}).get('dry_run') is True:
@@ -156,6 +185,7 @@ class MT5Client:
             with open(_CFG_PATH, encoding='utf-8') as f:
                 cfg2 = yaml.safe_load(f) or {}
                 if isinstance(cfg2, dict) and cfg2:
+                    cfg2 = expand_env_vars(cfg2)
                     self.cfg = cfg2
         except Exception:
             pass
@@ -612,6 +642,10 @@ class MT5Client:
         Retourne l'objet tick MetaTrader5 (avec .bid/.ask/.time), ou None si indisponible.
         """
         real = self.resolve_symbol(symbol)
+        cache_key = f"tick:{real}"
+        cached = self._ttl_cache.get(cache_key, ttl=2)
+        if cached is not None:
+            return cached
         try:
             self.ensure_symbol(real)
         except Exception:
@@ -619,7 +653,10 @@ class MT5Client:
         if mt5 is None:
             return None
         try:
-            return mt5.symbol_info_tick(real)
+            result = mt5.symbol_info_tick(real)
+            if result is not None:
+                self._ttl_cache.set(cache_key, result)
+            return result
         except Exception:
             return None
 
@@ -629,6 +666,10 @@ class MT5Client:
         Retourne l'objet symbol_info MetaTrader5, ou None si indisponible.
         """
         real = self.resolve_symbol(symbol)
+        cache_key = f"sinfo:{real}"
+        cached = self._ttl_cache.get(cache_key, ttl=60)
+        if cached is not None:
+            return cached
         try:
             self.ensure_symbol(real)
         except Exception:
@@ -636,7 +677,10 @@ class MT5Client:
         if mt5 is None:
             return None
         try:
-            return mt5.symbol_info(real)
+            result = mt5.symbol_info(real)
+            if result is not None:
+                self._ttl_cache.set(cache_key, result)
+            return result
         except Exception:
             return None
 
@@ -685,8 +729,36 @@ class MT5Client:
         return None
 
     def get_account_info(self):
+        cache_key = "account_info"
+        cached = self._ttl_cache.get(cache_key, ttl=10)
+        if cached is not None:
+            return cached
         try:
-            return mt5.account_info() if mt5 is not None else None
+            result = mt5.account_info() if mt5 is not None else None
+            if result is not None:
+                self._ttl_cache.set(cache_key, result)
+            return result
+        except Exception:
+            return None
+
+    def positions_get(self, symbol: Optional[str] = None):
+        """Retourne les positions ouvertes (avec cache TTL 5s)."""
+        real = self.resolve_symbol(symbol) if symbol else None
+        cache_key = f"positions:{real or 'ALL'}"
+        cached = self._ttl_cache.get(cache_key, ttl=5)
+        if cached is not None:
+            return cached
+        if mt5 is None:
+            return None
+        try:
+            if real:
+                self.ensure_symbol(real)
+                result = mt5.positions_get(symbol=real)
+            else:
+                result = mt5.positions_get()
+            if result is not None:
+                self._ttl_cache.set(cache_key, result)
+            return result
         except Exception:
             return None
 
@@ -1047,6 +1119,18 @@ class MT5Client:
                     symbol, side_sign, float(base_price), adj_sl, adj_tp
                 )
 
+        # FIX 2026-03-18 R13: Diagnostic _respect_min_stops
+        if adj_tp is not None and tp is not None and adj_tp != tp:
+            logger.warning(
+                f"[MIN_STOPS] {symbol}: TP modifié par _respect_min_stops: "
+                f"{tp} → {adj_tp} (base_price={base_price})"
+            )
+        if adj_sl is not None and sl is not None and adj_sl != sl:
+            logger.warning(
+                f"[MIN_STOPS] {symbol}: SL modifié par _respect_min_stops: "
+                f"{sl} → {adj_sl} (base_price={base_price})"
+            )
+
         sl = adj_sl
         tp = adj_tp
 
@@ -1165,6 +1249,8 @@ class MT5Client:
             if rc == getattr(mt5, "TRADE_RETCODE_DONE", 10009):
                 order_id = getattr(res, "order", None)
                 deal_id  = getattr(res, "deal", None)
+                self._ttl_cache.invalidate("positions:")
+                self._ttl_cache.invalidate("account_info")
                 return {"ok": True, "retcode": rc, "order": order_id, "deal": deal_id}
 
             action = self._retcode_action(rc)
@@ -1279,6 +1365,11 @@ class MT5Client:
                 results.append(res_dict)
             except Exception as e:
                 logger.warning(f"[MT5] close_positions error: {e}")
+
+        # Invalidate position/account cache after closing
+        if results:
+            self._ttl_cache.invalidate("positions:")
+            self._ttl_cache.invalidate("account_info")
 
         return results
 

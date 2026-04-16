@@ -217,7 +217,7 @@ class TechnicalAgent:
         )
 
     # ------------------------------- market IO -------------------------------
-    def _get_rates(self, timeframe: str, count: int = 300) -> Optional[pd.DataFrame]:
+    def _get_rates(self, timeframe: str, count: int = 150) -> Optional[pd.DataFrame]:  # FIX 2026-03-06: 300→150 pour éviter timeouts
         """
         Récupère les données OHLC pour le timeframe spécifié.
 

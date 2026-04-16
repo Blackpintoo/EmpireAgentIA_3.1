@@ -25,6 +25,12 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 
+# FIX 2026-03-14 R11: Backoff après timeout
+import time as _time_mod
+_fg_disabled_until: float = 0.0
+_FG_DISABLE_DURATION: float = 1800.0  # 30 min de cooldown après erreur
+
+
 class FearGreedIndex:
     """
     Client pour l'API Fear & Greed Index (alternative.me).
@@ -123,6 +129,11 @@ class FearGreedIndex:
             if cached is not None:
                 return cached
 
+        # FIX 2026-03-14 R11: Backoff si API en cooldown
+        global _fg_disabled_until
+        if _fg_disabled_until > _time_mod.time():
+            return self._error_response("API disabled (backoff)")
+
         # Appel API (pas de paramètres requis - limite=1 pour avoir le dernier)
         params = {"limit": 1}
 
@@ -165,11 +176,13 @@ class FearGreedIndex:
             return result
 
         except requests.exceptions.RequestException as e:
-            logger.error(f"[FearGreed] Erreur réseau: {e}")
+            _fg_disabled_until = _time_mod.time() + _FG_DISABLE_DURATION
+            logger.warning(f"[FearGreed] Erreur réseau — désactivé 30min: {e}")
             return self._error_response(f"network_error: {e}")
 
         except Exception as e:
-            logger.error(f"[FearGreed] Erreur API: {e}")
+            _fg_disabled_until = _time_mod.time() + _FG_DISABLE_DURATION
+            logger.warning(f"[FearGreed] Erreur API — désactivé 30min: {e}")
             return self._error_response(str(e))
 
     def categorize_value(self, value: int) -> str:

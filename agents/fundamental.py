@@ -58,6 +58,20 @@ class FundamentalAgent:
             # Règles spécifiques
             "reverse_on_negative": True, # ex: CPI > prévu => bearish (risque resserrement)
             "notify_telegram": True,     # message récapitulatif (sync, non bloquant pour l’orchestrateur)
+
+            # Confiance adaptative par type d’événement (keyword → confiance)
+            "confidence_map": {
+                "NFP": 0.85,
+                "FOMC": 0.90,
+                "CPI": 0.80,
+                "Interest Rate": 0.85,
+                "GDP": 0.70,
+                "PMI": 0.50,
+                "Retail Sales": 0.55,
+                "Employment": 0.65,
+                "Trade Balance": 0.45,
+            },
+            "confidence_default": 0.40,
         }
         merged = merge_agent_params(self.symbol, "fundamental", defaults)
         if params:
@@ -121,15 +135,47 @@ class FundamentalAgent:
         return events
 
 
+    def _fetch_via_event_guard(self, horizon_minutes: int) -> List[Dict[str, Any]]:
+        """Priorité 0 : utilise EventGuard (calendrier auto-refreshed)."""
+        try:
+            from utils.event_guard import get_event_guard
+            guard = get_event_guard()
+            hours_ahead = max(1, horizon_minutes // 60)
+            eg_events = guard.get_upcoming_events(self.symbol, hours_ahead=hours_ahead)
+            if not eg_events:
+                return []
+            # Convertir EconomicEvent → dict compatible
+            out = []
+            for ev in eg_events:
+                out.append({
+                    "event": ev.title,
+                    "impact": ev.impact.value,
+                    "actual": ev.actual,
+                    "forecast": ev.forecast,
+                    "currency": ev.currency,
+                    "time": ev.timestamp.isoformat(),
+                    "source": ev.source,
+                })
+            return out
+        except Exception as e:
+            logger.debug(f"[FUNDAMENTAL] EventGuard fetch failed: {e}")
+            return []
+
     def fetch_calendar(self, horizon_minutes: int = 180) -> List[Dict[str, Any]]:
         """
         Récupère les événements économiques dans [now - horizon ; now + horizon].
+        Ordre: EventGuard (auto-refresh) → api_client → FXStreet HTTP
         """
+        # 0) EventGuard (source centralisée, auto-refreshed)
+        events = self._fetch_via_event_guard(horizon_minutes)
+        if events:
+            logger.debug(f"[{self.__class__.__name__}] {len(events)} événement(s) via EventGuard")
+            return events
+
         now = dt.datetime.now(dt.timezone.utc)
         start = now - dt.timedelta(minutes=horizon_minutes)
         end = now + dt.timedelta(minutes=horizon_minutes)
 
-        events = []
         # 1) Client externe si fourni
         events = self._fetch_via_api_client(start, end)
         # 2) Fallback HTTP
@@ -259,6 +305,15 @@ class FundamentalAgent:
         except Exception:
             return 0.0
 
+    # --------------------- Confiance adaptative ---------------------
+    def _event_confidence(self, ev: Dict[str, Any]) -> float:
+        """Retourne la confiance adaptative selon le type d'événement."""
+        cmap = self.params.get("confidence_map") or {}
+        default = float(self.params.get("confidence_default", 0.40))
+        title = (ev.get("event") or ev.get("title") or "").lower()
+        matches = [v for k, v in cmap.items() if k.lower() in title]
+        return max(matches) if matches else default
+
     # --------------------- Signal ---------------------
     def generate_signal(self, bar: Optional[dict] = None) -> Optional[Dict[str, Any]]:
         """
@@ -299,7 +354,7 @@ class FundamentalAgent:
             if not impact_dir:
                 continue
             signal = "LONG" if impact_dir == "bullish" else "SHORT"
-            conf = 0.55 if impact_dir == "bullish" else 0.55  # neutre ; ajustez si besoin par type d'event
+            conf = self._event_confidence(ev)
             signals.append({"signal": signal, "event": ev, "confidence": conf, "timeframe": "H1"})
 
         final = signals[-1] if signals else None

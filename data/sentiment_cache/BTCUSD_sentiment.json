@@ -1,9 +1,10 @@
 {
-  "timestamp": "2026-02-24T05:03:40.578756+00:00",
+  "timestamp": "2026-04-16T04:23:06.866122+00:00",
   "symbol": "BTCUSD",
-  "retail": {
-    "long_percentage": 71.0,
-    "short_percentage": 29.0,
-    "source": "simulated"
+  "funding": {
+    "timestamp": "2026-04-16T04:23:06.865123+00:00",
+    "rate": -0.0021780000000000002,
+    "predicted_rate": 0.01,
+    "exchange": "binance"
   }
 }

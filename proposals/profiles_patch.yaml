@@ -1,1 +1,115 @@
-profiles: {}
+profiles:
+  ADAUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  AUDUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  BNBUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  BTCUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  CL-OIL:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  DJ30:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  ETHUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  EURUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  GBPUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  GER40:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  LNKUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  LTCUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  NAS100:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  SOLUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  SP500:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  UK100:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  USDJPY:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  XAGUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2
+  XAUUSD:
+    orchestrator:
+      min_score_for_proposal: 2.0
+      atr_sl_mult: 1.7
+      atr_tp_mult: 2.2
+      votes_required: 2

@@ -16,7 +16,6 @@ Objectif: Bloquer automatiquement les trades avant/après annonces importantes.
 from __future__ import annotations
 import os
 import json
-import hashlib
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -39,6 +38,16 @@ try:
 except Exception:
     def send_telegram_message(text: str, **kwargs):
         logger.info(f"[TELEGRAM_STUB] {text}")
+
+
+# Fichier de persistance du calendrier live
+_PERSIST_PATH = os.path.join("data", "news_calendar_live.json")
+
+# Intervalle du thread auto-refresh (secondes) — 2 heures
+_AUTO_REFRESH_INTERVAL = 7200
+
+# Rate limit par source (secondes) — 30 minutes
+_SOURCE_RATE_INTERVAL = 1800
 
 
 # =============================================================================
@@ -65,15 +74,18 @@ class EconomicEvent:
     previous: Optional[str] = None
     source: str = "unknown"
 
+    def _dedup_key(self) -> Tuple[str, str, str]:
+        """Clé de dédupliquation: (heure tronquée, titre lowercase, currency)"""
+        hour_trunc = self.timestamp.replace(minute=0, second=0, microsecond=0).isoformat()
+        return (hour_trunc, self.title.lower().strip(), self.currency.upper())
+
     def __hash__(self):
-        return hash((self.timestamp.isoformat(), self.currency, self.title))
+        return hash(self._dedup_key())
 
     def __eq__(self, other):
         if not isinstance(other, EconomicEvent):
             return False
-        return (self.timestamp == other.timestamp and
-                self.currency == other.currency and
-                self.title == other.title)
+        return self._dedup_key() == other._dedup_key()
 
 
 @dataclass
@@ -144,14 +156,208 @@ class EventGuard:
         self._events_cache: List[EconomicEvent] = []
         self._cache_timestamp: Optional[datetime] = None
         self._alerted_events: set = set()  # Events déjà alertés
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # FIX 2026-03-10 R7: RLock réentrant (refresh_events → _source_rate_ok)
+
+        # Rate limiter par source: {source_name: last_call_timestamp}
+        self._source_last_fetch: Dict[str, float] = {}
+
+        # FIX 2026-03-13 R9: Compteur d'erreurs Finnhub pour désactivation gracieuse
+        self._finnhub_consecutive_errors: int = 0
+        self._finnhub_max_errors: int = 3
+        self._finnhub_disabled: bool = False
+
+        # Timer auto-refresh (set par _start_auto_refresh)
+        self._refresh_timer: Optional[threading.Timer] = None
 
         # Créer le répertoire de cache
         os.makedirs(self.config.cache_dir, exist_ok=True)
 
+        # Charger la dernière persistance disque au démarrage
+        disk_events = self._load_from_disk()
+        if disk_events:
+            self._events_cache = disk_events
+            logger.info(f"[EVENT_GUARD] Chargé {len(disk_events)} événements depuis disque")
+
+        # Démarrer le thread de refresh automatique
+        self._start_auto_refresh()
+
         logger.info("[EVENT_GUARD] Initialisé avec fenêtres: "
                    f"HIGH=±{self.config.high_window_before}min, "
-                   f"MEDIUM=±{self.config.medium_window_before}min")
+                   f"MEDIUM=±{self.config.medium_window_before}min, "
+                   f"auto-refresh toutes les {_AUTO_REFRESH_INTERVAL // 3600}h")
+
+    # -------------------------------------------------------------------------
+    # RATE LIMITER PAR SOURCE
+    # -------------------------------------------------------------------------
+
+    def _source_rate_ok(self, source_name: str) -> bool:
+        """Retourne True si la source peut être appelée (intervalle 30min respecté)."""
+        with self._lock:
+            now = time.time()
+            last = self._source_last_fetch.get(source_name, 0.0)
+            if now - last >= _SOURCE_RATE_INTERVAL:
+                self._source_last_fetch[source_name] = now
+                return True
+            logger.debug(f"[EVENT_GUARD] Rate limit {source_name}: "
+                         f"{int(now - last)}s / {_SOURCE_RATE_INTERVAL}s")
+            return False
+
+    # -------------------------------------------------------------------------
+    # PERSISTANCE JSON
+    # -------------------------------------------------------------------------
+
+    def _save_to_disk(self, events: List[EconomicEvent], sources: List[str]) -> None:
+        """Persiste les événements en JSON sur disque."""
+        try:
+            data = {
+                "events": [
+                    {
+                        "timestamp": e.timestamp.isoformat(),
+                        "currency": e.currency,
+                        "impact": e.impact.value,
+                        "title": e.title,
+                        "actual": e.actual,
+                        "forecast": e.forecast,
+                        "previous": e.previous,
+                        "source": e.source,
+                    }
+                    for e in events
+                ],
+                "last_refresh": datetime.now(timezone.utc).isoformat(),
+                "sources": sources,
+            }
+            os.makedirs(os.path.dirname(_PERSIST_PATH) or ".", exist_ok=True)
+            with open(_PERSIST_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logger.debug(f"[EVENT_GUARD] Persisté {len(events)} événements → {_PERSIST_PATH}")
+        except Exception as e:
+            logger.warning(f"[EVENT_GUARD] Erreur persistance disque: {e}")
+
+    def _load_from_disk(self) -> List[EconomicEvent]:
+        """Charge les événements depuis le fichier JSON persisté."""
+        if not os.path.exists(_PERSIST_PATH):
+            return []
+        try:
+            with open(_PERSIST_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            events = []
+            for item in data.get("events", []):
+                try:
+                    ts = datetime.fromisoformat(item["timestamp"])
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    impact_str = item.get("impact", "low").lower()
+                    impact = {"high": EventImpact.HIGH, "medium": EventImpact.MEDIUM,
+                              "low": EventImpact.LOW}.get(impact_str, EventImpact.LOW)
+                    events.append(EconomicEvent(
+                        timestamp=ts,
+                        currency=item.get("currency", "USD"),
+                        impact=impact,
+                        title=item.get("title", ""),
+                        actual=item.get("actual"),
+                        forecast=item.get("forecast"),
+                        previous=item.get("previous"),
+                        source=item.get("source", "disk"),
+                    ))
+                except Exception:
+                    continue
+            logger.debug(f"[EVENT_GUARD] Chargé {len(events)} événements depuis {_PERSIST_PATH}")
+            return events
+        except Exception as e:
+            logger.warning(f"[EVENT_GUARD] Erreur lecture {_PERSIST_PATH}: {e}")
+            return []
+
+    # -------------------------------------------------------------------------
+    # AUTO-REFRESH THREAD
+    # -------------------------------------------------------------------------
+
+    def _start_auto_refresh(self) -> None:
+        """Démarre un timer daemon qui relance refresh_events toutes les 2h."""
+        def _tick():
+            try:
+                self.refresh_events(force=True)
+            except Exception as e:
+                logger.warning(f"[EVENT_GUARD] Auto-refresh erreur: {e}")
+            finally:
+                self._start_auto_refresh()
+
+        self._refresh_timer = threading.Timer(_AUTO_REFRESH_INTERVAL, _tick)
+        self._refresh_timer.daemon = True
+        self._refresh_timer.start()
+
+    # -------------------------------------------------------------------------
+    # FINNHUB SOURCE (via econ_api)
+    # -------------------------------------------------------------------------
+
+    def _fetch_finnhub_events(self) -> List[EconomicEvent]:
+        """Récupère les événements via Finnhub (délègue à econ_api._fetch_finnhub)."""
+        # FIX 2026-03-13 R9: Skip Finnhub si désactivé après trop d'erreurs
+        if self._finnhub_disabled:
+            return []
+
+        try:
+            from utils.econ_api import _fetch_finnhub
+        except ImportError:
+            logger.debug("[EVENT_GUARD] econ_api._fetch_finnhub indisponible")
+            return []
+
+        try:
+            now = datetime.now(timezone.utc)
+            start = now - timedelta(hours=1)
+            end = now + timedelta(hours=48)
+            raw_events = _fetch_finnhub(start, end)
+
+            events = []
+            for ev in raw_events:
+                try:
+                    time_str = ev.get("time") or ev.get("datetime") or ""
+                    if not time_str:
+                        continue
+                    ts = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+
+                    impact_str = (ev.get("impact") or "low").lower()
+                    impact = {"high": EventImpact.HIGH, "medium": EventImpact.MEDIUM,
+                              "low": EventImpact.LOW}.get(impact_str, EventImpact.LOW)
+
+                    title = ev.get("event") or ev.get("title") or ""
+                    # Override impact par mots-clés
+                    if any(kw in title.lower() for kw in self.config.high_impact_keywords):
+                        impact = EventImpact.HIGH
+
+                    events.append(EconomicEvent(
+                        timestamp=ts,
+                        currency=(ev.get("currency") or "USD").upper(),
+                        impact=impact,
+                        title=title,
+                        actual=ev.get("actual"),
+                        forecast=ev.get("forecast"),
+                        previous=ev.get("previous"),
+                        source="finnhub",
+                    ))
+                except Exception:
+                    continue
+
+            logger.debug(f"[EVENT_GUARD] Finnhub: {len(events)} événements")
+            self._finnhub_consecutive_errors = 0  # Reset on success
+            return events
+
+        except Exception as e:
+            # FIX 2026-03-13 R9: Désactivation gracieuse après erreurs consécutives
+            self._finnhub_consecutive_errors += 1
+            if self._finnhub_consecutive_errors >= self._finnhub_max_errors:
+                self._finnhub_disabled = True
+                logger.warning(
+                    f"[EVENT_GUARD] Finnhub désactivé après {self._finnhub_consecutive_errors} "
+                    f"erreurs consécutives: {e}"
+                )
+            else:
+                logger.debug(
+                    f"[EVENT_GUARD] Finnhub erreur {self._finnhub_consecutive_errors}/"
+                    f"{self._finnhub_max_errors}: {e}"
+                )
+            return []
 
     # -------------------------------------------------------------------------
     # FETCHERS - Sources de données
@@ -459,39 +665,74 @@ class EventGuard:
         return age.total_seconds() < self.config.cache_ttl_minutes * 60
 
     def refresh_events(self, force: bool = False) -> List[EconomicEvent]:
-        """Rafraîchit la liste des événements depuis toutes les sources"""
+        """Rafraîchit la liste des événements depuis toutes les sources.
+
+        Ordre: FXStreet → Finnhub → Investing.com, chacune respectant le rate limiter.
+        Fallback disque si aucun résultat API.
+        """
         with self._lock:
             if not force and self._is_cache_valid():
                 return self._events_cache
 
             all_events: List[EconomicEvent] = []
+            sources_used: List[str] = []
 
-            # Fetch depuis les APIs
-            if self.config.enable_fxstreet:
-                all_events.extend(self._fetch_fxstreet_calendar())
+            # 1) FXStreet (API JSON, source principale)
+            if self.config.enable_fxstreet and self._source_rate_ok("fxstreet"):
+                fxs = self._fetch_fxstreet_calendar()
+                if fxs:
+                    all_events.extend(fxs)
+                    sources_used.append("fxstreet")
 
-            if self.config.enable_investing:
-                all_events.extend(self._fetch_investing_calendar())
+            # 2) Finnhub (via econ_api)
+            if self._source_rate_ok("finnhub"):
+                fh = self._fetch_finnhub_events()
+                if fh:
+                    all_events.extend(fh)
+                    sources_used.append("finnhub")
 
-            if self.config.enable_forexfactory:
-                all_events.extend(self._fetch_forexfactory_calendar())
+            # 3) Investing.com (scraping)
+            if self.config.enable_investing and self._source_rate_ok("investing"):
+                inv = self._fetch_investing_calendar()
+                if inv:
+                    all_events.extend(inv)
+                    sources_used.append("investing")
 
-            # Fallback CSV si pas assez d'événements
+            # 4) Fallback CSV si pas assez d'événements
             if len(all_events) < 5 and self.config.enable_csv_fallback:
-                all_events.extend(self._load_csv_calendar())
+                csv_ev = self._load_csv_calendar()
+                if csv_ev:
+                    all_events.extend(csv_ev)
+                    sources_used.append("csv")
 
-            # Dédupliquer
-            unique_events = list(set(all_events))
+            # 5) Fallback disque si aucun résultat API
+            if not all_events:
+                disk_events = self._load_from_disk()
+                if disk_events:
+                    all_events = disk_events
+                    sources_used.append("disk_fallback")
+                    logger.info(f"[EVENT_GUARD] Fallback disque: {len(disk_events)} événements")
 
-            # Trier par timestamp
-            unique_events.sort(key=lambda e: e.timestamp)
+            # 6) Dédupliquation renforcée (via __hash__/__eq__ basés sur _dedup_key)
+            seen: Dict[Tuple[str, str, str], EconomicEvent] = {}
+            for ev in all_events:
+                key = ev._dedup_key()
+                if key not in seen:
+                    seen[key] = ev
+
+            unique_events = sorted(seen.values(), key=lambda e: e.timestamp)
+
+            # 7) Persister si on a des événements
+            if unique_events and sources_used and "disk_fallback" not in sources_used:
+                self._save_to_disk(unique_events, sources_used)
 
             self._events_cache = unique_events
             self._cache_timestamp = datetime.now(timezone.utc)
 
             logger.info(f"[EVENT_GUARD] Calendrier rafraîchi: {len(unique_events)} événements "
                        f"(HIGH: {sum(1 for e in unique_events if e.impact == EventImpact.HIGH)}, "
-                       f"MEDIUM: {sum(1 for e in unique_events if e.impact == EventImpact.MEDIUM)})")
+                       f"MEDIUM: {sum(1 for e in unique_events if e.impact == EventImpact.MEDIUM)}) "
+                       f"sources={sources_used}")
 
             return unique_events
 

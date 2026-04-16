@@ -103,8 +103,8 @@ def get_adjusted_min_score(
     if in_prime:
         return base_min_score, True
     else:
-        # FIX 2026-02-20: hors prime hours, +50% sur le min score
-        adjusted = base_min_score * 1.5
+        # FIX 2026-03-05: multiplicateur désactivé (1.0) pour débloquer trading
+        adjusted = base_min_score * 1.0
         logger.debug(
             f"[SESSION_FILTER] {symbol} hors prime hours: "
             f"min_score {base_min_score:.2f} → {adjusted:.2f}"

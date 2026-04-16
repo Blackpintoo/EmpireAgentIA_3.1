@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import json
+import threading
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional, Tuple
 
@@ -27,6 +28,9 @@ except Exception:
 
 _CB_STATE_PATH = os.path.join("data", "circuit_breaker_state.json")
 _GUARDS_LOG_PATH = os.path.join("logs", "guards.log")
+
+# Verrou thread-safe pour accès concurrent au fichier d'état
+_FILE_LOCK = threading.Lock()
 
 # Configuration par défaut
 DEFAULT_MAX_CONSECUTIVE_LOSSES = 3
@@ -59,21 +63,25 @@ class CircuitBreaker:
         self._state = self._load_state()
 
     def _load_state(self) -> Dict[str, Any]:
-        try:
-            if os.path.exists(_CB_STATE_PATH):
-                with open(_CB_STATE_PATH, "r", encoding="utf-8") as f:
-                    return json.load(f) or {}
-        except Exception:
-            pass
+        with _FILE_LOCK:
+            try:
+                if os.path.exists(_CB_STATE_PATH):
+                    with open(_CB_STATE_PATH, "r", encoding="utf-8") as f:
+                        return json.load(f) or {}
+            except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
+                logger.warning(f"[STATE] Erreur I/O {_CB_STATE_PATH}: {e}")
         return {}
 
     def _save_state(self) -> None:
-        try:
-            os.makedirs(os.path.dirname(_CB_STATE_PATH), exist_ok=True)
-            with open(_CB_STATE_PATH, "w", encoding="utf-8") as f:
-                json.dump(self._state, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+        with _FILE_LOCK:
+            try:
+                os.makedirs(os.path.dirname(_CB_STATE_PATH), exist_ok=True)
+                tmp_path = _CB_STATE_PATH + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(self._state, f, indent=2, ensure_ascii=False)
+                os.replace(tmp_path, _CB_STATE_PATH)
+            except (IOError, OSError) as e:
+                logger.warning(f"[STATE] Erreur I/O écriture {_CB_STATE_PATH}: {e}")
 
     def _get_symbol_state(self, symbol: str) -> Dict[str, Any]:
         return self._state.setdefault(symbol.upper(), {

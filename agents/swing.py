@@ -199,7 +199,7 @@ class SwingAgent:
         return self.generate_signal(timeframe=timeframe)
 
     # -------------------------- data helpers --------------------------
-    def _get_rates(self, timeframe: str, count: int) -> Optional[pd.DataFrame]:
+    def _get_rates(self, timeframe: str, count: int = 150) -> Optional[pd.DataFrame]:  # FIX 2026-03-06: default 150 pour éviter timeouts
         # MT5Client -> .get_rates
         try:
             if self.mt5 and hasattr(self.mt5, "get_rates"):
@@ -364,7 +364,7 @@ class SwingAgent:
 
         # Données
         lookback = int(self.params.lookback)
-        df = self._get_rates(tf, count=max(lookback, 250))
+        df = self._get_rates(tf, count=max(lookback, 150))  # FIX 2026-03-06: 250→150 pour éviter timeouts
         if df is None or df.empty or len(df) < max(80, self.params.ema_period + 5, self.params.atr_period + 5):
             return self._wait_payload(tf, "no_data")
 

@@ -1,0 +1,314 @@
+{
+  "DJ30": {
+    "technical_m5": {
+      "M5|default": {
+        "count": 2,
+        "score_ema": 0.2689414213699951,
+        "outcome_ema": 1.3333333333336719,
+        "win_rate": 0.6387499999999999,
+        "weight": 1.811145941129002,
+        "last_update": "2025-12-09T12:26:41+00:00"
+      }
+    },
+    "scalping_h4": {
+      "H4|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "swing_h4": {
+      "H4|default": {
+        "count": 10,
+        "score_ema": 0.731058578630005,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "swing_h1": {
+      "H1|default": {
+        "count": 10,
+        "score_ema": 0.2689414213699951,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "swing_m30": {
+      "M30|default": {
+        "count": 10,
+        "score_ema": 0.2689414213699951,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "swing_m15": {
+      "M15|default": {
+        "count": 10,
+        "score_ema": 0.554759393168508,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "swing_m5": {
+      "M5|default": {
+        "count": 10,
+        "score_ema": 0.4170855940892175,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "swing_m1": {
+      "M1|default": {
+        "count": 10,
+        "score_ema": 0.2689414213699951,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "smc_h4": {
+      "H4|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "smc_m15": {
+      "M15|default": {
+        "count": 10,
+        "score_ema": 0.731058578630005,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "global_news": {
+      "NEWS|default": {
+        "count": 6,
+        "score_ema": 0.6456563062257954,
+        "outcome_ema": 1.2846981834777973,
+        "win_rate": 0.8114252421875,
+        "weight": 3.388151349577173,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "global_swing": {
+      "SWING|default": {
+        "count": 7,
+        "score_ema": 0.3775406687981454,
+        "outcome_ema": 1.4732729412903487,
+        "win_rate": 0.839711455859375,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "global_smc": {
+      "SMC|default": {
+        "count": 10,
+        "score_ema": 0.6224593312018546,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "scalping_h1": {
+      "H1|default": {
+        "count": 1,
+        "score_ema": 0.2689414213699951,
+        "outcome_ema": 1.666666666666626,
+        "win_rate": 0.575,
+        "weight": 1.4902729705643871,
+        "last_update": "2025-12-09T12:00:35+00:00"
+      }
+    },
+    "smc_m5": {
+      "M5|default": {
+        "count": 10,
+        "score_ema": 0.731058578630005,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "smc_m1": {
+      "M1|default": {
+        "count": 8,
+        "score_ema": 0.358617934571696,
+        "outcome_ema": 1.4660407390082912,
+        "win_rate": 0.8637547374804687,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "scalping_m5": {
+      "M5|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "technical_m15": {
+      "M15|default": {
+        "count": 3,
+        "score_ema": 0.731058578630005,
+        "outcome_ema": 1.6666666666666432,
+        "win_rate": 0.6929375,
+        "weight": 2.7220960883067806,
+        "last_update": "2025-12-09T12:09:04+00:00"
+      }
+    },
+    "scalping_m30": {
+      "M30|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "scalping_m1": {
+      "M1|default": {
+        "count": 5,
+        "score_ema": 0.2689414213699951,
+        "outcome_ema": 1.5380416666667325,
+        "win_rate": 0.77814734375,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:26:41+00:00"
+      }
+    },
+    "technical_m1": {
+      "M1|default": {
+        "count": 1,
+        "score_ema": 0.2689414213699951,
+        "outcome_ema": 1.250000000000143,
+        "win_rate": 0.575,
+        "weight": 1.3652729705644422,
+        "last_update": "2025-12-09T12:16:05+00:00"
+      }
+    },
+    "scalping_m15": {
+      "M15|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "smc_m30": {
+      "M30|default": {
+        "count": 10,
+        "score_ema": 0.731058578630005,
+        "outcome_ema": 1.4465581839334807,
+        "win_rate": 0.9015627978296387,
+        "weight": 3.5,
+        "last_update": "2025-12-09T12:29:48+00:00"
+      }
+    },
+    "structure_m1": {
+      "M1|default": {
+        "count": 4,
+        "score_ema": 0.2689414213699951,
+        "outcome_ema": 0.7516885713946826,
+        "win_rate": 0.738996875,
+        "weight": 2.0205551679312173,
+        "last_update": "2025-12-09T12:26:41+00:00"
+      }
+    },
+    "global_structure": {
+      "STRUCTURE|default": {
+        "count": 4,
+        "score_ema": 0.35434369377420455,
+        "outcome_ema": 0.7516885713946826,
+        "win_rate": 0.738996875,
+        "weight": 2.061548258685238,
+        "last_update": "2025-12-09T12:26:41+00:00"
+      }
+    },
+    "technical_m30": {
+      "M30|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "structure_m5": {
+      "M5|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "structure_m30": {
+      "M30|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "structure_m15": {
+      "M15|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "smc_h1": {
+      "H1|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    },
+    "technical_h1": {
+      "H1|default": {
+        "count": 0,
+        "score_ema": null,
+        "outcome_ema": null,
+        "win_rate": null,
+        "weight": 1.0,
+        "last_update": null
+      }
+    }
+  }
+}

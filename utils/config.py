@@ -6,6 +6,20 @@ import threading
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from functools import lru_cache
+# === Chargement .env et expansion ${VAR} ===
+try:
+    from utils.config_loader import load_dotenv_env, expand_env_vars
+except ImportError:
+    try:
+        from config_loader import load_dotenv_env, expand_env_vars  # type: ignore
+    except ImportError:
+        def load_dotenv_env(*a, **kw): return {}  # type: ignore
+        def expand_env_vars(d): return d  # type: ignore
+
+# Charger .env dès l'import du module (une seule fois, n'écrase pas os.environ)
+load_dotenv_env(path=str(Path(__file__).resolve().parents[1] / ".env"),
+                extra_paths=(), overwrite=False)
+
 # === PATCH: imports pour calendrier/tz ===
 from datetime import datetime
 try:
@@ -37,12 +51,11 @@ _config_lock = threading.RLock()
 # -----------------------------------------------------------------------------
 # Utilitaires
 # -----------------------------------------------------------------------------
-def get_tf_config():
-    cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))
-    prof = yaml.safe_load(open("config/profiles.yaml", encoding="utf-8"))
-    over = yaml.safe_load(open("config/overrides.yaml", encoding="utf-8"))
+def _get_tf_config_legacy():
+    cfg = _load_yaml(os.path.join("config", "config.yaml"))
+    prof = _load_yaml(os.path.join("config", "profiles.yaml"))
+    over = _load_yaml(os.path.join("config", "overrides.yaml"))
 
-    # ordre: base <- profiles <- overrides
     def deep_merge(a,b):
         import copy
         r = copy.deepcopy(a)
@@ -66,7 +79,7 @@ def _env_or(value: str|int|None, key: str):
     v = os.getenv(key)
     return v if v is not None else value
 
-def _safe_load_yaml(path: Path) -> dict:
+def _safe_load_yaml(path: Path, *, do_expand: bool = True) -> dict:
     if yaml is None:
         return {}
     try:
@@ -76,7 +89,11 @@ def _safe_load_yaml(path: Path) -> dict:
             data = yaml.safe_load(f) or {}
         if not isinstance(data, dict):
             return {}
+        if do_expand:
+            data = expand_env_vars(data)
         return data
+    except ValueError:
+        raise  # remonter les erreurs de variables manquantes
     except Exception:
         return {}
 
@@ -102,18 +119,20 @@ def load_config(path: Optional[str] = None) -> Dict[str, Any]:
     p = Path(path) if path else DEFAULT_CONFIG_PATH
     cfg: Dict[str, Any] = _safe_load_yaml(p) or {}
 
+    # ${VAR} est déjà résolu par _safe_load_yaml → expand_env_vars.
+    # Les overlays ci-dessous servent de fallback si config.yaml
+    # n'utilise pas la syntaxe ${VAR}.
     def _env_or(val, key: str):
         v = os.getenv(key)
         return v if (v not in (None, "")) else val
 
-    # ---- Overlays ENV pour MT5 / Telegram ----
     mt5 = cfg.setdefault("mt5", {})
     mt5["account"]  = _env_or(mt5.get("account"),  "MT5_ACCOUNT")
     mt5["password"] = _env_or(mt5.get("password"), "MT5_PASSWORD")
     mt5["server"]   = _env_or(mt5.get("server"),   "MT5_SERVER")
 
     tg = cfg.setdefault("telegram", {})
-    tg["token"]   = _env_or(tg.get("token"),   "TELEGRAM_TOKEN")
+    tg["token"]   = _env_or(tg.get("token"),   "TELEGRAM_BOT_TOKEN")
     tg["chat_id"] = _env_or(str(tg.get("chat_id")), "TELEGRAM_CHAT_ID")
 
     return cfg
@@ -147,7 +166,8 @@ def _load_yaml(path: str) -> Dict[str, Any]:
     if not os.path.exists(path):
         return {}
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+        data = yaml.safe_load(f) or {}
+    return expand_env_vars(data)
 
 def get_cfg() -> Dict[str, Any]:
     global _CFG_CACHE
@@ -477,15 +497,9 @@ def _deep_merge(a, b):
 
 def get_tf_config():
     """Retourne (tfs, tf_weights, mtf_enabled) après merge config.yaml <- profiles.yaml <- overrides.yaml"""
-    base = {}
-    prof = {}
-    over = {}
-    if os.path.exists("config/config.yaml"):
-        base = yaml.safe_load(open("config/config.yaml", encoding="utf-8")) or {}
-    if os.path.exists("config/profiles.yaml"):
-        prof = yaml.safe_load(open("config/profiles.yaml", encoding="utf-8")) or {}
-    if os.path.exists("config/overrides.yaml"):
-        over = yaml.safe_load(open("config/overrides.yaml", encoding="utf-8")) or {}
+    base = _load_yaml(os.path.join("config", "config.yaml"))
+    prof = _load_yaml(os.path.join("config", "profiles.yaml"))
+    over = _load_yaml(os.path.join("config", "overrides.yaml"))
 
     merged = _deep_merge(_deep_merge(base, prof), over)
     mtf = merged.get("multi_timeframes") or {}

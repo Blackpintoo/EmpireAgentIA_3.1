@@ -146,7 +146,7 @@ class StructureAgent:
         }
 
     # --------------- Data ---------------
-    def _get_rates(self, timeframe: str, count: int) -> Optional[pd.DataFrame]:
+    def _get_rates(self, timeframe: str, count: int = 150) -> Optional[pd.DataFrame]:  # FIX 2026-03-06: default 150 pour éviter timeouts
         """
         Utilise l'interface MT5Client du projet (mt5.get_rates(symbol, timeframe, count)).
         Doit renvoyer un DataFrame avec colonnes time, open, high, low, close.

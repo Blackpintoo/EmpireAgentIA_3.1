@@ -26,6 +26,11 @@ except ImportError:
     logger = logging.getLogger(__name__)
 
 
+# FIX 2026-03-14 R11: Finnhub disable basé sur le temps (remplace compteur R10)
+_finnhub_disabled_until: float = 0.0  # timestamp Unix — 0 = actif
+_FINNHUB_DISABLE_DURATION: float = 3600.0  # 1 heure de cooldown après erreur 403
+
+
 class FinnhubCalendar:
     """
     Client Finnhub pour le calendrier économique.
@@ -167,6 +172,11 @@ class FinnhubCalendar:
             "token": self.api_key
         }
 
+        # FIX 2026-03-14 R11: Skip si Finnhub en cooldown
+        global _finnhub_disabled_until
+        if _finnhub_disabled_until > time.time():
+            return []
+
         try:
             logger.info(f"[Finnhub] Appel API : {date_from} -> {date_to}")
             response = requests.get(url, params=params, timeout=10)
@@ -183,14 +193,19 @@ class FinnhubCalendar:
             return events
 
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 429:
-                logger.error("[Finnhub] Rate limit atteint (60 appels/min)")
+            status = getattr(e.response, 'status_code', 0) if hasattr(e, 'response') else 0
+            if status in (403, 429):
+                _finnhub_disabled_until = time.time() + _FINNHUB_DISABLE_DURATION
+                logger.warning(
+                    f"[FINNHUB] HTTP {status} — désactivé pour 1h. Cache CSV uniquement."
+                )
             else:
-                logger.error(f"[Finnhub] Erreur HTTP {e.response.status_code}: {e}")
+                logger.debug(f"[FINNHUB] Erreur HTTP {status}")
             return []
 
         except Exception as e:
-            logger.error(f"[Finnhub] Erreur API: {e}")
+            _finnhub_disabled_until = time.time() + _FINNHUB_DISABLE_DURATION
+            logger.warning(f"[FINNHUB] Erreur — désactivé pour 1h: {e}")
             return []
 
     def filter_high_impact_events(self, events: List[Dict]) -> List[Dict]:
