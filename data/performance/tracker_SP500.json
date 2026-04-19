@@ -154,7 +154,7 @@
       "M15|default": {
         "count": 36,
         "score_ema": 0.5,
-        "outcome_ema": 9.2038717958556e-18,
+        "outcome_ema": 5.6566336431419155e-42,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-24T12:15:04+00:00"
@@ -164,7 +164,7 @@
       "H1|default": {
         "count": 2,
         "score_ema": 0.5,
-        "outcome_ema": 1.1703837885184989e-266,
+        "outcome_ema": 2.8613424355384423e-274,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2025-12-19T06:03:57+00:00"
@@ -184,7 +184,7 @@
       "M15|default": {
         "count": 1,
         "score_ema": 0.5,
-        "outcome_ema": 4.364389175406586e-18,
+        "outcome_ema": 3.020026437111805e-27,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-16T15:02:24+00:00"
@@ -204,7 +204,7 @@
       "M5|default": {
         "count": 12,
         "score_ema": 0.5,
-        "outcome_ema": 7.605410200353466e-23,
+        "outcome_ema": 1.814527194170318e-31,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-23T12:22:36+00:00"
@@ -224,7 +224,7 @@
       "M5|default": {
         "count": 24,
         "score_ema": 0.5,
-        "outcome_ema": 2.1900255402845026e-71,
+        "outcome_ema": 3.8387566502042837e-119,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-24T12:15:04+00:00"
@@ -244,7 +244,7 @@
       "M5|default": {
         "count": 214,
         "score_ema": 0.5,
-        "outcome_ema": 1.56323475475878e-179,
+        "outcome_ema": 1.1207895316728472e-219,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-24T13:31:04+00:00"
@@ -304,7 +304,7 @@
       "M15|default": {
         "count": 211,
         "score_ema": 0.5,
-        "outcome_ema": 4.6985941312190564e-270,
+        "outcome_ema": 0.0,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-24T06:15:04+00:00"
@@ -342,12 +342,12 @@
     },
     "unknown": {
       "M30|default": {
-        "count": 53,
+        "count": 60,
         "score_ema": 0.6224593312018546,
-        "outcome_ema": 0.3033261864701099,
-        "win_rate": 0.6084859856612534,
-        "weight": 1.6586480612197816,
-        "last_update": "2026-04-16T02:12:38+00:00"
+        "outcome_ema": 0.631937734476968,
+        "win_rate": 0.7513613530432312,
+        "weight": 2.323015824088442,
+        "last_update": "2026-04-17T14:32:09+00:00"
       }
     }
   }

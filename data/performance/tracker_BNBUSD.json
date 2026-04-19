@@ -4,7 +4,7 @@
       "H1|default": {
         "count": 11,
         "score_ema": 0.5,
-        "outcome_ema": 4.1836278346233236e-206,
+        "outcome_ema": 1.957619939172747e-229,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-14T15:08:59+00:00"
@@ -134,7 +134,7 @@
       "M15|default": {
         "count": 14,
         "score_ema": 0.5,
-        "outcome_ema": 3.6042203787402115e-116,
+        "outcome_ema": 2.2888031699835118e-163,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-24T06:01:15+00:00"
@@ -154,7 +154,7 @@
       "M15|default": {
         "count": 51,
         "score_ema": 0.5,
-        "outcome_ema": 4.073234321403258e-74,
+        "outcome_ema": 1.4048964596481543e-217,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-24T13:49:15+00:00"
@@ -184,7 +184,7 @@
       "H1|default": {
         "count": 14,
         "score_ema": 0.5,
-        "outcome_ema": 9.57757485e-316,
+        "outcome_ema": 0.0,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-19T13:30:19+00:00"
@@ -202,12 +202,12 @@
     },
     "unknown": {
       "M30|default": {
-        "count": 31,
+        "count": 33,
         "score_ema": 0.6224593312018546,
-        "outcome_ema": -0.808662917399882,
-        "win_rate": 0.06638999894322523,
+        "outcome_ema": -0.7298393149642722,
+        "win_rate": 0.04796677423648022,
         "weight": 0.25,
-        "last_update": "2026-04-15T13:38:37+00:00"
+        "last_update": "2026-04-18T07:19:15+00:00"
       }
     },
     "swing_m5": {
@@ -234,7 +234,7 @@
       "M5|default": {
         "count": 43,
         "score_ema": 0.5,
-        "outcome_ema": 1.169608869756625e-95,
+        "outcome_ema": 4.0319907322558476e-166,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-24T13:47:15+00:00"
@@ -244,7 +244,7 @@
       "M5|default": {
         "count": 5,
         "score_ema": 0.5,
-        "outcome_ema": 5.759276200796965e-140,
+        "outcome_ema": 1.0257142756045592e-233,
         "win_rate": 0.5,
         "weight": 1.0,
         "last_update": "2026-03-24T06:01:15+00:00"

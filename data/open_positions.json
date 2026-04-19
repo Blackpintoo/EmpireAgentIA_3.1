@@ -1,1 +1,1 @@
-{"BTCUSD": {}, "NAS100": {}, "XAUUSD": {}, "BNBUSD": {}, "USDJPY": {}, "SP500": {}, "AUDUSD": {}, "LTCUSD": {}, "SOLUSD": {}}
+{"BTCUSD": {}, "NAS100": {}, "XAUUSD": {}, "BNBUSD": {}, "USDJPY": {}, "SP500": {"1186251082": {"entry": 7129.96, "sl": 7103.33, "tp": 7171.57, "side": "BUY", "time": 1776465240}}, "AUDUSD": {}, "LTCUSD": {}, "SOLUSD": {}}

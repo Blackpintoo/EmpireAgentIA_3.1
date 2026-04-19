@@ -695,6 +695,17 @@ class Orchestrator:
         overrides_path: Optional[str] = None,
         telegram_client=None,
     ):
+        # ══════════════════════════════════════════════════════════════════════
+        # R19: TAG DE VERSION — Permet de vérifier que le code déployé est le bon
+        # ══════════════════════════════════════════════════════════════════════
+        logger.warning(
+            "═══════════════════════════════════════════════════════════════\n"
+            "  ORCHESTRATOR VERSION: R19 — 2026-04-16\n"
+            "  Features: ASIA_BLOCK, PROBATION, LIQ_PENALTY, REVERSAL_COOLDOWN,\n"
+            "            ADAPTIVE_SCORE, SHORT_PENALTY, XAUUSD_PROBATION, NAS100_BOOST\n"
+            "═══════════════════════════════════════════════════════════════"
+        )
+
         # --- Symbol d'abord ---
         enabled_symbols: List[str] = []
         try:
@@ -2023,6 +2034,13 @@ class Orchestrator:
 
     def execute_trade(self, signal: str):
         symbol = self.symbol  # Utilise le symbole de l'orchestrateur
+        # ══════════════════════════════════════════════════════════════════════
+        # R19: CHECKPOINT — Confirmer que le code R19 est bien celui qui s'exécute
+        # ══════════════════════════════════════════════════════════════════════
+        logger.debug(
+            f"[R19_CHECKPOINT] {symbol}: execute_trade() appelé — "
+            f"code version R19 (2026-04-16)"
+        )
         # --------- GATING QUALITÉ (backtests/rapports récents) ----------
         # DÉSACTIVÉ TEMPORAIREMENT pour permettre le trading sans historique de backtest
         # Pour réactiver: décommenter le bloc ci-dessous
@@ -2112,6 +2130,11 @@ class Orchestrator:
         # R17 original ne produisait jamais de log car les symboles LONG only
         # ne peuvent pas avoir de reversal. Ajout de logs debug pour diagnostic.
         # ══════════════════════════════════════════════════════════════════════
+        # R19: Confirmation passage dans la zone REVERSAL_COOLDOWN
+        logger.info(
+            f"[REV_COOLDOWN_ZONE] {symbol}: entrée dans la zone REVERSAL_COOLDOWN — "
+            f"last_trade_result={'SET' if getattr(self, '_last_trade_result', None) is not None else 'None'}"
+        )
         try:
             _rev_cooldown_min = int(
                 (self.cfg.get("orchestrator", {}).get("cooldown", {})
@@ -2326,6 +2349,11 @@ class Orchestrator:
         _adaptive_boost = self._get_adaptive_score_boost()
 
         # R18: Pénalité session basse liquidité (corrigé — R17 ne se déclenchait jamais)
+        # R19: Confirmation passage dans la zone LIQ_PENALTY
+        logger.info(
+            f"[LIQ_PENALTY_ZONE] {symbol}: entrée dans la zone LIQ_PENALTY — "
+            f"hour={current_hour_utc}, crypto={symbol.upper() in self._hf_crypto_symbols}"
+        )
         _liq_penalty = 0.0
         _hf_cfg_r17 = self.cfg.get("orchestrator", {}).get("hard_filters", {})
         _liq_hours = _hf_cfg_r17.get("low_liquidity_hours_utc", [0, 1, 2, 3, 4, 5, 6, 7, 22, 23])

@@ -349,10 +349,18 @@ BNBUSD:
       lock_rr: 0.3
 
 # ══════════════════════════════════════════════════════════════════════════════
-# XAUUSD — Or
+# XAUUSD — Or — MODE PROBATION TEMPORAIRE R19
+# POST-R18: 6 trades, 0 wins, -$1,276 (0% HR). Était +$1,556 (71.4%) avant.
+# Contexte macro: volatilité tarifs → or erratique.
 # ══════════════════════════════════════════════════════════════════════════════
 XAUUSD:
   orchestrator:
+    # R19: MODE PROBATION TEMPORAIRE — 0% HR, -$1,276 sur 6 jours
+    probation: true
+    allowed_directions: ["LONG"]          # R19: LONG only — SHORTs en volatilité macro = suicide
+    min_score_for_proposal: 6.5           # R19: relevé (score élevé requis)
+    votes_required: 3                     # R19: 3 agents d'accord (moins strict que crypto car historiquement bon)
+    max_trades_per_day: 2                 # R19: 2 trades/jour max (était 4)
     # FIX 2026-02-20: whale_override désactivé pour non-crypto (étape 4.8)
     whale_override:
       enable: false
@@ -360,13 +368,13 @@ XAUUSD:
       enabled: true
       max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
       break_even:
-        rr: 1.2                          # FIX 2026-02-20: 0.6→1.2 (étape 1.2)
+        rr: 1.0                           # R19: BE plus agressif 1.2→1.0 (protéger capital plus tôt)
         offset_points: 0.0
       partials:
-        - rr: 1.5                        # FIX 2026-02-20: 1.0→1.5 (étape 1.1)
-          close_frac: 0.3               # FIX 2026-02-20: 0.4→0.3
-        - rr: 2.5                        # FIX 2026-02-20: 1.8→2.5
-          close_frac: 0.3               # FIX 2026-02-20: 0.4→0.3
+        - rr: 1.5
+          close_frac: 0.3
+        - rr: 2.5
+          close_frac: 0.3
       trailing:
         enabled: true
         start_rr: 1.4
@@ -376,22 +384,22 @@ XAUUSD:
         lock_rr: 0.3
     cooldown:
       enabled: true
-      min_secs_between_trades: 600
-      max_trades_per_day: 4               # FIX 2026-02-20: 8→4 (forex/métaux, étape 1.6)
-      after_trade_min: 3
-      after_loss_min: 60
+      min_secs_between_trades: 900        # R19: 15 min entre trades (était 600)
+      max_trades_per_day: 2               # R19: réduit de 4→2
+      after_trade_min: 5
+      after_loss_min: 120                 # R19: 2h après perte (était 60)
       after_win_min: 4
-      after_streak_n: 3
-      after_streak_min: 30                # FIX 2026-02-20: 25→30 (étape 1.6)
+      after_streak_n: 2                   # R19: pause après 2 pertes (était 3)
+      after_streak_min: 1440              # R19: 24h de pause
     news_filter:
       enabled: true
       csv_path: data/news_calendar.csv
       impacts: ["High", "Medium"]
-      window_before_min: 30
-      window_after_min: 30
+      window_before_min: 45               # R19: élargi 30→45 min (événements macro = danger pour or)
+      window_after_min: 45                # R19: élargi 30→45 min
     position_limits:
-      max_positions: 6
-      max_volume: 0.15                    # FIX 2026-02-20: 1.0→0.15 (étape 1.4)
+      max_positions: 3                    # R19: réduit de 6→3
+      max_volume: 0.10                    # R19: réduit de 0.15→0.10
       max_net_volume: 0.05
     live_guard:
       enabled: true
@@ -400,16 +408,18 @@ XAUUSD:
       min_trades_live: 15
       lookback_days: 7
     # FIX 2026-02-20: ATR SL resserré (étape 1.3)
-    atr_sl_mult: 1.8                      # RÉDUIT 2.5→1.8 (or)
+    atr_sl_mult: 1.6                      # R19: resserré 1.8→1.6 (SL plus tight)
     atr_tp_mult: 2.5
-    # FIX 2026-02-24: heures toxiques — 14h=-1780$ (5 trades, 40% WR), 18h=-1178$ (1 trade, 0% WR)
+    # FIX 2026-02-24: heures toxiques
     blocked_hours_utc: [14, 18]
-    # FIX 2026-02-20: prime_hours (étape 5.5)
+    # R19: restreindre aux heures London (meilleure liquidité or)
     prime_hours_utc:
       - {start: 7, end: 17}              # Session London
+    allowed_hours_utc: [7, 8, 9, 10, 11, 12, 13, 15, 16, 17]  # R19: London seulement, excluant 14h et 18h
   risk:
-    risk_per_trade: 0.012
-    daily_loss_abs: 220
+    risk_per_trade: 0.005                 # R19: réduit 0.012→0.005 (divisé par 2.4)
+    daily_loss_abs: 100                   # R19: kill switch réduit 220→$100/jour
+    max_consec_losses: 2                  # R19: pause après 2 pertes
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ETHUSD — Crypto
@@ -683,33 +693,36 @@ UK100:
     daily_loss_abs: 100
 
 # ══════════════════════════════════════════════════════════════════════════════
-# NAS100 — Nasdaq
+# NAS100 — Nasdaq — MOTEUR PRINCIPAL R19
+# POST-R18: 15 trades, 11 wins, +$714, 73.3% HR, PF 6.0
 # ══════════════════════════════════════════════════════════════════════════════
 NAS100:
   orchestrator:
-    min_score_for_proposal: 5.0             # FIX 2026-03-28 R16-config: ajouté (17% hit rate, -$107/3j)
+    min_score_for_proposal: 4.5           # R19: baissé de 5.0→4.5 (HR 73.3% justifie plus de trades)
     # FIX 2026-02-20: whale_override désactivé pour non-crypto (étape 4.8)
     whale_override:
       enable: false
     position_limits:
-      max_volume: 1.0                     # FIX 2026-02-20: 10.0→1.0 (étape 1.4)
+      max_volume: 2.0                     # R19: augmenté 1.0→2.0 (plus de marge)
     cooldown:
       enabled: true
       min_secs_between_trades: 600
-      max_trades_per_day: 4               # FIX 2026-02-20: 8→4 (indices, étape 1.6)
-      after_loss_min: 60
+      max_trades_per_day: 6               # R19: augmenté 4→6 (capitaliser sur le momentum)
+      after_loss_min: 45                  # R19: réduit 60→45 (actif fiable, reprendre plus vite)
       after_streak_n: 3
       after_streak_min: 30
     # FIX 2026-02-20: ATR SL resserré (étape 1.3)
-    atr_sl_mult: 1.6                      # Ajouté (indices)
-    atr_tp_mult: 2.5
+    atr_sl_mult: 1.6                      # Inchangé
+    atr_tp_mult: 2.8                      # R19: augmenté 2.5→2.8 (laisser courir les winners)
     # FIX 2026-02-20: prime_hours (étape 5.5)
     prime_hours_utc:
       - {start: 13, end: 20}             # Session NY cash
     position_manager:
-      max_duration_minutes: 240           # FIX 2026-02-24: timeout 4h (Directive 4)
+      max_duration_minutes: 300           # R19: augmenté 240→300 min (5h, laisser respirer)
   risk:
-    daily_loss_abs: 2000
+    risk_per_trade: 0.010                 # R19: AUGMENTÉ → 1.0% risk par trade
+    daily_loss_abs: 300                   # R19: kill switch raisonnable
+    max_consec_losses: 3                  # R19: pause après 3 pertes
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AUDUSD — DÉSACTIVÉ (WR 33%, -$844, 10 losses consécutifs)
@@ -745,36 +758,39 @@ AUDUSD:
     max_consec_losses: 2              # R17: pause après 2 pertes (pas 3)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# USDJPY — Forex
+# USDJPY — Forex — MODE PROBATION R19
+# POST-R18: 3 trades, 0 wins, -$241 (0% HR). Malgré LONG only + min_score 6.0.
 # ══════════════════════════════════════════════════════════════════════════════
 USDJPY:
   orchestrator:
+    # R19: MODE PROBATION — 0% HR, -$241 sur 6 jours
+    probation: true
+    allowed_directions: ["LONG"]          # R17: maintenu LONG only
+    min_score_for_proposal: 7.0           # R19: monté 6.0→7.0 (probation)
+    votes_required: 4                     # R19: 4 agents d'accord
+    max_trades_per_day: 1                 # R19: 1 seul trade/jour
     # FIX 2026-02-20: whale_override désactivé pour non-crypto (étape 4.8)
     whale_override:
       enable: false
-    # R17: Dernière chance — restrictions sévères
-    allowed_directions: ["LONG"]      # R17: LONG only
-    min_score_for_proposal: 6.0       # R18: monté de 5.0→6.0 (25% HR, LONGs à -$46)
     position_limits:
       max_volume: 1.0
-    # R18: Restreindre aux heures London+NY (Asie = perte)
-    allowed_hours_utc: [8, 9, 10, 11, 12, 13, 14, 15]
+    allowed_hours_utc: [8, 9, 10, 11, 12, 13, 14, 15]  # Maintenu London+NY
     cooldown:
       enabled: true
       min_secs_between_trades: 600
-      max_trades_per_day: 4               # FIX 2026-02-20: forex max 4
-      after_loss_min: 60
-      after_streak_n: 3
-      after_streak_min: 30
+      max_trades_per_day: 1               # R19: réduit à 1
+      after_loss_min: 120                 # R19: 2h après perte (était 60)
+      after_streak_n: 2                   # R19: pause après 2 pertes (était 3)
+      after_streak_min: 2880              # R19: 48h de pause
     # FIX 2026-02-20: ATR SL resserré (étape 1.3)
-    atr_sl_mult: 1.4                      # Ajouté (forex)
+    atr_sl_mult: 1.4
     atr_tp_mult: 2.5
     # FIX 2026-02-20: prime_hours (étape 5.5)
     prime_hours_utc:
       - {start: 7, end: 17}              # London + NY overlap
     position_manager:
-      max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
+      max_duration_minutes: 360
   risk:
-    risk_per_trade: 0.002             # R17: risque minimal
-    daily_loss_abs: 60                # R17: kill switch serré (était 150)
-    max_consec_losses: 2              # R17: pause après 2 pertes
+    risk_per_trade: 0.001                 # R19: risque minimal absolu (0.1%)
+    daily_loss_abs: 30                    # R19: kill switch $30/jour
+    max_consec_losses: 2                  # R19: pause après 2 pertes

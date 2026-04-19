@@ -303,8 +303,27 @@ class EconCalendarClient:
         if cached is not None:
             return _filter_window(cached, start, end)
 
-        # 2) Finnhub (source principale)
-        events = _fetch_finnhub(start, end)
+        # 2) Finnhub (source principale) — R19: vérifier si activé dans config
+        _finnhub_enabled = True  # défaut: activé si pas de config
+        try:
+            import yaml
+            with open("config/config.yaml", "r", encoding="utf-8") as _cfg_f:
+                _cfg_data = yaml.safe_load(_cfg_f)
+            _finnhub_enabled = (
+                _cfg_data.get("external_apis", {})
+                .get("finnhub", {})
+                .get("enabled", True)
+            )
+        except Exception:
+            pass  # Si on ne peut pas lire la config, on laisse activé par défaut
+
+        if _finnhub_enabled:
+            events = _fetch_finnhub(start, end)
+        else:
+            logger.info(
+                "[ECON_API] Finnhub désactivé dans config.yaml — skip _fetch_finnhub()"
+            )
+            events = []
 
         # 3) FXStreet (fallback)
         if not events:

@@ -1,1 +1,16 @@
-{}
+{
+  "1186251082": {
+    "ticket": 1186251082,
+    "symbol": "SP500",
+    "direction": "LONG",
+    "volume": 1.0,
+    "price_open": 7129.96,
+    "sl": 7103.33,
+    "tp": 7171.57,
+    "open_time": "2026-04-17T22:34:00+00:00",
+    "magic": 0,
+    "comment": "",
+    "initial_risk": 26.63000000000011,
+    "initial_volume": 1.0
+  }
+}
