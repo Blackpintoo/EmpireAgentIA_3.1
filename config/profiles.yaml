@@ -179,7 +179,7 @@ profiles:
       max_daily_loss: 0.02
       max_consec_loss: 3
     orchestrator:
-      auto_execute: true
+      auto_execute: false  # SHADOW 2026-04-30 — observation pour optimisation paramètres ATR
       telegram_validation: false
       position_manager:
         enabled: true
@@ -889,7 +889,7 @@ profiles:
       max_daily_loss: 0.02
       max_consec_loss: 3
     orchestrator:
-      auto_execute: true
+      auto_execute: false  # SHADOW 2026-04-30 — observation pour optimisation paramètres ATR
       telegram_validation: false
       position_manager:
         enabled: true

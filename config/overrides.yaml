@@ -265,7 +265,7 @@ LTCUSD:
 # ══════════════════════════════════════════════════════════════════════════════
 BNBUSD:
   orchestrator:
-    auto_execute: true
+    auto_execute: false                     # SHADOW 2026-04-30: bascule shadow mode (était true)
     telegram_validation: false
     # R18: MODE PROBATION — 14 trades, 7.1% HR, -$489 sur 14j
     # R18: Changement SHORT only → LONG only (les SHORTs = 7.1% HR, catastrophique)
@@ -591,6 +591,8 @@ EURUSD:
 # ══════════════════════════════════════════════════════════════════════════════
 SOLUSD:
   orchestrator:
+    auto_execute: false                   # SHADOW 2026-04-30: bascule shadow mode explicite
+    telegram_validation: false
     # R18: MODE PROBATION — 27 trades, 18.5% HR, -$906 sur 14j
     probation: true
     allowed_directions: ["LONG"]          # R17: maintenu LONG only
