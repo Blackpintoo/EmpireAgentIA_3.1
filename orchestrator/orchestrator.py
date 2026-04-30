@@ -215,6 +215,11 @@ CRYPTO_CANON = {"BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD"}
 # Noms Broker/MT5 (positions_get renvoie souvent les noms broker)
 CRYPTO_REAL  = {"BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD"}
 
+# FIX 2026-04-30: Symboles autorisés à contourner la blacklist horaire globale
+# via leur whitelist locale (allowed_hours_utc). Pour tous les autres symboles,
+# la blacklist globale s'applique strictement (union global ∪ local).
+BLACKLIST_OVERRIDE_WHITELIST = ["XAUUSD"]
+
 def _is_crypto_canon(s: str) -> bool:
     return (s or "").upper() in CRYPTO_CANON
 
@@ -2250,8 +2255,45 @@ class Orchestrator:
         current_hour_utc = datetime.now(timezone.utc).hour
         orch_cfg = (self.profile.get("orchestrator") or {})
 
-        blocked_hours = orch_cfg.get("blocked_hours_utc", [])
+        # FIX 2026-04-19 D4: Union blacklist globale + locale.
+        # FIX 2026-04-30: Sémantique stricte. Seuls les symboles listés dans
+        # BLACKLIST_OVERRIDE_WHITELIST peuvent contourner la blacklist globale via
+        # leur allowed_hours_utc local (cas XAUUSD documenté). Pour tous les autres
+        # symboles, la blacklist globale s'applique inconditionnellement.
+        local_blocked = list(orch_cfg.get("blocked_hours_utc", []) or [])
         allowed_hours = orch_cfg.get("allowed_hours_utc", None)
+        _global_blocked: list = []
+        try:
+            from utils.config import get_overrides as _get_overrides
+            _ov = _get_overrides() or {}
+            _global_blocked = list(
+                ((_ov.get("GLOBAL") or {}).get("orchestrator") or {}).get("blocked_hours_utc", []) or []
+            )
+        except Exception:
+            _global_blocked = []
+
+        _sym_upper = (symbol or "").upper()
+        if _sym_upper in BLACKLIST_OVERRIDE_WHITELIST:
+            # Exception nommée: la whitelist locale a priorité sur la blacklist globale
+            _allowed_set = set(allowed_hours or [])
+            blocked_hours = sorted(
+                (set(local_blocked) | set(_global_blocked)) - _allowed_set
+            )
+            # Log des heures où l'exception s'applique (heure courante incluse si
+            # l'heure était globalement blacklistée mais est autorisée localement)
+            _bypass_now = (
+                current_hour_utc in _global_blocked
+                and current_hour_utc in _allowed_set
+                and current_hour_utc not in blocked_hours
+            )
+            if _bypass_now:
+                logger.info(
+                    f"[HOUR_FILTER][EXCEPTION] {symbol} autorisé sur h{current_hour_utc} "
+                    f"via allowed_hours_utc local malgré blacklist globale"
+                )
+        else:
+            # Mode strict: union global ∪ local, sans soustraire allowed_local
+            blocked_hours = sorted(set(local_blocked) | set(_global_blocked))
 
         # Détection automatique du mode ([] = pas de restriction, donc pas de whitelist)
         hour_filter_mode = "WHITELIST" if allowed_hours else "BLACKLIST" if blocked_hours else None
