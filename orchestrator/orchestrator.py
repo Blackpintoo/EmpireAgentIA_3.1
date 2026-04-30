@@ -2929,22 +2929,30 @@ class Orchestrator:
                 except Exception as _pv_err:
                     logger.warning(f"[RISK_CAP] symbol_info({broker_symbol}) échoué: {_pv_err}")
 
-                # FIX 2026-03-23 R15: Override point_val pour indices CFD
-                # contract_size × point donne 0.01 pour SP500/NAS100
-                # mais le risque réel est ~$1/pt/lot (vérifié empiriquement)
+                # FIX 2026-03-23 R15: Override point_val pour indices CFD libellés en USD.
+                # contract_size × point donne 0.01 pour SP500/NAS100 mais le risque réel
+                # est ~$1/pt/lot (vérifié empiriquement).
+                # FIX 2026-04-30: retrait UK100/GER40 du dict point_value override.
+                # Ces indices ont currency_profit GBP/EUR; l'override 1.0 sous-estimait
+                # le risque (~36% UK100, ~17% GER40 selon mt5.symbol_info live).
+                # Ils utilisent désormais la voie native MT5 (trade_tick_value/trade_tick_size).
+                # L'override n'est conservé que pour les indices avec currency_profit == USD.
                 _indices_point_val = {
                     "SP500": 1.0, "SP500#1": 1.0,
                     "NAS100": 1.0, "NAS100#1": 1.0,
                     "DJ30": 1.0, "DJ30#1": 1.0,
-                    "GER40": 1.0, "UK100": 1.0,
                 }
                 _sym_upper = symbol.upper()
                 if _sym_upper in _indices_point_val:
                     _old_pv = _point_val
                     _point_val = _indices_point_val[_sym_upper]
                     logger.info(
-                        f"[RISK_CAP] {symbol}: point_val override indices = {_point_val} "
+                        f"[RISK_CAP] {symbol}: mode=override_indices_USD point_val={_point_val} "
                         f"(était {_old_pv})"
+                    )
+                else:
+                    logger.info(
+                        f"[RISK_CAP] {symbol}: mode=MT5_native_tick_conversion point_val={_point_val:.4f}"
                     )
 
                 # FIX 2026-03-18 R13: Alerte si point_value reste au défaut
