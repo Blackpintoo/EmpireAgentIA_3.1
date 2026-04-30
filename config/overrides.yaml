@@ -647,23 +647,25 @@ SP500:
     daily_loss_abs: 500
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GBPUSD — Forex
+# GBPUSD — Forex (SHADOW 2026-04-30: hérite EURUSD)
 # ══════════════════════════════════════════════════════════════════════════════
 GBPUSD:
   orchestrator:
+    auto_execute: false                   # SHADOW 2026-04-30
+    telegram_validation: false
     # FIX 2026-02-20: whale_override désactivé pour non-crypto (étape 4.8)
     whale_override:
       enable: false
     position_limits:
-      max_volume: 2.0
+      max_volume: 1.0                     # SHADOW 2026-04-30 (forex)
     cooldown:
       enabled: true
-      min_secs_between_trades: 600
-      max_trades_per_day: 1
+      min_secs_between_trades: 900        # SHADOW 2026-04-30
+      max_trades_per_day: 3               # SHADOW 2026-04-30
       after_loss_min: 60
       after_streak_n: 3
       after_streak_min: 30
-    atr_sl_mult: 1.4                      # FIX 2026-02-20: forex
+    atr_sl_mult: 1.4                      # FIX 2026-02-20: forex (hérité EURUSD)
     atr_tp_mult: 2.5
     position_manager:
       max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
@@ -671,19 +673,22 @@ GBPUSD:
     daily_loss_abs: 100
 
 # ══════════════════════════════════════════════════════════════════════════════
-# UK100 — Indice UK
+# UK100 — Indice UK (SHADOW 2026-04-30: hérite NAS100 base, currency_profit=GBP)
+# point_value géré désormais via voie native MT5 (commit fix orchestrator 30/04)
 # ══════════════════════════════════════════════════════════════════════════════
 UK100:
   orchestrator:
+    auto_execute: false                   # SHADOW 2026-04-30
+    telegram_validation: false
     # FIX 2026-02-20: whale_override désactivé pour non-crypto (étape 4.8)
     whale_override:
       enable: false
     position_limits:
-      max_volume: 2.0
+      max_volume: 0.5                     # SHADOW 2026-04-30 (volume_step broker = 0.1)
     cooldown:
       enabled: true
-      min_secs_between_trades: 600
-      max_trades_per_day: 1
+      min_secs_between_trades: 900        # SHADOW 2026-04-30
+      max_trades_per_day: 3               # SHADOW 2026-04-30
       after_loss_min: 60
       after_streak_n: 3
       after_streak_min: 30
@@ -691,6 +696,130 @@ UK100:
     atr_tp_mult: 2.5
   risk:
     daily_loss_abs: 100
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DJ30 — Indice US Dow Jones (SHADOW 2026-04-30: hérite NAS100 base, USD natif)
+# ══════════════════════════════════════════════════════════════════════════════
+DJ30:
+  orchestrator:
+    auto_execute: false                   # SHADOW 2026-04-30
+    telegram_validation: false
+    whale_override:
+      enable: false
+    position_limits:
+      max_volume: 0.5                     # SHADOW 2026-04-30 (volume_step broker = 0.1)
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 900        # SHADOW 2026-04-30
+      max_trades_per_day: 3               # SHADOW 2026-04-30
+      after_loss_min: 45
+      after_streak_n: 3
+      after_streak_min: 30
+    atr_sl_mult: 1.6                      # Hérité NAS100
+    atr_tp_mult: 2.5
+    prime_hours_utc:
+      - {start: 13, end: 20}              # Hérité NAS100 (session NY cash)
+    position_manager:
+      enabled: true
+      max_duration_minutes: 300
+  risk:
+    # TODO 2026-05-14: réviser risk_per_trade avant promotion en exécution réelle
+    risk_per_trade: 0.005                 # SHADOW conservateur, sera ajusté en sortie shadow
+    daily_loss_abs: 200
+    max_consec_losses: 3
+
+# ══════════════════════════════════════════════════════════════════════════════
+# USDCAD — Forex (SHADOW 2026-04-30: hérite EURUSD; corrélation pétrole/EIA 14h-16h UTC)
+# Note: currency_profit=CAD, conversion native MT5 OK (vérifié 30/04 mt5.symbol_info)
+# ══════════════════════════════════════════════════════════════════════════════
+USDCAD:
+  orchestrator:
+    auto_execute: false                   # SHADOW 2026-04-30
+    telegram_validation: false
+    whale_override:
+      enable: false
+    position_limits:
+      max_volume: 1.0                     # SHADOW 2026-04-30 (forex)
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 900        # SHADOW 2026-04-30
+      max_trades_per_day: 3               # SHADOW 2026-04-30
+      after_loss_min: 60
+      after_streak_n: 3
+      after_streak_min: 30
+    atr_sl_mult: 1.4                      # Hérité EURUSD (forex)
+    atr_tp_mult: 2.5
+    position_manager:
+      max_duration_minutes: 360
+  risk:
+    # TODO 2026-05-14: réviser risk_per_trade avant promotion en exécution réelle
+    risk_per_trade: 0.005
+    daily_loss_abs: 100
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GER40 — Indice DAX (SHADOW 2026-04-30: hérite NAS100, EUR, ATR_SL +20%, filling IOC)
+# point_value géré désormais via voie native MT5 (commit fix orchestrator 30/04)
+# ══════════════════════════════════════════════════════════════════════════════
+GER40:
+  orchestrator:
+    auto_execute: false                   # SHADOW 2026-04-30
+    telegram_validation: false
+    whale_override:
+      enable: false
+    position_limits:
+      max_volume: 0.5                     # SHADOW 2026-04-30 (volume_step broker = 0.1)
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 900        # SHADOW 2026-04-30
+      max_trades_per_day: 3               # SHADOW 2026-04-30
+      after_loss_min: 45
+      after_streak_n: 3
+      after_streak_min: 30
+    atr_sl_mult: 1.92                     # SHADOW 2026-04-30: NAS100 1.6 × +20% (volatilité DAX)
+    atr_tp_mult: 2.5
+    prime_hours_utc:
+      - {start: 7, end: 16}               # Session Frankfurt + chevauchement London
+    position_manager:
+      enabled: true
+      max_duration_minutes: 300
+    filling_type: "IOC"                   # SHADOW 2026-04-30: prévention retcode 10030
+  risk:
+    # TODO 2026-05-14: réviser risk_per_trade avant promotion en exécution réelle
+    risk_per_trade: 0.005
+    daily_loss_abs: 200
+    max_consec_losses: 3
+
+# ══════════════════════════════════════════════════════════════════════════════
+# XAGUSD — Argent (SHADOW 2026-04-30: hérite XAUUSD, ATR_SL +30%, filling IOC)
+# ══════════════════════════════════════════════════════════════════════════════
+XAGUSD:
+  orchestrator:
+    auto_execute: false                   # SHADOW 2026-04-30
+    telegram_validation: false
+    whale_override:
+      enable: false
+    position_limits:
+      max_volume: 1.0                     # SHADOW 2026-04-30 (volume_max broker = 20)
+    cooldown:
+      enabled: true
+      min_secs_between_trades: 900        # SHADOW 2026-04-30
+      max_trades_per_day: 3               # SHADOW 2026-04-30
+      after_loss_min: 60
+      after_streak_n: 2
+      after_streak_min: 60
+    atr_sl_mult: 2.08                     # SHADOW 2026-04-30: XAUUSD 1.6 × +30% (~2× volatilité or)
+    atr_tp_mult: 2.5
+    prime_hours_utc:
+      - {start: 7, end: 17}               # Hérité XAUUSD (London + NY)
+    position_manager:
+      enabled: true
+      max_duration_minutes: 360
+    filling_type: "IOC"                   # SHADOW 2026-04-30: prévention retcode 10030
+  risk:
+    # TODO 2026-05-14: réviser risk_per_trade avant promotion en exécution réelle
+    risk_per_trade: 0.005
+    daily_loss_abs: 100
+    max_consec_losses: 2
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NAS100 — Nasdaq — MOTEUR PRINCIPAL R19
