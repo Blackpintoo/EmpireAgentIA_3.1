@@ -34,10 +34,10 @@ enabled_symbols:
 - XAUUSD        # Or - WR 67%, +$173 - OK
 
 # CRYPTOS (4) - Avec filtres heures BLACKLIST/WHITELIST
-- BNBUSD        # Binance Coin - BLACKLIST heures [1,4] UTC
+- BNBUSD        # SHADOW 2026-04-30 (auto_execute=false dans overrides.yaml)
 - LTCUSD        # Litecoin - WHITELIST heures [8,18,22] UTC
 - BTCUSD        # Réactivé 2026-02-11 - BLACKLIST heures [16,17,18,20,22] UTC, max 0.5 lot
-- SOLUSD        # Réactivé 2026-02-11 - WHITELIST heures [13,23] UTC
+- SOLUSD        # SHADOW 2026-04-30 (auto_execute=false dans overrides.yaml)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CANDIDATS PHASE 2 SHADOW MODE (ajoutés 2026-04-30)
