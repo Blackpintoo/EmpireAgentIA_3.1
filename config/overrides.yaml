@@ -7,6 +7,11 @@ GLOBAL:
     timeframes:
       orchestrator: 120
 
+    # FIX 2026-04-19 D4: Blacklist horaire globale — heures UTC cumulant -3033 USD sur mars-avril
+    # Union avec blocked_hours_utc local (géré côté orchestrator.py).
+    # Les symboles avec allowed_hours_utc chevauchant cette liste ont priorité locale.
+    blocked_hours_utc: [3, 4, 7, 10, 11, 12, 13, 14]
+
     weekend_guard:
       enabled: true
       close_positions: true
