@@ -110,25 +110,26 @@ BTCUSD:
     require_swing_confirm: false
     blocked_hours_utc: [3, 4, 5]            # FIX 2026-03-08: crypto 24/7, seulement heures mortes bloquées
 
-    # FIX 2026-02-20: Position manager corrigé (étape 1.1 + 1.2)
+    # FIX 2026-04-19 D1-D3: BE repoussé à 1.5R avec offset (R-multiple BE médian 0.22R observé)
+    # Partials recalibrés sur distribution TP médian 1.41R. Trailing activé + tôt avec verrou + haut.
     position_manager:
       enabled: true
       max_duration_minutes: 480           # FIX 2026-02-24: timeout 8h (Directive 4)
       break_even:
-        rr: 1.2                           # FIX 2026-02-20: 0.6→1.2 (étape 1.2)
-        offset_points: 0.0
+        rr: 1.5                           # FIX 2026-04-19 D1: 1.2→1.5 (éviter amputation à 0R)
+        offset_points: 60.0               # FIX 2026-04-19 D1: lock ~0.1R (BTCUSD, à auditer en prod)
       partials:
-        - rr: 1.5                         # FIX 2026-02-20: 1.0→1.5 (étape 1.1)
-          close_frac: 0.3                 # FIX 2026-02-20: 0.35→0.3
-        - rr: 2.5                         # FIX 2026-02-20: 1.8→2.5
-          close_frac: 0.3                 # FIX 2026-02-20: 0.35→0.3
+        - rr: 1.0                         # FIX 2026-04-19 D2: 1.5→1.0 (sécuriser 1er mvt confirmé)
+          close_frac: 0.20                # FIX 2026-04-19 D2: 0.30→0.20
+        - rr: 1.8                         # FIX 2026-04-19 D2: 2.5→1.8 (aligné sur TP médian 1.41R)
+          close_frac: 0.35                # FIX 2026-04-19 D2: 0.30→0.35
       trailing:
         enabled: true
-        start_rr: 1.5
+        start_rr: 1.0                     # FIX 2026-04-19 D3: 1.5→1.0 (relais dès 1er partial)
         atr_timeframe: M15
         atr_period: 21
         atr_mult: 1.5
-        lock_rr: 0.35
+        lock_rr: 0.4                      # FIX 2026-04-19 D3: 0.35→0.4 (plancher garanti +haut)
 
     position_limits:
       max_positions: 6
@@ -364,24 +365,25 @@ XAUUSD:
     # FIX 2026-02-20: whale_override désactivé pour non-crypto (étape 4.8)
     whale_override:
       enable: false
+    # FIX 2026-04-19 D1-D3: Recalibrage PM (BE 1.5R+offset, partials 1.2/1.8, trailing actif)
     position_manager:
       enabled: true
       max_duration_minutes: 360           # FIX 2026-02-24: timeout 6h (Directive 4)
       break_even:
-        rr: 1.0                           # R19: BE plus agressif 1.2→1.0 (protéger capital plus tôt)
-        offset_points: 0.0
+        rr: 1.5                           # FIX 2026-04-19 D1: 1.0→1.5 (BE médian 0.22R observé)
+        offset_points: 15.0               # FIX 2026-04-19 D1: lock ~0.1R sur XAUUSD
       partials:
-        - rr: 1.5
-          close_frac: 0.3
-        - rr: 2.5
-          close_frac: 0.3
+        - rr: 1.2                         # FIX 2026-04-19 D2: exception XAUUSD (volatilité or)
+          close_frac: 0.20                # FIX 2026-04-19 D2: 0.30→0.20
+        - rr: 1.8                         # FIX 2026-04-19 D2: 2.5→1.8 (TP médian 1.41R)
+          close_frac: 0.35                # FIX 2026-04-19 D2: 0.30→0.35
       trailing:
         enabled: true
-        start_rr: 1.4
+        start_rr: 1.0                     # FIX 2026-04-19 D3: 1.4→1.0
         atr_timeframe: M15
         atr_period: 21
         atr_mult: 1.4
-        lock_rr: 0.3
+        lock_rr: 0.4                      # FIX 2026-04-19 D3: 0.3→0.4
     cooldown:
       enabled: true
       min_secs_between_trades: 900        # R19: 15 min entre trades (était 600)
@@ -567,24 +569,25 @@ EURUSD:
     max_consec_losses: 3
     daily_loss_limit_pct: 0.02
     dynamic_risk: true
+  # FIX 2026-04-19 D1-D3: Recalibrage PM (BE 1.5R+offset, partials 1.0/1.8, trailing actif)
   position_manager:
     enabled: true
     max_duration_minutes: 360             # FIX 2026-02-24: timeout 6h (Directive 4)
     break_even:
-      rr: 1.2                            # FIX 2026-02-20: 0.6→1.2 (étape 1.2)
-      offset_points: 0.0
+      rr: 1.5                            # FIX 2026-04-19 D1: 1.2→1.5 (BE médian 0.22R observé)
+      offset_points: 2.0                 # FIX 2026-04-19 D1: lock ~0.1R sur EURUSD
     partials:
-      - rr: 1.5                          # FIX 2026-02-20: 1.0→1.5 (étape 1.1)
-        close_frac: 0.3                  # FIX 2026-02-20: 0.35→0.3
-      - rr: 2.5                          # FIX 2026-02-20: 1.8→2.5
-        close_frac: 0.3                  # FIX 2026-02-20: 0.35→0.3
+      - rr: 1.0                          # FIX 2026-04-19 D2: 1.5→1.0
+        close_frac: 0.20                 # FIX 2026-04-19 D2: 0.30→0.20
+      - rr: 1.8                          # FIX 2026-04-19 D2: 2.5→1.8 (TP médian 1.41R)
+        close_frac: 0.35                 # FIX 2026-04-19 D2: 0.30→0.35
     trailing:
       enabled: true
-      start_rr: 1.5
+      start_rr: 1.0                      # FIX 2026-04-19 D3: 1.5→1.0
       atr_timeframe: M15
       atr_period: 21
       atr_mult: 1.9
-      lock_rr: 0.3
+      lock_rr: 0.4                       # FIX 2026-04-19 D3: 0.3→0.4
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SOLUSD — Crypto
@@ -643,8 +646,25 @@ SP500:
     # FIX 2026-02-20: prime_hours (étape 5.5)
     prime_hours_utc:
       - {start: 13, end: 20}             # Session NY cash (13:30-20:00)
+    # FIX 2026-04-19 D1-D3: Recalibrage PM explicite (BE 1.5R+offset, partials 1.0/1.8, trailing)
     position_manager:
+      enabled: true
       max_duration_minutes: 240           # FIX 2026-02-24: timeout 4h (Directive 4)
+      break_even:
+        rr: 1.5                          # FIX 2026-04-19 D1: (BE médian 0.22R observé)
+        offset_points: 4.0               # FIX 2026-04-19 D1: lock ~0.1R sur SP500
+      partials:
+        - rr: 1.0                        # FIX 2026-04-19 D2
+          close_frac: 0.20
+        - rr: 1.8                        # FIX 2026-04-19 D2 (TP médian 1.41R)
+          close_frac: 0.35
+      trailing:
+        enabled: true
+        start_rr: 1.0                    # FIX 2026-04-19 D3
+        atr_timeframe: M15
+        atr_period: 21
+        atr_mult: 1.6
+        lock_rr: 0.4                     # FIX 2026-04-19 D3
   risk:
     daily_loss_abs: 500
 
@@ -848,8 +868,25 @@ NAS100:
     # FIX 2026-02-20: prime_hours (étape 5.5)
     prime_hours_utc:
       - {start: 13, end: 20}             # Session NY cash
+    # FIX 2026-04-19 D1-D3: Recalibrage PM explicite (BE 1.5R+offset, partials 1.0/1.8, trailing)
     position_manager:
+      enabled: true
       max_duration_minutes: 300           # R19: augmenté 240→300 min (5h, laisser respirer)
+      break_even:
+        rr: 1.5                          # FIX 2026-04-19 D1: (BE médian 0.22R observé)
+        offset_points: 10.0              # FIX 2026-04-19 D1: lock ~0.1R sur NAS100
+      partials:
+        - rr: 1.0                        # FIX 2026-04-19 D2
+          close_frac: 0.20
+        - rr: 1.8                        # FIX 2026-04-19 D2 (TP médian 1.41R)
+          close_frac: 0.35
+      trailing:
+        enabled: true
+        start_rr: 1.0                    # FIX 2026-04-19 D3
+        atr_timeframe: M15
+        atr_period: 21
+        atr_mult: 1.6
+        lock_rr: 0.4                     # FIX 2026-04-19 D3
   risk:
     risk_per_trade: 0.010                 # R19: AUGMENTÉ → 1.0% risk par trade
     daily_loss_abs: 300                   # R19: kill switch raisonnable
@@ -919,8 +956,25 @@ USDJPY:
     # FIX 2026-02-20: prime_hours (étape 5.5)
     prime_hours_utc:
       - {start: 7, end: 17}              # London + NY overlap
+    # FIX 2026-04-19 D1-D3: Recalibrage PM explicite (BE 1.5R+offset, partials 1.0/1.8, trailing)
     position_manager:
+      enabled: true
       max_duration_minutes: 360
+      break_even:
+        rr: 1.5                          # FIX 2026-04-19 D1: (BE médian 0.22R observé)
+        offset_points: 3.0               # FIX 2026-04-19 D1: lock ~0.1R sur USDJPY
+      partials:
+        - rr: 1.0                        # FIX 2026-04-19 D2
+          close_frac: 0.20
+        - rr: 1.8                        # FIX 2026-04-19 D2 (TP médian 1.41R)
+          close_frac: 0.35
+      trailing:
+        enabled: true
+        start_rr: 1.0                    # FIX 2026-04-19 D3
+        atr_timeframe: M15
+        atr_period: 21
+        atr_mult: 1.6
+        lock_rr: 0.4                     # FIX 2026-04-19 D3
   risk:
     risk_per_trade: 0.001                 # R19: risque minimal absolu (0.1%)
     daily_loss_abs: 30                    # R19: kill switch $30/jour
