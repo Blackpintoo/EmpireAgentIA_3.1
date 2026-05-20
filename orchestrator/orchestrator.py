@@ -726,6 +726,13 @@ class Orchestrator:
         self.symbol = symbol  # canonique
         self.telegram_client = telegram_client
 
+        # FIX 2026-05-19 D13: SL_GUARD spread-aware (retcode 10016) — compteurs
+        self._sl_guard_stats: Dict[str, int] = {
+            "adjustments": 0,
+            "rejections_post_guard": 0,
+            "broker_aborts": 0,
+        }
+
         # --- Configuration globale & overrides ---
         global OVERRIDES_PATH
         if overrides_path:
@@ -1516,6 +1523,18 @@ class Orchestrator:
 
             if not self._tg_quiet():
                 self._send_telegram(msg, kind="status", force=False)
+
+            # FIX 2026-05-19 D13: log compteurs SL_GUARD (rythme = status_report_hours)
+            try:
+                _sg = getattr(self, "_sl_guard_stats", None)
+                if _sg:
+                    logger.info(
+                        f"[SL_GUARD][STATS] {self.symbol}: adjustments={_sg['adjustments']} "
+                        f"rejections_post_guard={_sg['rejections_post_guard']} "
+                        f"broker_aborts={_sg['broker_aborts']}"
+                    )
+            except Exception:
+                pass
 
         except Exception as e:
             logger.warning(f"[REPORT] {self.symbol} erreur: {e}")
@@ -3170,6 +3189,95 @@ class Orchestrator:
                     )
         except Exception as _refresh_err:
             logger.warning(f"[ENTRY_REFRESH] {symbol}: Erreur — {_refresh_err}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # FIX 2026-05-19 D13: SL_GUARD spread-aware (retcode 10016)
+        # Élargit le SL pour qu'il "clear" le bid (LONG) ou l'ask (SHORT)
+        # avec une marge min_dist = max(stops_level, spread) × 1.5.
+        # Ne modifie PAS le TP — laisse le hard_filter min_rr rejeter si R:R
+        # devient sub-unitaire après ajustement.
+        # Fail-closed sur broker invalide (cancel trade, jamais d'estimation).
+        # ═══════════════════════════════════════════════════════════════
+        def _sl_guard_validate_broker(_sym: str):
+            """Renvoie (symbol_info, tick, reason). reason='ok' ssi tout est exploitable."""
+            if _mt5 is None:
+                return None, None, "mt5_unavailable"
+            _si = _mt5.symbol_info(_sym)
+            if _si is None:
+                return None, None, "symbol_info_unavailable"
+            _tick = _mt5.symbol_info_tick(_sym)
+            if _tick is None:
+                return None, None, "tick_unavailable"
+            _b = float(getattr(_tick, "bid", 0.0) or 0.0)
+            _a = float(getattr(_tick, "ask", 0.0) or 0.0)
+            if _b <= 0.0 or _a <= 0.0:
+                return None, None, "bid_or_ask_invalid"
+            if _a < _b:
+                return None, None, "crossed_market"
+            return _si, _tick, "ok"
+
+        _si_g, _tick_g, _reason_g = _sl_guard_validate_broker(broker_symbol)
+        if _reason_g != "ok":
+            self._sl_guard_stats["broker_aborts"] += 1
+            logger.error(
+                f"[SL_GUARD][ABORT] {symbol} {action}: trade annulé — "
+                f"reason={_reason_g} ts={datetime.now(timezone.utc).isoformat()}"
+            )
+            return None
+
+        _spread_value = float(_tick_g.ask) - float(_tick_g.bid)
+        # stops_level négatif théorique → ramené à 0 pour éviter min_dist négatif
+        _stops_pts = int(getattr(_si_g, "trade_stops_level", 0) or 0)
+        _point_val = float(getattr(_si_g, "point", 0.0) or 0.0)
+        if _stops_pts < 0:
+            logger.warning(
+                "[SL_GUARD][BROKER_ANOMALY] %s trade_stops_level négatif (%d), normalisé à 0",
+                symbol, _stops_pts,
+            )
+        _stops_level_value = max(0.0, _stops_pts * _point_val)
+        _min_dist = max(_stops_level_value, _spread_value) * 1.5
+
+        _sl_was_adjusted = False
+        _old_sl = sl
+        if _min_dist > 0.0 and sl is not None and entry is not None:
+            if action == "BUY":
+                _target_sl_max = float(_tick_g.bid) - _min_dist
+                if sl > _target_sl_max:
+                    sl = _target_sl_max
+                    _sl_was_adjusted = True
+                    self._sl_guard_stats["adjustments"] += 1
+                    logger.info(
+                        f"[SL_GUARD][ADJUST] {symbol} BUY: sl {_old_sl:.5f}→{sl:.5f} "
+                        f"(bid={float(_tick_g.bid):.5f}, spread={_spread_value:.5f}, "
+                        f"stops_lvl={_stops_level_value:.5f}, min_dist={_min_dist:.5f})"
+                    )
+            else:  # SELL / SHORT
+                _target_sl_min = float(_tick_g.ask) + _min_dist
+                if sl < _target_sl_min:
+                    sl = _target_sl_min
+                    _sl_was_adjusted = True
+                    self._sl_guard_stats["adjustments"] += 1
+                    logger.info(
+                        f"[SL_GUARD][ADJUST] {symbol} SELL: sl {_old_sl:.5f}→{sl:.5f} "
+                        f"(ask={float(_tick_g.ask):.5f}, spread={_spread_value:.5f}, "
+                        f"stops_lvl={_stops_level_value:.5f}, min_dist={_min_dist:.5f})"
+                    )
+
+        # Hard filter min_rr post-guard — uniquement si SL effectivement ajusté
+        if _sl_was_adjusted and entry and tp and sl is not None:
+            _risk_new = abs(entry - sl)
+            if _risk_new > 0:
+                _rr_new = abs(tp - entry) / _risk_new
+                _min_rr_eff = float(getattr(self, "_hf_min_rr", 1.0) or 1.0)
+                if _rr_new < _min_rr_eff:
+                    self._sl_guard_stats["rejections_post_guard"] += 1
+                    logger.warning(
+                        f"[HARD_FILTER][min_rr] {symbol} {action}: rejet après "
+                        f"ajustement SL_GUARD — R:R={_rr_new:.3f} < "
+                        f"min_rr={_min_rr_eff:.3f} (sl {_old_sl:.5f}→{sl:.5f}, "
+                        f"tp inchangé={tp:.5f})"
+                    )
+                    return None
 
         # FIX R14: Vérification cohérence directionnelle post-refresh
         if entry and sl and tp:
