@@ -1,0 +1,421 @@
+{
+  "window": {
+    "start": "2026-05-01T04:16:10+00:00",
+    "end": "2026-05-19T23:59:59+00:00"
+  },
+  "extended_window_start": "2026-04-28T19:43:44+00:00",
+  "hard_filters_applied": {
+    "min_score": 3.8,
+    "min_confluence": 2.5,
+    "min_rr": 1.0,
+    "short_score_penalty": 1.5,
+    "global_blocked_hours_utc": [
+      3,
+      4,
+      7,
+      10,
+      11,
+      12,
+      13,
+      14
+    ]
+  },
+  "Q1_pre_commit_check": {
+    "UK100": {
+      "pre_count": 0,
+      "post_count": 4948,
+      "first_proposal_ts": "2026-05-01T06:02:12.217048+00:00",
+      "last_proposal_ts": "2026-05-19T19:15:31.164919+00:00",
+      "commit_ts": "2026-04-30T19:43:44+00:00"
+    },
+    "GER40": {
+      "pre_count": 0,
+      "post_count": 4497,
+      "first_proposal_ts": "2026-05-01T06:01:36.323958+00:00",
+      "last_proposal_ts": "2026-05-19T19:14:54.063210+00:00",
+      "commit_ts": "2026-04-30T19:43:44+00:00"
+    }
+  },
+  "Q2_hard_filters_resim": {
+    "DJ30": {
+      "n_input": 4428,
+      "n_kept_after_filters": 1502,
+      "rejection_breakdown": {
+        "min_score": 780,
+        "blocked_hour_global": 1194,
+        "min_confluence": 618,
+        "short_penalty": 334
+      },
+      "filtered_simulation": {
+        "n": 1502,
+        "sl_hit": 388,
+        "tp_hit": 758,
+        "timeout": 356,
+        "no_bars": 0,
+        "wr_sim": 0.6614310645724258,
+        "rr_winners_avg": 1.6034733990195715,
+        "rr_eff_sim": 3.1325588568475133
+      }
+    },
+    "UK100": {
+      "n_input": 4948,
+      "n_kept_after_filters": 1912,
+      "rejection_breakdown": {
+        "min_confluence": 410,
+        "min_score": 977,
+        "blocked_hour_global": 1409,
+        "short_penalty": 240
+      },
+      "filtered_simulation": {
+        "n": 1912,
+        "sl_hit": 588,
+        "tp_hit": 1000,
+        "timeout": 324,
+        "no_bars": 0,
+        "wr_sim": 0.6297229219143576,
+        "rr_winners_avg": 1.7205309159808444,
+        "rr_eff_sim": 2.9260729863619797
+      }
+    },
+    "GBPUSD": {
+      "n_input": 3931,
+      "n_kept_after_filters": 758,
+      "rejection_breakdown": {
+        "min_score": 1392,
+        "min_confluence": 460,
+        "blocked_hour_global": 627,
+        "short_penalty": 694
+      },
+      "filtered_simulation": {
+        "n": 758,
+        "sl_hit": 76,
+        "tp_hit": 545,
+        "timeout": 137,
+        "no_bars": 0,
+        "wr_sim": 0.8776167471819646,
+        "rr_winners_avg": 1.8244218412751,
+        "rr_eff_sim": 13.083025045985917
+      }
+    },
+    "USDCAD": {
+      "n_input": 3938,
+      "n_kept_after_filters": 1150,
+      "rejection_breakdown": {
+        "min_score": 1031,
+        "short_penalty": 376,
+        "min_confluence": 562,
+        "blocked_hour_global": 819
+      },
+      "filtered_simulation": {
+        "n": 1150,
+        "sl_hit": 48,
+        "tp_hit": 814,
+        "timeout": 288,
+        "no_bars": 0,
+        "wr_sim": 0.9443155452436195,
+        "rr_winners_avg": 1.555363178234447,
+        "rr_eff_sim": 26.376367230892498
+      }
+    },
+    "GER40": {
+      "n_input": 4497,
+      "n_kept_after_filters": 1625,
+      "rejection_breakdown": {
+        "blocked_hour_global": 1170,
+        "min_confluence": 655,
+        "min_score": 780,
+        "short_penalty": 267
+      },
+      "filtered_simulation": {
+        "n": 1625,
+        "sl_hit": 286,
+        "tp_hit": 1000,
+        "timeout": 339,
+        "no_bars": 0,
+        "wr_sim": 0.7776049766718507,
+        "rr_winners_avg": 1.4533905560586737,
+        "rr_eff_sim": 5.081785161044314
+      }
+    },
+    "XAGUSD": {
+      "n_input": 4145,
+      "n_kept_after_filters": 1395,
+      "rejection_breakdown": {
+        "short_penalty": 351,
+        "blocked_hour_global": 1016,
+        "min_score": 1030,
+        "min_confluence": 353
+      },
+      "filtered_simulation": {
+        "n": 1395,
+        "sl_hit": 353,
+        "tp_hit": 901,
+        "timeout": 141,
+        "no_bars": 0,
+        "wr_sim": 0.7185007974481659,
+        "rr_winners_avg": 1.2745852253519288,
+        "rr_eff_sim": 3.253261439212713
+      }
+    },
+    "BNBUSD": {
+      "n_input": 1201,
+      "n_kept_after_filters": 1201,
+      "rejection_breakdown": {},
+      "filtered_simulation": {
+        "n": 1201,
+        "sl_hit": 245,
+        "tp_hit": 694,
+        "timeout": 262,
+        "no_bars": 0,
+        "wr_sim": 0.739084132055378,
+        "rr_winners_avg": 1.7443242664892062,
+        "rr_eff_sim": 4.941065473238812
+      }
+    },
+    "SOLUSD": {
+      "n_input": 1815,
+      "n_kept_after_filters": 1812,
+      "rejection_breakdown": {
+        "min_confluence": 3
+      },
+      "filtered_simulation": {
+        "n": 1812,
+        "sl_hit": 82,
+        "tp_hit": 1329,
+        "timeout": 401,
+        "no_bars": 0,
+        "wr_sim": 0.9418851878100638,
+        "rr_winners_avg": 1.64088354083179,
+        "rr_eff_sim": 26.594319826407926
+      }
+    }
+  },
+  "Q3_rr_distribution": {
+    "DJ30": {
+      "n": 4428,
+      "min": 1.0,
+      "p25": 1.3142097531072425,
+      "median": 1.5625000000000027,
+      "p75": 2.0,
+      "max": 4.159306487220388,
+      "mean": 1.6892142494579407
+    },
+    "UK100": {
+      "n": 4948,
+      "min": 1.0,
+      "p25": 1.5624999999999731,
+      "median": 1.562500000000012,
+      "p75": 1.999999999999957,
+      "max": 11.424476457073878,
+      "mean": 1.7632159239221512
+    },
+    "GBPUSD": {
+      "n": 3931,
+      "min": 1.0,
+      "p25": 1.1963510236308774,
+      "median": 1.785714285714245,
+      "p75": 1.785714285714342,
+      "max": 3.2256256391767155,
+      "mean": 1.6522908873533622
+    },
+    "USDCAD": {
+      "n": 3938,
+      "min": 1.0,
+      "p25": 1.1102908277406387,
+      "median": 1.7857142857141697,
+      "p75": 1.7857142857144035,
+      "max": 2.500000000000103,
+      "mean": 1.6427997660098774
+    },
+    "GER40": {
+      "n": 4497,
+      "min": 1.0,
+      "p25": 1.3020833333333235,
+      "median": 1.3020833333333395,
+      "p75": 1.999999999999937,
+      "max": 5.553502155172209,
+      "mean": 1.5339607259502999
+    },
+    "XAGUSD": {
+      "n": 4145,
+      "min": 1.0,
+      "p25": 1.2019230769230758,
+      "median": 1.2019230769230813,
+      "p75": 1.999999999999967,
+      "max": 17.368212395617338,
+      "mean": 1.688973363028637
+    },
+    "BNBUSD": {
+      "n": 1201,
+      "min": 1.0287930581120135,
+      "p25": 1.6666666666666596,
+      "median": 1.6666666666666736,
+      "p75": 2.0,
+      "max": 2.50000000000003,
+      "mean": 1.8590741029847782
+    },
+    "SOLUSD": {
+      "n": 1815,
+      "min": 1.0024874118831646,
+      "p25": 1.66666666666666,
+      "median": 1.6666666666666667,
+      "p75": 1.666666666666676,
+      "max": 2.5000000000000138,
+      "mean": 1.6608793415531167
+    }
+  },
+  "Q4_dedup_resim": {
+    "DJ30": {
+      "n_initial": 4428,
+      "n_deduped": 209,
+      "deduped_simulation": {
+        "n": 209,
+        "sl_hit": 89,
+        "tp_hit": 87,
+        "timeout": 33,
+        "no_bars": 0,
+        "wr_sim": 0.4943181818181818,
+        "rr_winners_avg": 1.5265742661022192,
+        "rr_eff_sim": 1.4922692264145292
+      },
+      "delta_wr_pp": -6.188498221179323,
+      "delta_rr_pct": -23.482385608265286,
+      "alert_triggered": false,
+      "initial_wr": 0.556203164029975,
+      "initial_rr_eff": 1.950229680155477
+    },
+    "UK100": {
+      "n_initial": 4948,
+      "n_deduped": 203,
+      "deduped_simulation": {
+        "n": 203,
+        "sl_hit": 96,
+        "tp_hit": 80,
+        "timeout": 27,
+        "no_bars": 0,
+        "wr_sim": 0.45454545454545453,
+        "rr_winners_avg": 1.5976594424383879,
+        "rr_eff_sim": 1.3313828686986566
+      },
+      "delta_wr_pp": -6.713119216113234,
+      "delta_rr_pct": -27.63926393501691,
+      "alert_triggered": false,
+      "initial_wr": 0.5216766467065869,
+      "initial_rr_eff": 1.8399244412094107
+    },
+    "GBPUSD": {
+      "n_initial": 3931,
+      "n_deduped": 206,
+      "deduped_simulation": {
+        "n": 206,
+        "sl_hit": 78,
+        "tp_hit": 97,
+        "timeout": 31,
+        "no_bars": 0,
+        "wr_sim": 0.5542857142857143,
+        "rr_winners_avg": 1.6316670282359773,
+        "rr_eff_sim": 2.0291243812678177
+      },
+      "delta_wr_pp": -14.293486525302024,
+      "delta_rr_pct": -47.73963203313332,
+      "alert_triggered": true,
+      "initial_wr": 0.6972205795387345,
+      "initial_rr_eff": 3.8827211904713184
+    },
+    "USDCAD": {
+      "n_initial": 3938,
+      "n_deduped": 209,
+      "deduped_simulation": {
+        "n": 209,
+        "sl_hit": 49,
+        "tp_hit": 79,
+        "timeout": 81,
+        "no_bars": 0,
+        "wr_sim": 0.6171875,
+        "rr_winners_avg": 1.487756987135808,
+        "rr_eff_sim": 2.3986286119128333
+      },
+      "delta_wr_pp": -17.184203586497894,
+      "delta_rr_pct": -58.303822937476234,
+      "alert_triggered": true,
+      "initial_wr": 0.7890295358649789,
+      "initial_rr_eff": 5.752634368172578
+    },
+    "GER40": {
+      "n_initial": 4497,
+      "n_deduped": 201,
+      "deduped_simulation": {
+        "n": 201,
+        "sl_hit": 75,
+        "tp_hit": 93,
+        "timeout": 33,
+        "no_bars": 0,
+        "wr_sim": 0.5535714285714286,
+        "rr_winners_avg": 1.452637362746458,
+        "rr_eff_sim": 1.801270329805608
+      },
+      "delta_wr_pp": -6.706306889591341,
+      "delta_rr_pct": -23.504484638099417,
+      "alert_triggered": false,
+      "initial_wr": 0.620634497467342,
+      "initial_rr_eff": 2.354739779559352
+    },
+    "XAGUSD": {
+      "n_initial": 4145,
+      "n_deduped": 199,
+      "deduped_simulation": {
+        "n": 199,
+        "sl_hit": 83,
+        "tp_hit": 83,
+        "timeout": 33,
+        "no_bars": 0,
+        "wr_sim": 0.5,
+        "rr_winners_avg": 1.2657682010091633,
+        "rr_eff_sim": 1.2657682010091633
+      },
+      "delta_wr_pp": -11.32365261100251,
+      "delta_rr_pct": -38.925615923023386,
+      "alert_triggered": true,
+      "initial_wr": 0.6132365261100251,
+      "initial_rr_eff": 2.072502605042764
+    },
+    "BNBUSD": {
+      "n_initial": 1201,
+      "n_deduped": 95,
+      "deduped_simulation": {
+        "n": 95,
+        "sl_hit": 25,
+        "tp_hit": 47,
+        "timeout": 23,
+        "no_bars": 0,
+        "wr_sim": 0.6527777777777778,
+        "rr_winners_avg": 1.6813123266592693,
+        "rr_eff_sim": 3.1608671741194265
+      },
+      "delta_wr_pp": -8.630635427760025,
+      "delta_rr_pct": -36.02863205843103,
+      "alert_triggered": true,
+      "initial_wr": 0.739084132055378,
+      "initial_rr_eff": 4.941065473238812
+    },
+    "SOLUSD": {
+      "n_initial": 1815,
+      "n_deduped": 143,
+      "deduped_simulation": {
+        "n": 143,
+        "sl_hit": 13,
+        "tp_hit": 90,
+        "timeout": 40,
+        "no_bars": 0,
+        "wr_sim": 0.8737864077669902,
+        "rr_winners_avg": 1.6413699588002848,
+        "rr_eff_sim": 11.363330484001967
+      },
+      "delta_wr_pp": -6.822207879595177,
+      "delta_rr_pct": -57.36933206680948,
+      "alert_triggered": true,
+      "initial_wr": 0.942008486562942,
+      "initial_rr_eff": 26.65529543616401
+    }
+  }
+}
