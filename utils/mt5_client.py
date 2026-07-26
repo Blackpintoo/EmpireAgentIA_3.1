@@ -252,13 +252,13 @@ class MT5Client:
         step_units = round((volume - vol_min) / vol_step) if vol_step > 0 else 0
         vol_norm = round(vol_min + step_units * vol_step, 8)
         # Soft check: ne pas bloquer si pas aligné, suggérer une correction
-        meta: Dict[str, Any] = {"point": info.point or 0.0, "stops_level": getattr(info, "stops_level", 0) or 0, "vol_step": vol_step}
+        meta: Dict[str, Any] = {"point": info.point or 0.0, "stops_level": getattr(info, "trade_stops_level", getattr(info, "stops_level", 0)) or 0, "vol_step": vol_step}
         if abs(vol_norm - volume) > 1e-8:
             meta["suggested_volume"] = vol_norm
             meta["warn"] = f"volume not aligned (step {vol_step})"
             return True, "WARN_VOLUME_STEP", meta
         # contraintes stops
-        stops_level = getattr(info, "stops_level", 0) or 0
+        stops_level = getattr(info, "trade_stops_level", getattr(info, "stops_level", 0)) or 0  # FIX 2026-07-26 (P4)
         point = info.point or 0.0
         # sl/tp trop proches ?
         if sl is not None and tp is not None and point > 0 and stops_level > 0:
@@ -279,15 +279,24 @@ class MT5Client:
         """
         if mt5 is None:
             return "abort"
+        # FIX 2026-07-26 (P4): valeurs de repli corrigees. Les precedentes etaient
+        # fausses (REQUOTE=10031 au lieu de 10004, REJECT=10004 au lieu de 10006,
+        # INVALID_STOPS=10027 au lieu de 10016, INVALID_VOLUME=10030 au lieu de 10014).
         DONE = getattr(mt5, "TRADE_RETCODE_DONE", 10009)
-        PRICE_CHANGED = getattr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10032)
-        REQUOTE = getattr(mt5, "TRADE_RETCODE_REQUOTE", 10031)
-        REJECT = getattr(mt5, "TRADE_RETCODE_REJECT", 10004)
+        PRICE_CHANGED = getattr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020)
+        REQUOTE = getattr(mt5, "TRADE_RETCODE_REQUOTE", 10004)
+        REJECT = getattr(mt5, "TRADE_RETCODE_REJECT", 10006)
         BUSY = getattr(mt5, "TRADE_RETCODE_TRADE_CONTEXT_BUSY", 10002)
-        INVALID_VOL = getattr(mt5, "TRADE_RETCODE_INVALID_VOLUME", 10030)
-        INVALID_STOPS = getattr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10027)
+        INVALID_VOL = getattr(mt5, "TRADE_RETCODE_INVALID_VOLUME", 10014)
+        INVALID_STOPS = getattr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016)
         NO_MONEY = getattr(mt5, "TRADE_RETCODE_NO_MONEY", 10019)
         MARKET_CLOSED = getattr(mt5, "TRADE_RETCODE_MARKET_CLOSED", 10018)
+        # FIX 2026-07-26 (P4): 10031 (connexion perdue) tombait dans le "retry_same"
+        # par defaut : 3 essais sans jamais tenter de reconnexion. Le 24/03/2026, une
+        # coupure MT5 de 3 h a brule 74 signaux d'affilee.
+        CONNECTION = getattr(mt5, "TRADE_RETCODE_CONNECTION", 10031)
+        if rc in (CONNECTION,):
+            return "reconnect"
         if rc in (PRICE_CHANGED, REQUOTE):
             return "refresh_price"
         if rc in (BUSY,):
@@ -779,8 +788,11 @@ class MT5Client:
             info = mt5.symbol_info(real_symbol)
 
             # Récupérer stops_level et freeze_level du broker
-            level  = float(getattr(info, "stops_level", 0) or 0)
-            freeze = float(getattr(info, "freeze_level", 0) or 0)
+            # FIX 2026-07-26 (P4): les attributs MT5 s'appellent trade_stops_level et
+            # trade_freeze_level. Les anciens noms renvoyaient toujours 0, donc la
+            # distance minimale imposee par le broker n'etait jamais respectee.
+            level  = float(getattr(info, "trade_stops_level", getattr(info, "stops_level", 0)) or 0)
+            freeze = float(getattr(info, "trade_freeze_level", getattr(info, "freeze_level", 0)) or 0)
             broker_min = max(level, freeze, 0.0)
 
             # Distances minimales de sécurité par type d'actif
@@ -1268,6 +1280,27 @@ class MT5Client:
                     vmin = info.volume_min or 0.0
                     units = round((float(request["volume"]) - vmin) / step) if step > 0 else 0
                     request["volume"] = round(vmin + units * step, 8)
+
+            elif action == "reconnect":
+                # FIX 2026-07-26 (P4): forcer une re-initialisation du terminal avant
+                # de retenter, au lieu de rejouer la meme requete sur une connexion morte.
+                try:
+                    logger.warning("[MT5] connexion perdue (retcode=%s) - tentative de reconnexion", rc)
+                    MT5Client.initialize_if_needed(force=True)
+                    time.sleep(2.0)
+                    if MT5Client.is_initialized():
+                        logger.info("[MT5] reconnexion reussie, nouvelle tentative")
+                        tick = mt5.symbol_info_tick(symbol)
+                        if tick:
+                            request["price"] = float(tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid)
+                    else:
+                        logger.error("[MT5] reconnexion echouee - abandon de l'ordre")
+                        self._cb_note_error()
+                        return {"ok": False, "retcode": rc, "error": "connection_lost", "request": request}
+                except Exception as e:
+                    logger.error("[MT5] reconnexion impossible: %s", e)
+                    self._cb_note_error()
+                    return {"ok": False, "retcode": rc, "error": "connection_lost", "request": request}
 
             elif action == "abort":
                 self._cb_note_error()
