@@ -20,9 +20,12 @@ chcp 65001 >nul
 
 set "PY=python"
 
+REM FIX 2026-07-26: .venv (venv Windows reel) prioritaire sur venv
 if exist "venv\Scripts\python.exe" set "PY=venv\Scripts\python.exe"
+if exist ".venv\Scripts\python.exe" set "PY=.venv\Scripts\python.exe"
 
-if exist "venv\Scripts\activate.bat" call "venv\Scripts\activate.bat"
+if exist ".venv\Scripts\activate.bat" call ".venv\Scripts\activate.bat"
+if not exist ".venv\Scripts\activate.bat" if exist "venv\Scripts\activate.bat" call "venv\Scripts\activate.bat"
 
 
 
