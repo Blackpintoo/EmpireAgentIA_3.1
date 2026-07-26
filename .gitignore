@@ -39,3 +39,30 @@ tmp_*.csv
 
 # Egg info
 *.egg-info/
+
+# --- Rangement du 26/07/2026 ---
+archive/
+_to_delete/
+_transfert/
+
+# Sauvegardes ponctuelles : ne plus jamais versionner
+*.bak
+*.bak_*
+*.backup
+*.backup_*
+*.corrupt
+*.orig
+
+# Journaux et états volumineux
+logs/
+data/equity_log.csv
+data/proposals_log.csv
+
+# Fichiers fantômes issus de commandes ratées
+python
+Set-ExecutionPolicy
+Set-Location
+utilise
+tmp_*.xml
+tmp_*.csv
+desktop.ini
