@@ -51,7 +51,7 @@ from utils.position_manager import PositionManager  # type: ignore
 from utils.config import get_symbol_profile, get_enabled_symbols, is_symbol_active_now, load_config, reload_global_config
 from utils.logger import logger
 from utils.mt5_client import MT5Client
-from utils.performance_tracker import PerformancePoint, default_tracker
+from utils.performance_tracker import PerformancePoint, default_tracker, get_tracker_for_symbol
 from utils.risk_manager import RiskManager
 from utils.gating import load_thresholds_for, should_allow_trade
 from utils.digest import daily_digest_for, format_digest_message
@@ -209,7 +209,7 @@ CONFIG_PATH = pathlib.Path("config") / "config.yaml"
 # =============================================================================
 # Crypto bucket guard (BTC, ETH, LTC, BNB, ADA, SOL) - Mis à jour 2025-12-05
 # =============================================================================
-# Canoniques (profiles.yaml)
+# Canoniques (profiles.yaml) — valeurs par défaut, configurable via orchestrator.crypto_symbols
 CRYPTO_CANON = {"BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD"}
 # Noms Broker/MT5 (positions_get renvoie souvent les noms broker)
 CRYPTO_REAL  = {"BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD"}
@@ -363,10 +363,9 @@ def _send_tg(text: str, kind: str = "status", force: bool = False) -> bool:
             return False
 
 def _load_tg_token_chat() -> Tuple[Optional[str], Optional[int]]:
-    """Lit token/chat_id depuis config/config.yaml pour le long-polling callback."""
+    """Lit token/chat_id via load_config() (résout les ${VAR} depuis .env)."""
     try:
-        with open(os.path.join("config", "config.yaml"), encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+        cfg = load_config() or {}
         tg = cfg.get("telegram") or {}
         token = tg.get("token") or tg.get("bot_token")
         chat_id = tg.get("chat_id")
@@ -748,6 +747,39 @@ class Orchestrator:
         # FIX 2026-02-20: seuils relevés à 2.5 par défaut (étape 3.5)
         self.min_confluence: float = float(self.ori_cfg.get("min_confluence", 2.5))
         self.min_score_for_proposal: float = float(self.ori_cfg.get("min_score_for_proposal", 2.5))
+
+        # ── Hard filters externalisés (2026-03-01) ──
+        _orch_cfg = self.cfg.get("orchestrator", {}) or {}
+        _hf = _orch_cfg.get("hard_filters") or {}
+        self._hf_min_score: float = float(_hf.get("min_score", 8.0))
+        self._hf_min_confluence: int = int(_hf.get("min_confluence", 5))
+        self._hf_tracker_contradiction: float = float(_hf.get("tracker_contradiction", 0.25))
+        self._hf_disagree_block_pct: float = float(_hf.get("disagree_block_pct", 0.45))
+        self._hf_disagree_penalty_pct: float = float(_hf.get("disagree_penalty_pct", 0.35))
+        self._hf_min_rr: float = float(_hf.get("min_rr", 1.5))
+        self._hf_counter_trend_min_score: float = float(_hf.get("counter_trend_min_score", 10.0))
+        self._hf_quiet_block_confidence: float = float(_hf.get("quiet_block_confidence", 0.7))
+
+        _session_cfg = _orch_cfg.get("session") or {}
+        self._hf_blocked_hours: list = list(_session_cfg.get("blocked_hours_utc", [0,1,2,3,4,5,18,19,20,21,22,23]))
+        self._hf_crypto_symbols: set = set(_orch_cfg.get("crypto_symbols", ["BTCUSD","ETHUSD","LTCUSD","BNBUSD","ADAUSD","SOLUSD"]))
+
+        _pm_defaults = _orch_cfg.get("position_manager_defaults") or {}
+        self._hf_default_be_rr: float = float(_pm_defaults.get("be_rr", 1.0))
+
+        _risk_cfg = self.cfg.get("risk", {}) or {}
+        _ks_cfg = _risk_cfg.get("kill_switch") or {}
+        self._hf_kill_switch_usd: float = float(_ks_cfg.get("daily_loss_usd", 400.0))
+
+        self._hf_whale_max_vol_z: float = float(self.whale_cfg.get("max_vol_zscore", 3.0))
+
+        logger.info(
+            f"[HARD_FILTERS] min_score={self._hf_min_score} min_conf={self._hf_min_confluence} "
+            f"tracker_contra={self._hf_tracker_contradiction} disagree={self._hf_disagree_penalty_pct}/{self._hf_disagree_block_pct} "
+            f"min_rr={self._hf_min_rr} counter_trend={self._hf_counter_trend_min_score} "
+            f"quiet_conf={self._hf_quiet_block_confidence} kill_switch={self._hf_kill_switch_usd}USD "
+            f"be_rr={self._hf_default_be_rr} whale_vol_z={self._hf_whale_max_vol_z}"
+        )
         self.require_scalping_entry: bool = bool(self.ori_cfg.get("require_scalping_entry", False))
         self.require_swing_confirm: bool  = bool(self.ori_cfg.get("require_swing_confirm", False))
         self.confluence_weights: Dict[str, float] = {
@@ -828,9 +860,10 @@ class Orchestrator:
         # Cooldown et gating
         self._init_cooldown_and_gating()
 
-        # Agent error monitoring (audit fev2026)
+        # Agent error monitoring (audit fev2026) + réactivation auto (2026-03-01)
         self._agent_error_counts: Dict[str, int] = {}
-        self._agent_disabled: set = set()
+        self._agent_disabled_until: Dict[str, datetime] = {}
+        self._agent_cooldown_hours: Dict[str, float] = {}  # Cooldown progressif: 1h, 2h, 4h, 8h max
 
         # Health server (une seule fois)
         if not hasattr(self.__class__, "_health_started"):
@@ -967,7 +1000,8 @@ class Orchestrator:
 
         # --- Cache d'agents & proposition / contexte ---
         self._agents: Dict[str, Any] = {}
-        self.tracker = default_tracker()
+        self._agent_cache: Dict[str, Any] = {}  # cache instances agents (Part A perf)
+        self.tracker = get_tracker_for_symbol(self.symbol)
         self._last_proposal: Optional[Dict[str, Any]] = None
         self._last_ctx: Optional[Dict[str, Any]] = None  # per_tf_signals / global_signals / indicators / market
 
@@ -1055,9 +1089,9 @@ class Orchestrator:
             # RR breakeven (optionnel)
             try:
                 pm_cfg = ((self.profile.get("orchestrator") or {}).get("position_manager") or {})
-                be_rr = float((pm_cfg.get("break_even") or {}).get("rr", 1.0))
+                be_rr = float((pm_cfg.get("break_even") or {}).get("rr", self._hf_default_be_rr))
             except Exception:
-                be_rr = 1.0
+                be_rr = self._hf_default_be_rr
             msg = (
                 f"#NEW_TRADE | {sym} | {side} | entry {entry:.2f} | {lots:.3f} lots | "
                 f"SL {sl:.2f} | TP1 {tp1_str} | TP2 {tp2_str} | BE RR≥{be_rr:.1f} | {ts}"
@@ -1151,9 +1185,7 @@ class Orchestrator:
         weekend_crypto_only = bool(engine_cfg.get("weekend_crypto_only", False))
 
         if is_weekend and weekend_crypto_only:
-            # Liste des cryptos autorisées le week-end
-            crypto_symbols = {"BTCUSD", "ETHUSD", "BNBUSD", "LTCUSD", "ADAUSD", "SOLUSD"}
-            if self.symbol.upper() not in crypto_symbols:
+            if self.symbol.upper() not in self._hf_crypto_symbols:
                 return False  # Bloquer les non-cryptos le week-end
             # Les cryptos peuvent trader le week-end - continuer les vérifications
 
@@ -1161,7 +1193,7 @@ class Orchestrator:
         if not bool(tw.get("enabled", False)):
             if enforce_weekdays and is_weekend:
                 # Si weekend_crypto_only est actif et c'est une crypto, on autorise
-                if weekend_crypto_only and self.symbol.upper() in {"BTCUSD", "ETHUSD", "BNBUSD", "LTCUSD", "ADAUSD", "SOLUSD"}:
+                if weekend_crypto_only and self.symbol.upper() in self._hf_crypto_symbols:
                     return True
                 return False
             return True  # pas de contrainte horaire supplémentaire
@@ -1196,8 +1228,7 @@ class Orchestrator:
     def _weekend_guard_blocked(self, now: Optional[datetime] = None) -> bool:
         """Retourne True si la garde week-end doit bloquer le trading."""
         # Les cryptos ne sont jamais bloquées par le weekend guard
-        crypto_symbols = {"BTCUSD", "ETHUSD", "BNBUSD", "LTCUSD", "ADAUSD", "SOLUSD"}
-        if self.symbol.upper() in crypto_symbols:
+        if self.symbol.upper() in self._hf_crypto_symbols:
             return False  # Cryptos tradent 24/7
 
         cfg = getattr(self, "weekend_guard_cfg", {}) or {}
@@ -2046,8 +2077,8 @@ class Orchestrator:
         confluence = int(p.get("confluence", 0) or 0)
         tracker_vote = float(p.get("tracker_vote", 0.0) or 0.0)
 
-        # 1) HARD FILTER: Score minimum absolu >= 8 (AUGMENTÉ 2026-01-06)
-        HARD_MIN_SCORE = 8.0
+        # 1) HARD FILTER: Score minimum absolu (config: orchestrator.hard_filters.min_score)
+        HARD_MIN_SCORE = self._hf_min_score
         if score_agr < HARD_MIN_SCORE:
             logger.warning(f"[HARD_FILTER] {symbol}: score {score_agr:.1f} < {HARD_MIN_SCORE} → REJET")
             self._send_telegram(
@@ -2056,8 +2087,8 @@ class Orchestrator:
             )
             return False
 
-        # 2) HARD FILTER: Confluence minimum absolue >= 5 (AUGMENTÉ 2025-12-24)
-        HARD_MIN_CONFLUENCE = 5
+        # 2) HARD FILTER: Confluence minimum absolue (config: orchestrator.hard_filters.min_confluence)
+        HARD_MIN_CONFLUENCE = self._hf_min_confluence
         if confluence < HARD_MIN_CONFLUENCE:
             logger.warning(f"[HARD_FILTER] {symbol}: confluence {confluence} < {HARD_MIN_CONFLUENCE} → REJET")
             self._send_telegram(
@@ -2068,7 +2099,7 @@ class Orchestrator:
 
         # 3) HARD FILTER: Tracker vote contradictoire
         # Si le tracker historique indique que les agents ont mal performé dans cette direction
-        TRACKER_CONTRADICTION_THRESHOLD = 0.25
+        TRACKER_CONTRADICTION_THRESHOLD = self._hf_tracker_contradiction
         tracker_contradicts = (
             (sig == "LONG" and tracker_vote < -TRACKER_CONTRADICTION_THRESHOLD) or
             (sig == "SHORT" and tracker_vote > TRACKER_CONTRADICTION_THRESHOLD)
@@ -2136,10 +2167,10 @@ class Orchestrator:
             vol_cfg = self.cfg.get("volatility_filter", {})
             if vol_cfg.get("avoid_low_liquidity", True):
                 current_hour_utc = datetime.now(timezone.utc).hour
-                blocked_hours = vol_cfg.get("low_liquidity_hours_utc", [0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23])
+                blocked_hours = vol_cfg.get("low_liquidity_hours_utc", self._hf_blocked_hours)
 
                 # Vérifier si c'est une crypto (exception)
-                is_crypto = symbol.upper() in ("BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD")
+                is_crypto = symbol.upper() in self._hf_crypto_symbols
                 asset_override = vol_cfg.get("asset_overrides", {}).get("crypto", {})
                 crypto_exempt = is_crypto and not asset_override.get("avoid_low_liquidity", False)
 
@@ -2405,20 +2436,62 @@ class Orchestrator:
                     return False
         except Exception as e:
             self._send_telegram(f"[LIVE GUARD] erreur: {e}", kind="status", force=False)
+        # --------- Variables communes dry-run / live ----------
+        volume = lots
+        side = sig
+        score = score_agr
+
+        # TP1/TP2 via RR partials du profile
+        tp1 = None
+        tp2 = None
+        try:
+            pm_cfg = ((self.profile.get("orchestrator") or {}).get("position_manager") or {})
+            pm_partials = pm_cfg.get("partials") or []
+            rr_partials = [float(x.get("rr")) for x in pm_partials if x.get("rr") is not None][:2]
+            risk_px = abs(entry - sl) if entry and sl else 0.0
+            if risk_px > 0:
+                def _rr_to_tp(rr_val):
+                    return entry + rr_val * risk_px if side == "LONG" else entry - rr_val * risk_px
+                tp1 = _rr_to_tp(rr_partials[0]) if len(rr_partials) >= 1 else tp
+                tp2 = _rr_to_tp(rr_partials[1]) if len(rr_partials) >= 2 else tp
+            else:
+                tp1 = tp
+                tp2 = tp
+        except Exception:
+            tp1 = tp
+            tp2 = tp
+
+        # Confluence breakdown & decision notes depuis le contexte
+        ctx = self._last_ctx or {}
+        confluence_breakdown = ctx.get("confluence_breakdown", {})
+        decision_notes = ctx.get("decision_notes", "")
+        confluences_list = []
+        if isinstance(confluence_breakdown, dict):
+            confluences_list = [k for k, v in confluence_breakdown.items() if v]
+        elif isinstance(confluence_breakdown, (list, tuple)):
+            confluences_list = [str(c) for c in confluence_breakdown]
+        # ------------------------------------------------------------------
+
         # --------- DRY RUN : pas d'envoi MT5, juste notification + audit ----------
         if getattr(self, "dry_run", False):
-            msg = (f"#NEW_TRADE_SIM | {symbol} | {side} | entry={entry} | vol={volume} | " # type: ignore
-                   f"SL={sl} | TP1={tp1} | TP2={tp2} | score={score} | confluences={','.join(confluences)[:120]}") # type: ignore
+            logger.info(f"[DRY_RUN] Signal {side} {symbol} score={score} lots={volume}")
+            tp1_str = f"{tp1:.2f}" if tp1 is not None else "N/A"
+            tp2_str = f"{tp2:.2f}" if tp2 is not None else "N/A"
+            msg = (f"#NEW_TRADE_SIM | {symbol} | {side} | entry={entry} | vol={volume} | "
+                   f"SL={sl} | TP1={tp1_str} | TP2={tp2_str} | score={score} | "
+                   f"confluences={','.join(confluences_list)[:120]}")
             self._send_telegram(msg, kind="status", force=True)
             audit_append("NEW_TRADE_SIM", {
                 "symbol": symbol,
-                "side": side, # type: ignore
+                "side": side,
                 "entry": entry,
-                "volume": volume, # type: ignore
+                "volume": volume,
                 "sl": sl,
-                "tp1": tp1, # type: ignore
-                "tp2": tp2, # pyright: ignore[reportUndefinedVariable]
-                "score": score, # type: ignore
+                "tp1": tp1,
+                "tp2": tp2,
+                "score": score,
+                "confluence_breakdown": confluence_breakdown,
+                "decision_notes": decision_notes,
                 "meta": {"dry_run": True}
             })
             self._record_performance_stats(self._last_proposal, executed=False, outcome=None, retcode=None)
@@ -2921,7 +2994,7 @@ class Orchestrator:
             if get_global_kill_switch is not None:
                 try:
                     _global_cfg = (self.overrides_all or {}).get("GLOBAL", {})
-                    _ks_limit = float((_global_cfg.get("risk") or {}).get("global_daily_loss_limit", 400.0))
+                    _ks_limit = float((_global_cfg.get("risk") or {}).get("global_daily_loss_limit", self._hf_kill_switch_usd))
                     _ks = get_global_kill_switch(_ks_limit)
                     _floating = 0.0
                     try:
@@ -3017,7 +3090,7 @@ class Orchestrator:
                     logger.debug(f"[EOD_CLOSE] Erreur: {_eod_close_err}")
 
             # 1) Collecte des signaux agents + indicateurs (+ hints SL/TP/PRICE)
-            per_tf_signals, global_signals, indicators, market = self._gather_agent_signals(symbol)
+            per_tf_signals, global_signals, indicators, market = await self._gather_agent_signals(symbol)
 
             # Sauvegarde pour dashboard live
             self.save_signals_to_json(symbol, global_signals)
@@ -3102,7 +3175,7 @@ class Orchestrator:
                     min_trust = float(over_cfg.get("min_trust", self.whale_cfg.get("min_trust", self.min_trust)))
                     min_signal = float(over_cfg.get("min_signal", self.whale_cfg.get("min_signal", self.min_signal)))
                     allow_vol = bool(over_cfg.get("allow_in_vol_spike", self.whale_cfg.get("allow_in_vol_spike", self.whale_allow_in_vol_spike)))
-                    vol_limit = float(over_cfg.get("volatility_z_th", 3.0))
+                    vol_limit = float(over_cfg.get("volatility_z_th", self._hf_whale_max_vol_z))
                     vol_z = float(self._whale_market_ctx.get(self.symbol, {}).get("volatility_zscore", 0.0) or 0.0)
                     if trust_val >= min_trust and signal_val >= min_signal:
                         if allow_vol or vol_z <= vol_limit:
@@ -3338,10 +3411,10 @@ class Orchestrator:
             # Refuse les trades avec un ratio Risk/Reward insuffisant
             # ══════════════════════════════════════════════════════════════════
             try:
-                # Priorité: config orchestrator, sinon ori_cfg, sinon 1.5 par défaut
-                min_rr = float(self.ori_cfg.get("min_rr_required") or self.ori_cfg.get("min_rr") or 1.5)
+                # Priorité: config orchestrator, sinon hard_filters.min_rr
+                min_rr = float(self.ori_cfg.get("min_rr_required") or self.ori_cfg.get("min_rr") or self._hf_min_rr)
             except Exception:
-                min_rr = 1.5  # Défaut OPTIMISATION 2025-12-13
+                min_rr = self._hf_min_rr
 
             if sl is not None and tp is not None and price is not None and direction in ("LONG","SHORT"):
                 if direction == "LONG":
@@ -3386,10 +3459,10 @@ class Orchestrator:
                                 reasons.append(f"regime_against_short:{regime_type}")
                                 logger.debug(f"[REGIME] {symbol} SHORT bloqué: régime={regime_type}")
                             # Avertir si marché trop volatile
-                            elif regime_type == "volatile" and regime_confidence > 0.7:
+                            elif regime_type == "volatile" and regime_confidence > self._hf_quiet_block_confidence:
                                 decision_notes.append("volatile_market_caution")
-                            # FIX 2026-02-20: Bloquer en régime QUIET (étape 5.3)
-                            elif regime_type == "quiet" and regime_confidence > 0.7:
+                            # FIX 2026-02-20: Bloquer en régime QUIET (config: hard_filters.quiet_block_confidence)
+                            elif regime_type == "quiet" and regime_confidence > self._hf_quiet_block_confidence:
                                 reasons.append(f"regime_quiet(conf={regime_confidence:.2f})")
                                 decision_notes.append("quiet_regime_blocked")
                                 logger.info(f"[REGIME] {symbol} bloqué: régime QUIET (conf={regime_confidence:.2f})")
@@ -3400,14 +3473,14 @@ class Orchestrator:
                         # ══════════════════════════════════════════════════════════════
                         if regime_type == "trending_down" and direction == "LONG":
                             current_score = score_agr  # FIX 2026-02-24: était confidence (nombre confluences 2-5) au lieu du score réel
-                            min_score_counter_trend = 10.0
+                            min_score_counter_trend = self._hf_counter_trend_min_score
                             if regime_confidence > 0.4 and current_score < min_score_counter_trend:
                                 reasons.append(f"counter_trend_low_score:{current_score:.1f}<{min_score_counter_trend}")
                                 decision_notes.append(f"buy_against_downtrend_blocked")
                                 logger.info(f"[COUNTER_TREND] {symbol} BUY bloqué: score={current_score:.1f} < {min_score_counter_trend} en downtrend (conf={regime_confidence:.2f})")
                         elif regime_type == "trending_up" and direction == "SHORT":
                             current_score = score_agr  # FIX 2026-02-24: était confidence (nombre confluences 2-5) au lieu du score réel
-                            min_score_counter_trend = 10.0
+                            min_score_counter_trend = self._hf_counter_trend_min_score
                             if regime_confidence > 0.4 and current_score < min_score_counter_trend:
                                 reasons.append(f"counter_trend_low_score:{current_score:.1f}<{min_score_counter_trend}")
                                 decision_notes.append(f"short_against_uptrend_blocked")
@@ -3787,12 +3860,83 @@ class Orchestrator:
         except Exception as exc:
             logger.warning("[Whale] CEX handler error: %s", exc)
 
-    def _gather_agent_signals(
+    # ------------------------------------------------------------------ agent cache
+    def _get_or_load_agent(self, module_name: str, class_name: str, *, symbol: Optional[str] = None):
+        """Charge un agent depuis le cache ou l'instancie (Part A perf)."""
+        key = f"{module_name}.{class_name}"
+
+        # Skip si en cooldown erreur (réactivation auto après délai)
+        if class_name in self._agent_disabled_until:
+            if datetime.now(timezone.utc) > self._agent_disabled_until[class_name]:
+                del self._agent_disabled_until[class_name]
+                logger.info(f"[AGENT] {class_name} réactivé après cooldown")
+                self._send_telegram(
+                    f"🔄 [AGENT REACTIVATED] {class_name} réactivé après cooldown pour {self.symbol}",
+                    kind="status", force=True
+                )
+            else:
+                return None
+
+        if key in self._agent_cache:
+            return self._agent_cache[key]
+
+        try:
+            mod = importlib.import_module(f"agents.{module_name}")
+            cls = getattr(mod, class_name, None)
+            if cls is None:
+                logger.warning(f"[AGENT] Classe introuvable: agents.{module_name}.{class_name}")
+                return None
+
+            init = getattr(cls, "__init__", None)
+            if init is None:
+                agent = cls()
+                self._agent_cache[key] = agent
+                return agent
+
+            sig = inspect.signature(init)
+            accepted = set(sig.parameters.keys())
+
+            params: Dict[str, Any] = {}
+            if "symbol" in accepted:
+                params["symbol"] = symbol or self.symbol
+            for k in ("mt5", "client", "mt5_client"):
+                if k in accepted:
+                    params[k] = self.mt5
+                    break
+            for k in ("profile", "cfg", "config", "conf"):
+                if k in accepted:
+                    params[k] = self.profile
+                    break
+
+            agent = cls(**params)
+            self._agent_cache[key] = agent
+            return agent
+        except Exception as e:
+            logger.warning(f"[AGENT] Chargement agents.{module_name}.{class_name} a échoué: {e}")
+            return None
+
+    def _invalidate_agent_cache(self, agent_class_name: Optional[str] = None) -> None:
+        """Vide le cache d'agents. Si agent_class_name est fourni, ne retire que celui-là."""
+        if agent_class_name is None:
+            self._agent_cache.clear()
+            logger.info("[AGENT] Cache agents vidé intégralement.")
+        else:
+            keys_to_remove = [k for k in self._agent_cache if k.endswith(f".{agent_class_name}")]
+            for k in keys_to_remove:
+                del self._agent_cache[k]
+            if keys_to_remove:
+                logger.info(f"[AGENT] Cache invalidé pour {agent_class_name}.")
+
+    async def _gather_agent_signals(
         self, symbol: str
     ) -> Tuple[Dict[str, Dict[str, str]], Dict[str, str], Dict[str, float], Dict[str, Any]]:
         """
         Récupère les signaux par agent/TF + signaux globaux + indicateurs + contexte de marché.
+
+        Les agents sont exécutés en parallèle via asyncio.gather + to_thread (Part B perf).
         """
+        _AGENT_TIMEOUT = 10  # secondes
+
         # --- Contexte marché ---
         price = self._get_last_price(symbol)
         equity = None
@@ -3817,7 +3961,7 @@ class Orchestrator:
             "technical": {},
             "scalping": {},
             "swing": {},
-            "structure": {},     # Price Action (BOS/CHoCH/FBO/AMD via StructureAgent/ScalpingAgent)
+            "structure": {},
             "fundamental": {},
             "sentiment": {},
             "smc": {},
@@ -3835,48 +3979,26 @@ class Orchestrator:
         structure_details: Dict[str, Dict[str, float]] = {}
         whale_details: Dict[str, Dict[str, float]] = {}
 
-        # --- Loader dynamique ---
+        # --- Loader dynamique (utilise cache self._agent_cache) ---
         def load_agent(module_name: str, class_name: str):
-            try:
-                mod = importlib.import_module(f"agents.{module_name}")
-                cls = getattr(mod, class_name, None)
-                if cls is None:
-                    logger.warning(f"[AGENT] Classe introuvable: agents.{module_name}.{class_name}")
-                    return None
-
-                init = getattr(cls, "__init__", None)
-                if init is None:
-                    return cls()
-
-                sig = inspect.signature(init)
-                accepted = set(sig.parameters.keys())
-
-                params = {}
-                if "symbol" in accepted:
-                    params["symbol"] = symbol
-                for k in ("mt5", "client", "mt5_client"):
-                    if k in accepted:
-                        params[k] = self.mt5
-                        break
-                for k in ("profile", "cfg", "config", "conf"):
-                    if k in accepted:
-                        params[k] = self.profile
-                        break
-
-                return cls(**params)
-            except Exception as e:
-                logger.warning(f"[AGENT] Chargement agents.{module_name}.{class_name} a échoué: {e}")
-                return None
+            return self._get_or_load_agent(module_name, class_name, symbol=symbol)
 
         # --- Runner générique ---
         def call_agent(agent, timeframe: Optional[str] = None) -> Optional[Dict[str, Any]]:
             if agent is None:
                 return None
 
-            # Skip agents désactivés par monitoring erreurs (audit fev2026)
             agent_name = type(agent).__name__
-            if agent_name in self._agent_disabled:
-                return None
+            if agent_name in self._agent_disabled_until:
+                if datetime.now(timezone.utc) > self._agent_disabled_until[agent_name]:
+                    del self._agent_disabled_until[agent_name]
+                    logger.info(f"[AGENT] {agent_name} réactivé après cooldown")
+                    self._send_telegram(
+                        f"🔄 [AGENT REACTIVATED] {agent_name} réactivé après cooldown pour {self.symbol}",
+                        kind="status", force=True
+                    )
+                else:
+                    return None
 
             try:
                 if timeframe and hasattr(agent, "params") and isinstance(getattr(agent, "params"), dict):
@@ -3929,14 +4051,19 @@ class Orchestrator:
                 except Exception as e:
                     logger.error(f"[AGENT] {agent_name} erreur sur méthode {name}: {e}", exc_info=True)
                     last_err = e
-                    # Monitoring erreurs (audit fev2026)
+                    # Monitoring erreurs + cooldown progressif (2026-03-01)
                     self._agent_error_counts[agent_name] = self._agent_error_counts.get(agent_name, 0) + 1
                     if self._agent_error_counts[agent_name] >= 5:
-                        self._agent_disabled.add(agent_name)
-                        logger.error(f"[AGENT] {agent_name} désactivé après {self._agent_error_counts[agent_name]} erreurs")
+                        prev_cd = self._agent_cooldown_hours.get(agent_name, 0.5)
+                        cooldown_h = min(prev_cd * 2, 8.0)  # Double: 1h, 2h, 4h, 8h max
+                        self._agent_cooldown_hours[agent_name] = cooldown_h
+                        self._agent_disabled_until[agent_name] = datetime.now(timezone.utc) + timedelta(hours=cooldown_h)
+                        self._agent_error_counts[agent_name] = 0
+                        self._invalidate_agent_cache(agent_name)
+                        logger.error(f"[AGENT] {agent_name} désactivé pour {cooldown_h:.0f}h après 5 erreurs")
                         self._send_telegram(
-                            f"⚠️ [AGENT DISABLED] {agent_name} désactivé pour {self.symbol} "
-                            f"après {self._agent_error_counts[agent_name]} erreurs consécutives",
+                            f"⚠️ [AGENT COOLDOWN] {agent_name} désactivé pour {cooldown_h:.0f}h ({self.symbol}) "
+                            f"— réactivation auto à {self._agent_disabled_until[agent_name].strftime('%H:%M UTC')}",
                             kind="status", force=True
                         )
                     continue
@@ -3974,195 +4101,324 @@ class Orchestrator:
                         return cand
             return {}
 
-        # 1) Technical
-        technical = load_agent("technical", "TechnicalAgent") if agent_enabled("technical") else None
-        if technical:
+        # ================================================================
+        # Blocs agents isolés (chacun retourne un dict partiel de résultats)
+        # Exécutés en parallèle via asyncio.gather + to_thread
+        # ================================================================
+
+        def _run_technical() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "indicators": {}, "details": {}}
+            agent = load_agent("technical", "TechnicalAgent") if agent_enabled("technical") else None
+            if not agent:
+                return r
             for tf in self.tfs:
-                out = call_agent(technical, timeframe=tf)
+                out = call_agent(agent, timeframe=tf)
                 if isinstance(out, dict):
-                    per_tf_signals["technical"][tf] = _norm(out.get("signal"))
+                    r["per_tf"][tf] = _norm(out.get("signal"))
                     for k in ("ATR_H1", "ATR_M30", f"ATR_{tf}"):
                         if k in out and isinstance(out[k], (int, float)):
-                            indicators[k] = float(out[k])
-                    store_details(tech_details, tf, out)
-        else:
-            logger.info("[AGENTS] Technical désactivé via profile.")
+                            r["indicators"][k] = float(out[k])
+                    sl = self._safe_float(out.get("sl"))
+                    tp = self._safe_float(out.get("tp"))
+                    pr = self._safe_float(out.get("price"))
+                    if sl is not None or tp is not None or pr is not None:
+                        d: Dict[str, float] = {}
+                        if sl is not None: d["sl"] = sl
+                        if tp is not None: d["tp"] = tp
+                        if pr is not None: d["price"] = pr
+                        r["details"][tf] = d
+            return r
 
-        # 2) Scalping
-        scalping = load_agent("scalping", "ScalpingAgent") if agent_enabled("scalping") else None
-        if scalping:
+        def _run_scalping() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "details": {}}
+            agent = load_agent("scalping", "ScalpingAgent") if agent_enabled("scalping") else None
+            if not agent:
+                return r
             for tf in self.tfs:
-                out = call_agent(scalping, timeframe=tf)
+                out = call_agent(agent, timeframe=tf)
                 if isinstance(out, dict):
-                    per_tf_signals["scalping"][tf] = _norm(out.get("signal"))
-                    store_details(scalp_details, tf, out)
-        else:
-            logger.info("[AGENTS] Scalping désactivé via profile.")
+                    r["per_tf"][tf] = _norm(out.get("signal"))
+                    sl = self._safe_float(out.get("sl"))
+                    tp = self._safe_float(out.get("tp"))
+                    pr = self._safe_float(out.get("price"))
+                    if sl is not None or tp is not None or pr is not None:
+                        d: Dict[str, float] = {}
+                        if sl is not None: d["sl"] = sl
+                        if tp is not None: d["tp"] = tp
+                        if pr is not None: d["price"] = pr
+                        r["details"][tf] = d
+            return r
 
-        # 3) Swing
-        swing = load_agent("swing", "SwingAgent") if agent_enabled("swing") else None
-        swing_votes = {"LONG": 0, "SHORT": 0}
-        if swing:
+        def _run_swing() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "global": {}, "details": {}}
+            agent = load_agent("swing", "SwingAgent") if agent_enabled("swing") else None
+            if not agent:
+                return r
+            votes = {"LONG": 0, "SHORT": 0}
             for tf in self.tfs:
-                out = call_agent(swing, timeframe=tf)
-                if isinstance(out, dict):
-                    s = _norm(out.get("signal"))
-                    if s:
-                        per_tf_signals["swing"][tf] = s
-                        swing_votes[s] += 1
-                    store_details(swing_details, tf, out)
-            if swing_votes["LONG"] > swing_votes["SHORT"]:
-                global_signals["swing"] = "LONG"
-            elif swing_votes["SHORT"] > swing_votes["LONG"]:
-                global_signals["swing"] = "SHORT"
-        else:
-            logger.info("[AGENTS] Swing désactivé via profile.")
-
-        # 3.5) Structure (BOS/CHoCH/FBO/AMD)
-        structure = load_agent("structure", "StructureAgent") if agent_enabled("structure") else None
-        structure_votes = {"LONG": 0, "SHORT": 0}
-        smc_votes = {"LONG": 0, "SHORT": 0}
-        if structure:
-            for tf in self.tfs:
-                out = call_agent(structure, timeframe=tf)
+                out = call_agent(agent, timeframe=tf)
                 if isinstance(out, dict):
                     s = _norm(out.get("signal"))
                     if s:
-                        per_tf_signals["structure"][tf] = s
-                        structure_votes[s] += 1
-                    store_details(structure_details, tf, out)
+                        r["per_tf"][tf] = s
+                        votes[s] += 1
+                    sl = self._safe_float(out.get("sl"))
+                    tp = self._safe_float(out.get("tp"))
+                    pr = self._safe_float(out.get("price"))
+                    if sl is not None or tp is not None or pr is not None:
+                        d: Dict[str, float] = {}
+                        if sl is not None: d["sl"] = sl
+                        if tp is not None: d["tp"] = tp
+                        if pr is not None: d["price"] = pr
+                        r["details"][tf] = d
+            if votes["LONG"] > votes["SHORT"]:
+                r["global"]["swing"] = "LONG"
+            elif votes["SHORT"] > votes["LONG"]:
+                r["global"]["swing"] = "SHORT"
+            return r
+
+        def _run_structure() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "smc_tf": {}, "global": {}, "details": {}, "market": {}}
+            agent = load_agent("structure", "StructureAgent") if agent_enabled("structure") else None
+            if not agent:
+                return r
+            structure_v = {"LONG": 0, "SHORT": 0}
+            smc_v = {"LONG": 0, "SHORT": 0}
+            for tf in self.tfs:
+                out = call_agent(agent, timeframe=tf)
+                if isinstance(out, dict):
+                    s = _norm(out.get("signal"))
+                    if s:
+                        r["per_tf"][tf] = s
+                        structure_v[s] += 1
+                    sl = self._safe_float(out.get("sl"))
+                    tp = self._safe_float(out.get("tp"))
+                    pr = self._safe_float(out.get("price"))
+                    if sl is not None or tp is not None or pr is not None:
+                        d: Dict[str, float] = {}
+                        if sl is not None: d["sl"] = sl
+                        if tp is not None: d["tp"] = tp
+                        if pr is not None: d["price"] = pr
+                        r["details"][tf] = d
                     smc = _norm(out.get("smc_signal"))
                     if smc:
-                        per_tf_signals.setdefault("smc", {})[tf] = smc
-                        smc_votes[smc] += 1
+                        r["smc_tf"][tf] = smc
+                        smc_v[smc] += 1
                     if out.get("smc_events"):
-                        market.setdefault("smc_events", {})[tf] = out["smc_events"]
+                        r["market"].setdefault("smc_events", {})[tf] = out["smc_events"]
                     if out.get("smc_meta"):
-                        market.setdefault("smc_meta", {})[tf] = out["smc_meta"]
-            if structure_votes["LONG"] > structure_votes["SHORT"]:
-                global_signals["structure"] = "LONG"
-            elif structure_votes["SHORT"] > structure_votes["LONG"]:
-                global_signals["structure"] = "SHORT"
-            if smc_votes["LONG"] > smc_votes["SHORT"]:
-                global_signals["smc"] = "LONG"
-            elif smc_votes["SHORT"] > smc_votes["LONG"]:
-                global_signals["smc"] = "SHORT"
-        else:
-            logger.info("[AGENTS] Structure désactivé via profile.")
+                        r["market"].setdefault("smc_meta", {})[tf] = out["smc_meta"]
+            if structure_v["LONG"] > structure_v["SHORT"]:
+                r["global"]["structure"] = "LONG"
+            elif structure_v["SHORT"] > structure_v["LONG"]:
+                r["global"]["structure"] = "SHORT"
+            if smc_v["LONG"] > smc_v["SHORT"]:
+                r["global"]["smc"] = "LONG"
+            elif smc_v["SHORT"] > smc_v["LONG"]:
+                r["global"]["smc"] = "SHORT"
+            return r
 
-        # 3.6) Whale agent (copy trading)
-        whale = getattr(self, "whale_agent", None)
-        if whale:
+        def _run_whale() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "global": {}, "indicators": {}, "details": {}, "market": {}}
+            whale = getattr(self, "whale_agent", None)
+            if not whale:
+                return r
             out = whale.generate_signal()
             if isinstance(out, dict):
                 s = _norm(out.get("signal"))
                 if s and s != "WAIT":
-                    per_tf_signals.setdefault("whale", {})["GLOBAL"] = s
-                    global_signals["whale"] = s
-                    indicators["WHALE_TRUST_SCORE"] = float(out.get("trust_score", 0.0))
-                    indicators["WHALE_SIGNAL_SCORE"] = float(out.get("signal_score", 0.0))
-                    indicators["WHALE_LATENCY_MS"] = float(out.get("latency_ms", 0.0))
-                    whale_details["GLOBAL"] = {
+                    r["per_tf"]["GLOBAL"] = s
+                    r["global"]["whale"] = s
+                    r["indicators"]["WHALE_TRUST_SCORE"] = float(out.get("trust_score", 0.0))
+                    r["indicators"]["WHALE_SIGNAL_SCORE"] = float(out.get("signal_score", 0.0))
+                    r["indicators"]["WHALE_LATENCY_MS"] = float(out.get("latency_ms", 0.0))
+                    r["details"]["GLOBAL"] = {
                         "lots": float(out.get("lots", 0.0) or 0.0),
                         "sl": float(out.get("sl", 0.0) or 0.0),
                         "tp": float(out.get("tp", 0.0) or 0.0),
                     }
-                    market.setdefault("whale", {}).update(
-                        {
-                            "wallet": out.get("wallet"),
-                            "source": out.get("source"),
-                            "latency_ms": out.get("latency_ms"),
-                        }
-                    )
+                    r["market"]["whale"] = {
+                        "wallet": out.get("wallet"),
+                        "source": out.get("source"),
+                        "latency_ms": out.get("latency_ms"),
+                    }
                     alpha = float(self.whale_cfg.get("ewma_alpha", 0.2))
                     self._whale_trust_ewma = ewma(self._whale_trust_ewma, float(out.get("trust_score", 0.0)), alpha=alpha)
                     if self._whale_trust_ewma is not None:
                         record_whale_trust_ewma(self.symbol, float(self._whale_trust_ewma))
-                    indicators["WHALE_TRUST_EWMA"] = float(self._whale_trust_ewma or 0.0)
-        else:
-            logger.info("[AGENTS] Whale agent désactivé via config.")
+                    r["indicators"]["WHALE_TRUST_EWMA"] = float(self._whale_trust_ewma or 0.0)
+            return r
 
-        # 4) News
-        news = load_agent("news", "NewsAgent") if agent_enabled("news") else None
-        if news:
+        def _run_news() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"global": {}}
+            agent = load_agent("news", "NewsAgent") if agent_enabled("news") else None
+            if not agent:
+                return r
             s = ""
-            out_g = call_agent(news, timeframe=None)
+            out_g = call_agent(agent, timeframe=None)
             if isinstance(out_g, dict):
                 s = _norm(out_g.get("signal"))
             if s:
-                global_signals["news"] = s
-            if "news" not in global_signals:
+                r["global"]["news"] = s
+            if "news" not in r["global"]:
                 votes = {"LONG": 0, "SHORT": 0}
                 for tf in self.tfs:
-                    out = call_agent(news, timeframe=tf)
+                    out = call_agent(agent, timeframe=tf)
                     if isinstance(out, dict):
                         s = _norm(out.get("signal"))
                         if s:
                             votes[s] += 1
                 if votes["LONG"] > votes["SHORT"]:
-                    global_signals["news"] = "LONG"
+                    r["global"]["news"] = "LONG"
                 elif votes["SHORT"] > votes["LONG"]:
-                    global_signals["news"] = "SHORT"
-        else:
-            logger.info("[AGENTS] News désactivé via profile.")
+                    r["global"]["news"] = "SHORT"
+            return r
 
-        # 5) Sentiment
-        sentiment = load_agent("sentiment", "SentimentAgent") if agent_enabled("sentiment") else None
-        if sentiment:
-            out_g = call_agent(sentiment, timeframe=None)
+        def _run_sentiment() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"global": {}}
+            agent = load_agent("sentiment", "SentimentAgent") if agent_enabled("sentiment") else None
+            if not agent:
+                return r
+            out_g = call_agent(agent, timeframe=None)
             if isinstance(out_g, dict):
                 s = _norm(out_g.get("signal"))
                 if s:
-                    global_signals["sentiment"] = s
-            if "sentiment" not in global_signals:
+                    r["global"]["sentiment"] = s
+            if "sentiment" not in r["global"]:
                 votes = {"LONG": 0, "SHORT": 0}
                 for tf in self.tfs:
-                    out = call_agent(sentiment, timeframe=tf)
+                    out = call_agent(agent, timeframe=tf)
                     if isinstance(out, dict):
                         s = _norm(out.get("signal"))
                         if s:
                             votes[s] += 1
                 if votes["LONG"] > votes["SHORT"]:
-                    global_signals["sentiment"] = "LONG"
+                    r["global"]["sentiment"] = "LONG"
                 elif votes["SHORT"] > votes["LONG"]:
-                    global_signals["sentiment"] = "SHORT"
-        else:
-            logger.info("[AGENTS] Sentiment désactivé via profile.")
+                    r["global"]["sentiment"] = "SHORT"
+            return r
 
-        # 6) Fundamental
-        fundamental = load_agent("fundamental", "FundamentalAgent") if agent_enabled("fundamental") else None
-        if fundamental:
+        def _run_fundamental() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"per_tf": {}, "global": {}}
+            agent = load_agent("fundamental", "FundamentalAgent") if agent_enabled("fundamental") else None
+            if not agent:
+                return r
             votes = {"LONG": 0, "SHORT": 0}
             for tf in self.tfs:
-                out = call_agent(fundamental, timeframe=tf)
+                out = call_agent(agent, timeframe=tf)
                 if isinstance(out, dict):
                     s = _norm(out.get("signal"))
                     if s:
-                        per_tf_signals["fundamental"][tf] = s
+                        r["per_tf"][tf] = s
                         votes[s] += 1
             if votes["LONG"] == 0 and votes["SHORT"] == 0:
-                out_g = call_agent(fundamental, timeframe=None)
+                out_g = call_agent(agent, timeframe=None)
                 if isinstance(out_g, dict):
                     s = _norm(out_g.get("signal"))
                     if s:
-                        global_signals["fundamental"] = s
-        else:
-            logger.info("[AGENTS] Fundamental désactivé via profile.")
+                        r["global"]["fundamental"] = s
+            return r
 
-        # 7) Macro (blocage news + biais)
-        macro = load_agent("macro", "MacroAgent") if agent_enabled("macro") else None
-        if macro:
-            out_g = call_agent(macro, timeframe=None)
+        def _run_macro() -> Dict[str, Any]:
+            r: Dict[str, Any] = {"global": {}, "indicators": {}}
+            agent = load_agent("macro", "MacroAgent") if agent_enabled("macro") else None
+            if not agent:
+                return r
+            out_g = call_agent(agent, timeframe=None)
             if isinstance(out_g, dict):
-                # blocage (indicateur)
                 if bool(out_g.get("block")):
-                    indicators["MACRO_BLOCK"] = 1.0
+                    r["indicators"]["MACRO_BLOCK"] = 1.0
                 s = _norm(out_g.get("signal"))
                 if s:
-                    # injecte comme 'fundamental' global
-                    global_signals["fundamental"] = s
-        else:
-            logger.info("[AGENTS] Macro désactivé via profile.")
+                    r["global"]["fundamental"] = s
+            return r
+
+        # ================================================================
+        # Exécution parallèle avec timeout individuel
+        # ================================================================
+        agent_tasks = [
+            ("technical", _run_technical),
+            ("scalping", _run_scalping),
+            ("swing", _run_swing),
+            ("structure", _run_structure),
+            ("whale", _run_whale),
+            ("news", _run_news),
+            ("sentiment", _run_sentiment),
+            ("fundamental", _run_fundamental),
+            ("macro", _run_macro),
+        ]
+
+        async def _run_with_timeout(name: str, fn):
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(fn),
+                    timeout=_AGENT_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[AGENT] {name} timeout ({_AGENT_TIMEOUT}s) pour {self.symbol}")
+                return None
+            except Exception as e:
+                logger.warning(f"[AGENT] {name} erreur parallèle pour {self.symbol}: {e}")
+                return None
+
+        results = await asyncio.gather(
+            *[_run_with_timeout(name, fn) for name, fn in agent_tasks],
+            return_exceptions=True,
+        )
+
+        # ================================================================
+        # Fusion des résultats dans les structures existantes
+        # ================================================================
+        agent_names = [name for name, _ in agent_tasks]
+        for i, name in enumerate(agent_names):
+            res = results[i]
+            if isinstance(res, BaseException):
+                logger.warning(f"[AGENT] {name} exception gather pour {self.symbol}: {res}")
+                continue
+            if res is None:
+                continue
+
+            # per_tf signals
+            ptf = res.get("per_tf") or {}
+            if ptf:
+                if name == "whale":
+                    per_tf_signals.setdefault("whale", {}).update(ptf)
+                elif name in per_tf_signals:
+                    per_tf_signals[name].update(ptf)
+
+            # smc per_tf (structure only)
+            smc_tf = res.get("smc_tf") or {}
+            if smc_tf:
+                per_tf_signals.setdefault("smc", {}).update(smc_tf)
+
+            # global signals
+            gs = res.get("global") or {}
+            global_signals.update(gs)
+
+            # indicators
+            ind = res.get("indicators") or {}
+            indicators.update(ind)
+
+            # details → typed buckets
+            details = res.get("details") or {}
+            if name == "technical":
+                tech_details.update(details)
+            elif name == "scalping":
+                scalp_details.update(details)
+            elif name == "swing":
+                swing_details.update(details)
+            elif name == "structure":
+                structure_details.update(details)
+            elif name == "whale":
+                whale_details.update(details)
+
+            # market context
+            mkt = res.get("market") or {}
+            for mk, mv in mkt.items():
+                if isinstance(mv, dict):
+                    market.setdefault(mk, {}).update(mv)
+                else:
+                    market[mk] = mv
 
         # Nettoyage: enlever les agents vides pour la confluence
         per_tf_signals = {k: v for k, v in per_tf_signals.items() if any(_norm(s) for s in v.values())}
@@ -4324,18 +4580,17 @@ class Orchestrator:
         direction = "LONG" if score_long > score_short else ("SHORT" if score_short > score_long else "")
         score_agr = max(score_long, score_short)
 
-        # FIX 2026-02-20: Pénalité de dispersion (étape 3.3)
-        # -0.5 si >35% des agents désaccord, -1.0 block si >45%
+        # FIX 2026-02-20: Pénalité de dispersion (config: orchestrator.hard_filters.disagree_*)
         details: Dict[str, Any] = {}
         if _agent_dirs and direction in ("LONG", "SHORT"):
             _total_agents = len(_agent_dirs)
             _disagree = sum(1 for d in _agent_dirs if d not in (direction, "NEUTRAL"))
             _disagree_pct = _disagree / _total_agents if _total_agents > 0 else 0.0
-            if _disagree_pct > 0.45:
+            if _disagree_pct > self._hf_disagree_block_pct:
                 score_agr -= 1.0
                 details["dispersion_penalty"] = -1.0
                 details["disagree_pct"] = round(_disagree_pct, 2)
-            elif _disagree_pct > 0.35:
+            elif _disagree_pct > self._hf_disagree_penalty_pct:
                 score_agr -= 0.5
                 details["dispersion_penalty"] = -0.5
                 details["disagree_pct"] = round(_disagree_pct, 2)
@@ -4641,6 +4896,7 @@ class Orchestrator:
             reload_global_config(str(CONFIG_PATH))
             self.cfg = load_config(str(CONFIG_PATH)) or self.cfg
             self.optimization_cfg = dict(self.cfg.get("optimization") or {})
+            self._invalidate_agent_cache()
             logger.info("[NightlyOpt] Config rechargée après optimisation.")
         except Exception as exc:
             logger.warning(f"[NightlyOpt] Reload config failed: {exc}")
@@ -4860,11 +5116,11 @@ async def run_for_symbols(symbols: List[str]):
             logger.info("[/healthz] ready on :9108")
         except Exception as e:
             logger.warning(f"[health] start failed: {e}")
-        # 1) Charger .env / .env.local (sans écraser les env existants)
-        load_dotenv_env("config/.env", extra_paths=("config/.env.local",), overwrite=False)
+        # 1) Charger .env à la racine (sans écraser les env existants)
+        load_dotenv_env(path=".env", extra_paths=(), overwrite=False)
         # 2) Valider la présence des secrets essentiels (on tolère l'absence en mode dry)
         try:
-            get_required("MT5_LOGIN","MT5_PASSWORD","MT5_SERVER","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID")
+            get_required("MT5_ACCOUNT","MT5_PASSWORD","MT5_SERVER","TELEGRAM_BOT_TOKEN","TELEGRAM_CHAT_ID")
         except RuntimeError as e:
             # En démo/dry-run, on peut logguer un warning et continuer
             logger.warning(f"[CONFIG] Secrets incomplets: {e}")

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from utils.performance_tracker import PerformanceTracker
+from utils.performance_tracker import PerformanceTracker, load_all_tracker_data
 
 AUDIT_DIR = Path("data") / "audit"
 DEFAULT_OUTPUT = Path("reports") / "weekly_audit.txt"
@@ -168,7 +168,10 @@ def main() -> int:
     for _, path in files:
         merged_records.extend(_load_records(path))
     stats = _aggregate(merged_records)
+    # Charger un tracker unifié avec toutes les données per-symbol
+    merged_data = load_all_tracker_data()
     tracker = PerformanceTracker()
+    tracker._data = merged_data  # Injecter les données fusionnées
     report = _build_report(args.days, stats, tracker)
     output_path = args.output
     output_path.parent.mkdir(parents=True, exist_ok=True)

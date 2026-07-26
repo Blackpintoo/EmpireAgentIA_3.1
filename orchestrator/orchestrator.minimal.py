@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from utils.config import get_symbol_profile, get_enabled_symbols
 from utils.logger import logger
 from utils.mt5_client import MT5Client
-from utils.performance_tracker import PerformancePoint, default_tracker
+from utils.performance_tracker import PerformancePoint, default_tracker, get_tracker_for_symbol
 from utils.risk_manager import RiskManager
 
 class Orchestrator:
@@ -25,7 +25,7 @@ class Orchestrator:
         self.timeframes_cfg: Dict[str, Any] = self.ori_cfg.get("timeframes", {})
         self.scheduler = AsyncIOScheduler()
         self.risk = RiskManager(symbol)
-        self.tracker = default_tracker()
+        self.tracker = get_tracker_for_symbol(self.symbol)
         self._last_proposal: Optional[Dict[str, Any]] = None
         MT5Client.initialize_if_needed()
         self.mt5 = MT5Client()

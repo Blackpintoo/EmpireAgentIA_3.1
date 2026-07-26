@@ -1,5 +1,6 @@
 # verify_empire.py
 import argparse
+import asyncio
 import sys
 from typing import Any, Dict, List, Tuple, Optional
 from pprint import pprint
@@ -184,7 +185,7 @@ def verify_symbol(symbol: str) -> int:
     orch = Orchestrator(symbol)
 
     # Collecte brute
-    per_tf_signals, global_signals, indicators, market = orch._gather_agent_signals(symbol)
+    per_tf_signals, global_signals, indicators, market = asyncio.run(orch._gather_agent_signals(symbol))
 
     # Rapport des signaux
     print("\n" + "=" * 80)

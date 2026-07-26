@@ -78,11 +78,44 @@ class MacroAgent:
         }
 
     # ---------------- Calendar I/O ----------------
+    @staticmethod
+    def _csv_is_stale(csv_path: str, max_age_days: int = 7) -> bool:
+        """Retourne True si le CSV n'existe pas ou est plus vieux que max_age_days."""
+        if not os.path.exists(csv_path):
+            return True
+        try:
+            mtime = os.path.getmtime(csv_path)
+            age_days = (datetime.now(timezone.utc).timestamp() - mtime) / 86400
+            return age_days > max_age_days
+        except Exception:
+            return True
+
+    def _load_from_event_guard(self) -> List[Dict[str, Any]]:
+        """Fallback: charge les événements depuis EventGuard (auto-refresh)."""
+        try:
+            from utils.event_guard import get_event_guard
+            guard = get_event_guard()
+            eg_events = guard.get_upcoming_events(self.symbol or "BTCUSD", hours_ahead=48)
+            rows = []
+            for ev in eg_events:
+                affects = ev.currency
+                rows.append({
+                    "time_utc": ev.timestamp.isoformat(),
+                    "affects": affects,
+                    "impact": ev.impact.value,
+                    "title": ev.title,
+                })
+            return rows
+        except Exception:
+            return []
+
     def _load_calendar_rows(self, cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
+        csv_stale = self._csv_is_stale(cfg["csv_path"])
+
         # 1) CSV (facile à éditer)
         csv_path = cfg["csv_path"]
-        if os.path.exists(csv_path):
+        if os.path.exists(csv_path) and not csv_stale:
             try:
                 df = pd.read_csv(csv_path)
                 for _, r in df.iterrows():
@@ -114,6 +147,12 @@ class MacroAgent:
                     )
         except Exception:
             pass
+
+        # 3) Fallback EventGuard si CSV obsolète ou pas de résultats
+        if csv_stale or not rows:
+            eg_rows = self._load_from_event_guard()
+            if eg_rows:
+                rows.extend(eg_rows)
 
         return rows
 

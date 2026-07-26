@@ -17,6 +17,7 @@ import math
 import os
 import json
 import logging
+import threading
 import pytz
 from datetime import datetime, timezone
 
@@ -54,6 +55,9 @@ except Exception:  # pragma: no cover
 # FIX 2026-02-20: Guards log file (étape 2.1)
 _GUARDS_LOG_PATH = os.path.join("logs", "guards.log")
 _DAILY_LOSS_STATE_PATH = os.path.join("data", "daily_loss_state.json")
+
+# Verrou thread-safe pour accès concurrent au fichier d'état
+_FILE_LOCK = threading.Lock()
 
 
 def _log_guard(message: str) -> None:
@@ -93,21 +97,25 @@ class GlobalKillSwitch:
         self._check_day_reset()
 
     def _load_state(self) -> Dict[str, Any]:
-        try:
-            if os.path.exists(_DAILY_LOSS_STATE_PATH):
-                with open(_DAILY_LOSS_STATE_PATH, "r", encoding="utf-8") as f:
-                    return json.load(f) or {}
-        except Exception:
-            pass
+        with _FILE_LOCK:
+            try:
+                if os.path.exists(_DAILY_LOSS_STATE_PATH):
+                    with open(_DAILY_LOSS_STATE_PATH, "r", encoding="utf-8") as f:
+                        return json.load(f) or {}
+            except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
+                logger.warning(f"[STATE] Erreur I/O {_DAILY_LOSS_STATE_PATH}: {e}")
         return {}
 
     def _save_state(self) -> None:
-        try:
-            os.makedirs(os.path.dirname(_DAILY_LOSS_STATE_PATH), exist_ok=True)
-            with open(_DAILY_LOSS_STATE_PATH, "w", encoding="utf-8") as f:
-                json.dump(self._state, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+        with _FILE_LOCK:
+            try:
+                os.makedirs(os.path.dirname(_DAILY_LOSS_STATE_PATH), exist_ok=True)
+                tmp_path = _DAILY_LOSS_STATE_PATH + ".tmp"
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    json.dump(self._state, f, indent=2, ensure_ascii=False)
+                os.replace(tmp_path, _DAILY_LOSS_STATE_PATH)
+            except (IOError, OSError) as e:
+                logger.warning(f"[STATE] Erreur I/O écriture {_DAILY_LOSS_STATE_PATH}: {e}")
 
     def _today_utc(self) -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d")

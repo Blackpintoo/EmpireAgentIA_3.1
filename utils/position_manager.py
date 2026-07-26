@@ -97,22 +97,29 @@ def _round_to_step(x: float, step: float) -> float:
 # ------------------------------- state ----------------------------------
 _STATE_PATH = os.path.join("data", "pm_state.json")
 
+# Verrou thread-safe pour accès concurrent au fichier d'état
+_FILE_LOCK = threading.Lock()
+
 def _load_state() -> Dict[str, Any]:
-    try:
-        if os.path.exists(_STATE_PATH):
-            with open(_STATE_PATH, "r", encoding="utf-8") as f:
-                return json.load(f) or {}
-    except Exception:
-        pass
+    with _FILE_LOCK:
+        try:
+            if os.path.exists(_STATE_PATH):
+                with open(_STATE_PATH, "r", encoding="utf-8") as f:
+                    return json.load(f) or {}
+        except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
+            logger.warning(f"[STATE] Erreur I/O {_STATE_PATH}: {e}")
     return {}
 
 def _save_state(state: Dict[str, Any]) -> None:
-    try:
-        os.makedirs(os.path.dirname(_STATE_PATH), exist_ok=True)
-        with open(_STATE_PATH, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2, ensure_ascii=False)
-    except Exception:
-        pass
+    with _FILE_LOCK:
+        try:
+            os.makedirs(os.path.dirname(_STATE_PATH), exist_ok=True)
+            tmp_path = _STATE_PATH + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, _STATE_PATH)
+        except (IOError, OSError) as e:
+            logger.warning(f"[STATE] Erreur I/O écriture {_STATE_PATH}: {e}")
 
 
 # ----------------------------- Market Hours -------------------------------
@@ -319,6 +326,7 @@ class PositionManager:
         """
         Ferme partiellement une position avec lock global et délai.
         Fix 2025-12-17: Évite les closes simultanés sur plusieurs cryptos.
+        FIX 2026-03-01: Enregistre le deal_ticket dans pm_state pour le TradeOutcomeTracker.
         """
         global _LAST_PARTIAL_CLOSE_TIME
 
@@ -343,6 +351,7 @@ class PositionManager:
                     if result:
                         _LAST_PARTIAL_CLOSE_TIME = time.time()
                         logger.info(f"[PM_PARTIAL_EXEC] ticket={ticket} SUCCÈS via mt5c")
+                        self._record_partial_deal_ticket(ticket, volume_close)
                         return True
             except Exception as e:
                 logger.warning(f"[PM] close_partial via mt5c failed: {e}")
@@ -355,6 +364,7 @@ class PositionManager:
                     if result:
                         _LAST_PARTIAL_CLOSE_TIME = time.time()
                         logger.info(f"[PM_PARTIAL_EXEC] ticket={ticket} SUCCÈS via mt5 natif")
+                        self._record_partial_deal_ticket(ticket, volume_close)
                     else:
                         _err = mt5.last_error() if hasattr(mt5, "last_error") else "N/A"
                         logger.warning(f"[PM_PARTIAL_EXEC] ticket={ticket} ÉCHEC via mt5 natif: {_err}")
@@ -363,6 +373,54 @@ class PositionManager:
                 logger.warning(f"[PM] close_partial via mt5 native failed: {e}")
 
             return False
+
+    def _record_partial_deal_ticket(self, position_ticket: int, volume_closed: float) -> None:
+        """
+        Après un partial close réussi, cherche le deal_ticket correspondant
+        dans l'historique MT5 récent et l'enregistre dans pm_state.
+
+        FIX 2026-03-01: Permet au TradeOutcomeTracker de détecter les partiels
+        et d'éviter le double-comptage.
+        """
+        try:
+            if not mt5:
+                return
+            from datetime import timedelta, timezone as _tz
+            _now = datetime.now(_tz.utc)
+            _start = _now - timedelta(minutes=5)
+            deals = mt5.history_deals_get(_start, _now)
+            if not deals:
+                return
+
+            # Chercher le deal de clôture le plus récent pour ce ticket
+            for deal in reversed(list(deals)):
+                if (int(getattr(deal, "position_id", 0)) == int(position_ticket)
+                        and int(getattr(deal, "entry", 0)) == 1):
+                    deal_id = int(getattr(deal, "ticket", getattr(deal, "order", 0)))
+                    deal_volume = float(getattr(deal, "volume", 0.0))
+                    deal_profit = float(getattr(deal, "profit", 0.0))
+
+                    # Enregistrer dans pm_state
+                    st = self._get_tstate(position_ticket)
+                    if "partial_deal_tickets" not in st:
+                        st["partial_deal_tickets"] = []
+                    if deal_id not in st["partial_deal_tickets"]:
+                        st["partial_deal_tickets"].append(deal_id)
+                    # Tracker le volume fermé cumulé
+                    st["volume_closed"] = round(
+                        st.get("volume_closed", 0.0) + deal_volume, 6
+                    )
+                    self._set_tstate(position_ticket, st)
+
+                    logger.info(
+                        f"[PM_PARTIAL] Recorded deal_ticket={deal_id} for position={position_ticket} "
+                        f"vol={deal_volume} profit={deal_profit:.2f} "
+                        f"total_closed={st['volume_closed']:.4f}"
+                    )
+                    return
+
+        except Exception as e:
+            logger.debug(f"[PM_PARTIAL] Erreur enregistrement deal_ticket: {e}")
 
     def _get_rates(self, timeframe: str, count: int = 200) -> Optional[pd.DataFrame]:
         try:

@@ -1,7 +1,7 @@
 mt5:
-  account: 11535481
-  password: "Lapintade96@?"
-  server: VantageInternational-Demo
+  account: ${MT5_ACCOUNT}
+  password: ${MT5_PASSWORD}
+  server: ${MT5_SERVER}
   terminal_path: "C:\\Program Files\\MetaTrader 5\\terminal64.exe"
   autostart:
     enabled: true
@@ -12,8 +12,8 @@ mt5:
 
 telegram:
   enabled: true
-  token: 7969631468:AAHzPL6iCB9kO0K1iPtVeTkP-L2FevVdttc
-  chat_id: 5277012507
+  token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
   send_status_minutely: false
   send_trade_validation_only: false
   # Notifications autorisées (réduites pour éviter le spam):
@@ -70,7 +70,7 @@ engine:
 
 timeframes:
   orchestrator: 60
-  scalping: M1
+  scalping: M5
   swing: H1
 
 multi_timeframes:
@@ -296,6 +296,31 @@ orchestrator:
     confidence_delta: 0.05      # AUGMENTÉ 0.03→0.05
     avoid_if_open_position: true  # RÉTABLI true - éviter surexposition (OPTIMISATION 2025-12-13)
 
+  # ══════════════════════════════════════════════════════════════════════════
+  # HARD FILTERS - Seuils d'exécution externalisés (2026-03-01)
+  # Ces valeurs étaient hardcodées dans orchestrator.py
+  # ══════════════════════════════════════════════════════════════════════════
+  hard_filters:
+    min_score: 8.0                     # Score minimum absolu pour exécution
+    min_confluence: 5                  # Confluence minimum absolue pour exécution
+    tracker_contradiction: 0.25        # Seuil contradiction tracker historique
+    disagree_block_pct: 0.45           # >45% agents en désaccord → block (-1.0 score)
+    disagree_penalty_pct: 0.35         # >35% agents en désaccord → pénalité (-0.5 score)
+    min_rr: 1.5                        # R:R minimum (fallback si min_rr_required absent)
+    counter_trend_min_score: 10.0      # Score requis pour trade contre tendance HTF
+    quiet_block_confidence: 0.7        # Confiance min pour bloquer en régime quiet
+
+  # Session filter - heures bloquées
+  session:
+    blocked_hours_utc: [0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23]
+
+  # Liste des symboles crypto (exemption session filter, crypto bucket)
+  crypto_symbols: ["BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD"]
+
+  # Position manager defaults
+  position_manager_defaults:
+    be_rr: 1.0                         # Break-even R:R par défaut
+
   near_miss_alert: false
 
   weighted:
@@ -317,6 +342,8 @@ risk:
   timezone: Europe/Zurich
   reset_limits_daily: true
   daily_loss_limit_pct: 0.02   # 2% — ajuste si tu veux 1%: 0.01
+  kill_switch:
+    daily_loss_usd: 400          # Kill switch global : perte journalière max en USD
   daily_goal_mode: auto
   monthly_goal_chf_by_phase:
     phase1: 500
@@ -362,20 +389,24 @@ logging:
 
 scalping:
   params:
-    timeframe: M1
+    timeframe: M5
     session_hours: [7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]  # Europe/Zurich
     max_spread: 100
-    max_trades_per_hour: 10           # AUGMENTÉ de 6 → 10
-    rsi_period: 7
-    ema_period: 21
+    max_trades_per_hour: 10
+    rsi_period: 14
+    ema_period: 13
     atr_period: 14
-    rsi_overbought: 65                # ASSOUPLI de 70 → 65 (plus de signaux SHORT)
-    rsi_oversold: 35                  # ASSOUPLI de 30 → 35 (plus de signaux LONG)
-    tp_mult: 2.0
-    sl_mult: 2.0                      # 2026-01-26: 1.5→2.0 (SL trop serrés: 161 SL vs 81 TP)
+    rsi_overbought: 70
+    rsi_oversold: 30
+    tp_mult: 2.5
+    sl_mult: 1.8
+    spread_atr_max_ratio: 0.25
     vol_window: 20
     vol_spike_ratio: 1.2
-    notify_telegram: false            # Désactivé - seuls trade_event et daily_digest
+    cooldown_seconds: 300
+    regime_lookback: 60
+    higher_timeframes: [M15]
+    notify_telegram: false
 
 swing:
   params:
@@ -474,6 +505,17 @@ fundamental:
     use_forecast_diff_pct: true
     diff_pct_threshold: 0.3
     reverse_on_negative: true
+    confidence_map:
+      NFP: 0.85
+      FOMC: 0.90
+      CPI: 0.80
+      Interest Rate: 0.85
+      GDP: 0.70
+      PMI: 0.50
+      Retail Sales: 0.55
+      Employment: 0.65
+      Trade Balance: 0.45
+    confidence_default: 0.40
 
 sentiment:
   params:
@@ -489,6 +531,7 @@ whale:
   enabled: false  # DÉSACTIVÉ : Connecteurs non implémentés (onchain_listener, cex_tracker = stubs) - Sera réactivé en Phase 5
   min_trust: 0.6
   min_signal: 0.55
+  max_vol_zscore: 3.0              # Z-score volatilité max pour signal whale
   ewma_alpha: 0.2
   allow_in_vol_spike: false
   latency_ms_max: 15000

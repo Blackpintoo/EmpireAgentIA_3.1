@@ -1,3 +1,20 @@
+# ============================================================
+# DEPRECATED (2026-03-01) — Ce fichier statique est obsolète.
+#
+# Le calendrier économique est désormais géré par EventGuard
+# avec auto-refresh toutes les 2h et persistance JSON :
+#   → utils/event_guard.py (source centralisée)
+#   → data/news_calendar_live.json (persistance)
+#
+# Sources temps réel (ordre de priorité) :
+#   1. FXStreet API
+#   2. Finnhub API (FINNHUB_API_KEY dans .env)
+#   3. Investing.com (scraping)
+#
+# agents/macro.py bascule automatiquement sur EventGuard
+# si ce fichier ou le CSV sont obsolètes (> 7 jours).
+# ============================================================
+
 events:
   - time_utc: "2025-08-19T12:00:00Z"
     affects: ["USD"]

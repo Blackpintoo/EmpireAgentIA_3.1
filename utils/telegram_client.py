@@ -65,7 +65,7 @@ _CFG_PATH = os.path.join("config", "config.yaml")
 
 def _load_cfg() -> Dict[str, Any]:
     """
-    Lit config/config.yaml et retourne le bloc Telegram utile.
+    Lit config/config.yaml via load_config() (résout les ${VAR} depuis .env).
     Structure retournée:
     {
       "enabled": bool,
@@ -77,12 +77,15 @@ def _load_cfg() -> Dict[str, Any]:
     """
     cfg = {}
     try:
-        if yaml is None:
-            raise RuntimeError("PyYAML indisponible")
-        with open(_CFG_PATH, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
+        from utils.config import load_config as _lc
+        cfg = _lc() or {}
     except Exception:
-        cfg = {}
+        try:
+            if yaml is not None:
+                with open(_CFG_PATH, encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+        except Exception:
+            cfg = {}
 
     tg = cfg.get("telegram") or {}
     # --- Fallback ENV (ne casse jamais en l'absence de YAML) ---

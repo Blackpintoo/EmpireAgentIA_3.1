@@ -23,10 +23,11 @@ except ImportError as e:
     print("    → Installer avec: pip install MetaTrader5")
     sys.exit(1)
 
-# 2. Charger la config
+# 2. Charger la config (avec expansion ${VAR} depuis .env)
 print("\n[2] Chargement config.yaml...")
 try:
-    cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))
+    from utils.config import load_config
+    cfg = load_config()
     mt5_cfg = cfg.get("mt5", {})
     account = mt5_cfg.get("account")
     password = mt5_cfg.get("password")

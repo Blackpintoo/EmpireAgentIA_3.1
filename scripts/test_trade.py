@@ -12,8 +12,9 @@ import yaml
 import requests
 import time
 
-# Config
-cfg = yaml.safe_load(open("config/config.yaml", encoding="utf-8"))
+# Config (résout les ${VAR} depuis .env)
+from utils.config import load_config
+cfg = load_config()
 token = cfg["telegram"]["token"]
 chat_id = cfg["telegram"]["chat_id"]
 

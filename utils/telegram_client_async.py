@@ -51,9 +51,13 @@ class AsyncTelegramClient:
     @staticmethod
     def _load_cfg() -> dict:
         try:
-            return yaml.safe_load(open("config/config.yaml", encoding="utf-8")) or {}
+            from utils.config import load_config as _lc
+            return _lc() or {}
         except Exception:
-            return {}
+            try:
+                return yaml.safe_load(open("config/config.yaml", encoding="utf-8")) or {}
+            except Exception:
+                return {}
 
     def _reload_cfg(self):
         self._cfg = self._load_cfg()

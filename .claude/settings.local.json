@@ -30,7 +30,21 @@
       "Bash(git push:*)",
       "Bash(git remote set-url:*)",
       "Bash(git rm:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(git -C \"C:\\\\EmpireAgentIA_3\" status)",
+      "Bash(git -C \"C:\\\\EmpireAgentIA_3\" log --oneline -8)",
+      "Bash(test:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)",
+      "Bash(pip install:*)",
+      "Bash(git rev-list *)",
+      "Bash(git log *)",
+      "Bash(date /T)",
+      "Bash(awk '{print $6, $7, $8, $9}')",
+      "Bash(tasklist /V /FI \"IMAGENAME eq python.exe\")",
+      "Bash(tasklist /V /FI \"IMAGENAME eq pythonw.exe\")",
+      "Bash(tasklist /FI \"IMAGENAME eq terminal64.exe\")",
+      "PowerShell(Get-Process *)"
     ],
     "deny": [],
     "ask": []
