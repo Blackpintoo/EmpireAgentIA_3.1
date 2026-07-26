@@ -1,5 +1,6 @@
 # utils/logger.py
 import logging
+from logging.handlers import RotatingFileHandler  # FIX 2026-07-26: rotation des logs
 import sys
 import os
 import re
@@ -86,8 +87,25 @@ def _ensure_handlers(logger: logging.Logger) -> None:
                 os.makedirs(log_dir, exist_ok=True)
         except Exception:
             pass
+        # FIX 2026-07-26: rotation obligatoire — empire_agent.log avait atteint 231 Mo
+        # sans jamais tourner. Taille et nombre d'archives pilotables par variables
+        # d'environnement (EMPIRE_LOG_MAX_MB, EMPIRE_LOG_BACKUPS).
         try:
-            fh = logging.FileHandler(log_path, encoding="utf-8")
+            max_mb = float(os.getenv("EMPIRE_LOG_MAX_MB", "20"))
+        except Exception:
+            max_mb = 20.0
+        try:
+            backups = int(os.getenv("EMPIRE_LOG_BACKUPS", "5"))
+        except Exception:
+            backups = 5
+        try:
+            fh = RotatingFileHandler(
+                log_path,
+                maxBytes=int(max_mb * 1024 * 1024),
+                backupCount=backups,
+                encoding="utf-8",
+                delay=True,
+            )
             fh.setFormatter(fmt)
             fh.setLevel(level)
             logger.addHandler(fh)

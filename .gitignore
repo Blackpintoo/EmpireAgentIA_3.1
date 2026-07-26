@@ -39,3 +39,22 @@ tmp_*.csv
 
 # Egg info
 *.egg-info/
+
+# --- Rangement du 26/07/2026 ---
+# Archives locales (sauvegardes, scripts de debug, gros logs) : conservées sur
+# disque mais hors du dépôt.
+archive/
+_to_delete/
+
+# Sauvegardes ponctuelles : ne plus jamais versionner
+*.bak
+*.bak_*
+*.backup
+*.backup_*
+*.corrupt
+*.orig
+
+# Journaux et états volumineux
+logs/
+data/equity_log.csv
+data/proposals_log.csv
