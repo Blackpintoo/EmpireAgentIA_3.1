@@ -23,6 +23,7 @@ _MT5_OPERATION_DELAY_SEC: float = 1.5  # Délai minimum entre opérations MT5
 
 # Alias pour compatibilité
 _PARTIAL_CLOSE_LOCK = _MT5_OPERATION_LOCK
+_PARTIAL_UNSUPPORTED_LOGGED = False  # FIX 2026-07-26 (P3)
 _LAST_PARTIAL_CLOSE_TIME: float = 0.0
 _PARTIAL_CLOSE_DELAY_SEC: float = 2.0  # Délai spécifique pour closes partiels
 
@@ -372,6 +373,19 @@ class PositionManager:
             except Exception as e:
                 logger.warning(f"[PM] close_partial via mt5 native failed: {e}")
 
+            # FIX 2026-07-26 (P3): aucune primitive de fermeture partielle n'existe.
+            # MT5Client n'expose pas close_partial et l'API MetaTrader5 n'a pas de
+            # position_close_partial. Cette fonction renvoyait False en silence depuis
+            # l'origine : 0 partiel sur 3220 positions. On le dit clairement une fois.
+            global _PARTIAL_UNSUPPORTED_LOGGED
+            if not _PARTIAL_UNSUPPORTED_LOGGED:
+                _PARTIAL_UNSUPPORTED_LOGGED = True
+                logger.error(
+                    "[PM] FERMETURE PARTIELLE INDISPONIBLE : ni MT5Client.close_partial "
+                    "ni mt5.position_close_partial n'existent. Les paliers 'partials' "
+                    "configures ne seront JAMAIS executes. Retirer la config ou "
+                    "implementer la primitive."
+                )
             return False
 
     def _record_partial_deal_ticket(self, position_ticket: int, volume_closed: float) -> None:
@@ -576,12 +590,40 @@ class PositionManager:
 
         return closed_count
 
+    def _log_mfe_row(self, ticket, side, entry, px_close, pnl, mfe, mae, st) -> None:
+        """FIX 2026-07-26 (P3): journalise MFE/MAE pour permettre d'arbitrer
+        partiels / break-even / trailing sur donnees plutot qu'a l'aveugle."""
+        try:
+            import csv, os
+            from datetime import datetime, timezone as _tz
+            path = os.path.join("data", "trade_mfe.csv")
+            os.makedirs("data", exist_ok=True)
+            new_file = not os.path.exists(path)
+            with open(path, "a", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                if new_file:
+                    w.writerow(["ts_utc", "symbol", "ticket", "side", "entry", "exit",
+                                "pnl", "mfe_r", "mae_r", "sl_orig", "be_done", "trail_active"])
+                w.writerow([datetime.now(_tz.utc).isoformat(), self.symbol_canon, ticket, side,
+                            entry, px_close, round(float(pnl), 2),
+                            mfe if mfe is not None else "",
+                            mae if mae is not None else "",
+                            st.get("sl_orig", ""), st.get("be_done", ""), st.get("trail_active", "")])
+        except Exception as e:
+            logger.debug(f"[PM] _log_mfe_row failed: {e}")
+
     # ---------------------------- state per ticket -----------------------
     def _tk(self, ticket: int) -> str:
         return f"{self.symbol_canon}:{ticket}"
 
     def _get_tstate(self, ticket: int) -> Dict[str, Any]:
-        return self._state.get(self._tk(ticket), {"partials_done": [], "be_done": False, "trail_active": False})
+        return self._state.get(self._tk(ticket), {
+            "partials_done": [], "be_done": False, "trail_active": False,
+            # FIX 2026-07-26 (P3): SL d'origine fige a l'ouverture. Toutes les mesures
+            # de R doivent s'y referer : une fois le SL deplace au break-even, le calcul
+            # sur le SL courant donne risk ~ 0 et fait exploser le R.
+            "sl_orig": None, "mfe_r": None, "mae_r": None,
+        })
 
     def _set_tstate(self, ticket: int, st: Dict[str, Any]) -> None:
         self._state[self._tk(ticket)] = st
@@ -600,10 +642,12 @@ class PositionManager:
         """
         Retourne un nouveau SL si le passage à BE est requis, sinon None.
         """
-        if not force:
-            rr = _compute_rr(side, entry, sl, tp=entry, price=price)  # TP fictif=entry pour calculer R atteint
-            if rr is None or rr < float(self.be.rr):
-                return None
+        # FIX 2026-07-26 (P3): le parametre `force` court-circuitait le seuil be.rr des
+        # qu'un partiel reussissait, rendant be.rr lettre morte. Le seuil est desormais
+        # toujours respecte. `force` est conserve pour compatibilite d'appel mais ignore.
+        rr = _compute_rr(side, entry, sl, tp=entry, price=price)  # TP fictif=entry pour calculer R atteint
+        if rr is None or rr < float(self.be.rr):
+            return None
         offs = float(self.be.offset_points or 0.0) * self.point
         return (entry + offs) if side == "BUY" else (entry - offs)
 
@@ -657,14 +701,20 @@ class PositionManager:
                             )
         return vol_left, partial_hit
 
-    def _apply_trailing(self, side: str, entry: float, sl: float, price: float, atr: float) -> Optional[float]:
+    def _apply_trailing(self, side: str, entry: float, sl: float, price: float, atr: float,
+                        sl_ref: Optional[float] = None) -> Optional[float]:
         """
         Trailing ATR : nouveau SL proposé si > SL actuel (buy) ou < SL actuel (sell).
         - start_rr: n’active le trailing que si R courant >= start_rr
         - lock_rr: ne jamais redescendre sous +lock_rr
         """
         try:
-            rr_now = _compute_rr(side, entry, sl, tp=entry, price=price)
+            # FIX 2026-07-26 (P3): le R et le verrou lock_rr se mesurent sur le SL
+            # d'origine. Sur le SL courant, une position deja passee au break-even
+            # donnait risk ~ 0, un R infini, et un lock_sl colle a l'entree : le
+            # verrou lock_rr ne garantissait plus rien.
+            _sl0 = sl_ref if sl_ref is not None else sl
+            rr_now = _compute_rr(side, entry, _sl0, tp=entry, price=price)
             if rr_now is None or rr_now < float(self.trailing.start_rr):
                 return None
 
@@ -674,12 +724,12 @@ class PositionManager:
             if side == "BUY":
                 new_sl = price - delta
                 # lock_rr: calculer le SL min garanti (entry + lock_rr * risk)
-                risk = max(entry - sl, 1e-9)
+                risk = max(entry - _sl0, 1e-9)
                 lock_sl = entry + float(self.trailing.lock_rr) * risk
                 new_sl = max(new_sl, lock_sl, sl)  # jamais en-dessous de l’actuel
             else:
                 new_sl = price + delta
-                risk = max(sl - entry, 1e-9)
+                risk = max(_sl0 - entry, 1e-9)
                 lock_sl = entry - float(self.trailing.lock_rr) * risk
                 new_sl = min(new_sl, lock_sl, sl)  # jamais au-dessus de l’actuel
             return float(new_sl)
@@ -750,11 +800,17 @@ class PositionManager:
                 except Exception:
                     pass
                 result = "TP" if pnl > 0 else ("SL" if pnl < 0 else "BE/Manuel")
+                # FIX 2026-07-26 (P3): publier MFE/MAE mesures pendant la vie du trade
+                _stc = self._state.get(f"{self.symbol_canon}:{tk}", {}) or {}
+                _mfe = _stc.get("mfe_r"); _mae = _stc.get("mae_r")
                 self._notify("CLOSE_TRADE", {
                     "symbol": self.symbol_canon, "ticket": tk, "result": result,
                     "pnl_ccy": f"{pnl:+.2f}", "pnl_pips": f"{pnl_pips:+.1f}",
-                    "duration": dur, "rr": "N/A", "mfe": "N/A", "mae": "N/A"
+                    "duration": dur, "rr": "N/A",
+                    "mfe": f"{float(_mfe):+.2f}R" if _mfe is not None else "N/A",
+                    "mae": f"{float(_mae):+.2f}R" if _mae is not None else "N/A",
                 })
+                self._log_mfe_row(tk, side, entry, px_close, pnl, _mfe, _mae, _stc)
 
             # (audit fev2026) Nettoyage positions fantômes dans pm_state
             cleaned = 0
@@ -794,8 +850,29 @@ class PositionManager:
                     if None in (entry, sl, price, volume) or ticket <= 0:
                         continue
 
+                    # FIX 2026-07-26 (P3): figer le SL d'origine des la premiere vue du
+                    # ticket, et mesurer tous les R par rapport a lui.
+                    _st0 = self._get_tstate(ticket)
+                    sl0 = _st0.get("sl_orig")
+                    if sl0 is None or float(sl0) <= 0:
+                        sl0 = sl
+                        _st0["sl_orig"] = float(sl0)
+                        self._set_tstate(ticket, _st0)
+                    sl0 = float(sl0)
+
                     # RR actuel (si TP absent, on utilise entry pour RR BE/partials)
-                    rr_now = _compute_rr(side, entry, sl, tp or entry, price) or 0.0
+                    rr_now = _compute_rr(side, entry, sl0, tp or entry, price) or 0.0
+
+                    # FIX 2026-07-26 (P3): instrumentation MFE/MAE. Sans elle, impossible
+                    # de trancher sur les partiels, le break-even et le trailing autrement
+                    # qu'a l'aveugle.
+                    _mfe = _st0.get("mfe_r"); _mae = _st0.get("mae_r")
+                    _new_mfe = rr_now if _mfe is None else max(float(_mfe), rr_now)
+                    _new_mae = rr_now if _mae is None else min(float(_mae), rr_now)
+                    if _new_mfe != _mfe or _new_mae != _mae:
+                        _st0["mfe_r"] = round(float(_new_mfe), 4)
+                        _st0["mae_r"] = round(float(_new_mae), 4)
+                        self._set_tstate(ticket, _st0)
 
                     # ---- PARTIALS
                     # FIX 2026-02-24: Log diagnostic partials (Directive 3 — Étape C)
@@ -805,10 +882,11 @@ class PositionManager:
                         volume, partial_hit = self._apply_partials(ticket, volume, rr_now)
 
                     st = self._get_tstate(ticket)
-                    force_be = partial_hit and not st.get("be_done", False)
 
                     # ---- BREAK-EVEN
-                    new_sl_be = self._apply_break_even(side, entry, sl, price, force=force_be)
+                    # FIX 2026-07-26 (P3): mesure sur le SL d'origine, et plus de
+                    # declenchement force par un partiel.
+                    new_sl_be = self._apply_break_even(side, entry, sl0, price)
                     if new_sl_be is not None and ((side == "BUY" and new_sl_be > sl) or (side == "SELL" and new_sl_be < sl)):
                         if self._modify_sl_tp(ticket, new_sl_be, tp):
                             sl = new_sl_be
@@ -820,7 +898,7 @@ class PositionManager:
 
                     # ---- TRAILING
                     if self.trailing.enabled and atr_val and atr_val > 0:
-                        new_sl_tr = self._apply_trailing(side, entry, sl, price, atr_val)
+                        new_sl_tr = self._apply_trailing(side, entry, sl, price, atr_val, sl_ref=sl0)
                         if new_sl_tr is not None and ((side == "BUY" and new_sl_tr > sl) or (side == "SELL" and new_sl_tr < sl)):
                             if self._modify_sl_tp(ticket, new_sl_tr, tp):
                                 sl = new_sl_tr
