@@ -34,10 +34,10 @@ enabled_symbols:
 - XAUUSD        # Or - WR 67%, +$173 - OK
 
 # CRYPTOS (4) - Avec filtres heures BLACKLIST/WHITELIST
-- BNBUSD        # SHADOW 2026-04-30 (auto_execute=false dans overrides.yaml)
-- LTCUSD        # Litecoin - WHITELIST heures [8,18,22] UTC
+# - BNBUSD      # DESACTIVE P1 2026-07-26: n=37 R moyen -0.61 WR 16.2% P&L -1348$
+# - LTCUSD      # DESACTIVE P1 2026-07-26: seul altcoin encore en auto_execute, R negatif
 - BTCUSD        # Réactivé 2026-02-11 - BLACKLIST heures [16,17,18,20,22] UTC, max 0.5 lot
-- SOLUSD        # SHADOW 2026-04-30 (auto_execute=false dans overrides.yaml)
+# - SOLUSD      # DESACTIVE P1 2026-07-26: n=71 R moyen -0.43 WR 31.0% P&L -1706$
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CANDIDATS PHASE 2 SHADOW MODE (ajoutés 2026-04-30)
@@ -164,7 +164,7 @@ profiles:
 
   BNBUSD:
     symbol: BNBUSD
-    enabled: true
+    enabled: false   # DESACTIVE P1 2026-07-26: espérance negative mesuree
     instrument:
       broker_symbol: BNBUSD
       contract_size: 1.0
@@ -211,7 +211,7 @@ profiles:
 
   LTCUSD:
     symbol: LTCUSD
-    enabled: true
+    enabled: false   # DESACTIVE P1 2026-07-26: espérance negative mesuree
     instrument:
       broker_symbol: LTCUSD
       contract_size: 1.0
@@ -875,7 +875,7 @@ profiles:
 
   SOLUSD:
     symbol: SOLUSD
-    enabled: true    # Réactivé 2026-02-11 avec WHITELIST heures [13,23] UTC
+    enabled: false   # DESACTIVE P1 2026-07-26: espérance negative mesuree
     instrument:
       broker_symbol: SOLUSD
       contract_size: 10.0   # CORRIGÉ: était 1.0 - broker utilise 10 SOL par lot!

@@ -176,13 +176,13 @@ BTCUSD:
 # ══════════════════════════════════════════════════════════════════════════════
 LTCUSD:
   orchestrator:
-    enabled: true
+    enabled: false                        # DESACTIVE P1 2026-07-26
     # R18: MODE PROBATION — 1 trade, 0% HR, -$299 sur 14j
     probation: true
     allowed_directions: ["LONG"]          # R18: LONG only
     min_score_for_proposal: 7.0           # R18: relevé de 2.5→7.0
     max_trades_per_day: 1                 # R18: 1 seul trade/jour
-    auto_execute: true
+    auto_execute: false                   # DESACTIVE P1 2026-07-26: R negatif, seul altcoin encore en reel
     telegram_validation: false
     status_report_hours: 2
     min_rr: 0.8
