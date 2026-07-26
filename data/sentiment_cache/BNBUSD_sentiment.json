@@ -1,9 +1,10 @@
 {
-  "timestamp": "2026-02-21T11:02:45.504461+00:00",
+  "timestamp": "2026-05-23T07:19:33.913741+00:00",
   "symbol": "BNBUSD",
-  "retail": {
-    "long_percentage": 36.0,
-    "short_percentage": 64.0,
-    "source": "simulated"
+  "funding": {
+    "timestamp": "2026-05-23T07:19:33.907252+00:00",
+    "rate": 0.0,
+    "predicted_rate": 0.0,
+    "exchange": "binance"
   }
 }

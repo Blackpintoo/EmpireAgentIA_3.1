@@ -1,9 +1,16 @@
 {
-  "timestamp": "2026-02-24T05:04:57.969188+00:00",
+  "timestamp": "2026-05-26T17:21:21.405930+00:00",
   "symbol": "AUDUSD",
-  "retail": {
-    "long_percentage": 42.0,
-    "short_percentage": 58.0,
-    "source": "simulated"
+  "cot": {
+    "report_date": "2026-05-19T00:00:00+00:00",
+    "commercial_long": 100426,
+    "commercial_short": 209998,
+    "commercial_net": -109572,
+    "noncommercial_long": 151583,
+    "noncommercial_short": 65939,
+    "noncommercial_net": 85644,
+    "open_interest": 301269,
+    "noncommercial_net_change": 654,
+    "commercial_net_change": 2231
   }
 }

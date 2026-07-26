@@ -1,9 +1,16 @@
 {
-  "timestamp": "2026-01-02T12:48:05.410683+00:00",
+  "timestamp": "2026-03-01T18:21:37.615327+00:00",
   "symbol": "EURUSD",
-  "retail": {
-    "long_percentage": 32.0,
-    "short_percentage": 68.0,
-    "source": "simulated"
+  "cot": {
+    "report_date": "2026-02-24T00:00:00+00:00",
+    "commercial_long": 498044,
+    "commercial_short": 708947,
+    "commercial_net": -210903,
+    "noncommercial_long": 294873,
+    "noncommercial_short": 138017,
+    "noncommercial_net": 156856,
+    "open_interest": 911287,
+    "noncommercial_net_change": -17624,
+    "commercial_net_change": 16774
   }
 }

@@ -1,9 +1,16 @@
 {
-  "timestamp": "2026-02-24T05:04:56.319265+00:00",
+  "timestamp": "2026-05-26T17:21:22.640213+00:00",
   "symbol": "XAUUSD",
-  "retail": {
-    "long_percentage": 68.0,
-    "short_percentage": 32.0,
-    "source": "simulated"
+  "cot": {
+    "report_date": "2026-05-19T00:00:00+00:00",
+    "commercial_long": 69520,
+    "commercial_short": 261149,
+    "commercial_net": -191629,
+    "noncommercial_long": 211018,
+    "noncommercial_short": 51185,
+    "noncommercial_net": 159833,
+    "open_interest": 379325,
+    "noncommercial_net_change": -11789,
+    "commercial_net_change": 18629
   }
 }

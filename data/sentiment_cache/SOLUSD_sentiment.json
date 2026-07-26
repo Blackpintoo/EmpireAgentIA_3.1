@@ -1,9 +1,10 @@
 {
-  "timestamp": "2026-02-24T05:02:23.824767+00:00",
+  "timestamp": "2026-05-26T18:22:20.714743+00:00",
   "symbol": "SOLUSD",
-  "retail": {
-    "long_percentage": 64.0,
-    "short_percentage": 36.0,
-    "source": "simulated"
+  "funding": {
+    "timestamp": "2026-05-26T18:22:20.714743+00:00",
+    "rate": -0.006838,
+    "predicted_rate": 0.01,
+    "exchange": "binance"
   }
 }
