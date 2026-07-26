@@ -380,9 +380,9 @@ risk:
   timezone: Europe/Zurich
   reset_limits_daily: true
   daily_loss_limit_pct: 0.02   # 2% — ajuste si tu veux 1%: 0.01
-  max_risk_per_trade_usd: 300  # FIX R9: plafond absolu risque par trade ($)
+  max_risk_per_trade_usd: 250  # P2 2026-07-26: aligne sur le risque cible uniforme
   kill_switch:
-    daily_loss_usd: 400          # Kill switch global : perte journalière max en USD
+    daily_loss_usd: 1000          # P2 2026-07-26: 400 -> 1000 (4 pertes pleines, etait 1.3)
   daily_goal_mode: auto
   monthly_goal_chf_by_phase:
     phase1: 500

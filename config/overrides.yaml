@@ -22,7 +22,7 @@ GLOBAL:
 
   # FIX 2026-02-20: Kill switch global journalier (étape 2)
   risk:
-    global_daily_loss_limit: 400.0        # USD — stoppe TOUT le trading si perte jour > $400
+    global_daily_loss_limit: 1000.0        # P2 2026-07-26: 400 -> 1000 (coherence avec 250 USD/trade)
 
   # FIX 2026-02-20: Seuils qualité relevés (étape 3)
   default:
@@ -138,7 +138,7 @@ BTCUSD:
 
     position_limits:
       max_positions: 6
-      max_volume: 0.10                    # FIX 2026-02-20: 0.5→0.10 (étape 1.4)
+      max_volume: 0.91                  # P2 2026-07-26: filet de securite (2x la taille cible 0.46 lot)
       max_net_volume: 0.05
 
     news_filter:
@@ -156,7 +156,7 @@ BTCUSD:
       lookback_days: 7
 
   risk:
-    risk_per_trade: 0.008
+    risk_per_trade: 0.005                 # P2 2026-07-26: uniforme (250 USD/trade vise)
     max_consec_losses: 4
     daily_loss_limit_pct: 0.035
     daily_loss_abs: 250
@@ -408,7 +408,7 @@ XAUUSD:
       window_after_min: 45                # R19: élargi 30→45 min
     position_limits:
       max_positions: 3                    # R19: réduit de 6→3
-      max_volume: 0.10                    # R19: réduit de 0.15→0.10
+      max_volume: 0.22                  # P2 2026-07-26: filet de securite (2x la taille cible 0.11 lot)
       max_net_volume: 0.05
     live_guard:
       enabled: true
@@ -426,7 +426,7 @@ XAUUSD:
       - {start: 7, end: 17}              # Session London
     allowed_hours_utc: [7, 8, 9, 10, 11, 12, 13, 15, 16, 17]  # R19: London seulement, excluant 14h et 18h
   risk:
-    risk_per_trade: 0.005                 # R19: réduit 0.012→0.005 (divisé par 2.4)
+    risk_per_trade: 0.005                 # P2 2026-07-26: uniforme (250 USD/trade vise)
     daily_loss_abs: 100                   # R19: kill switch réduit 220→$100/jour
     max_consec_losses: 2                  # R19: pause après 2 pertes
 
@@ -637,7 +637,7 @@ SP500:
     whale_override:
       enable: false
     position_limits:
-      max_volume: 1.0                     # FIX 2026-02-20: 5.0→1.0 (étape 1.4)
+      max_volume: 26                    # P2 2026-07-26: filet de securite (2x la taille cible 13.16 lot)
     # FIX 2026-02-24: ajout 17h=-2521$ (6 trades, 33% WR)
     blocked_hours_utc: [1, 7, 8, 10, 14, 17, 18, 20, 22]
     cooldown:
@@ -673,6 +673,7 @@ SP500:
         atr_mult: 1.6
         lock_rr: 0.4                     # FIX 2026-04-19 D3
   risk:
+    risk_per_trade: 0.005                 # P2 2026-07-26: uniforme (250 USD/trade vise)
     daily_loss_abs: 500
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -861,7 +862,7 @@ NAS100:
     whale_override:
       enable: false
     position_limits:
-      max_volume: 2.0                     # R19: augmenté 1.0→2.0 (plus de marge)
+      max_volume: 6.0                   # P2 2026-07-26: filet de securite (2x la taille cible 2.98 lot)
     cooldown:
       enabled: true
       min_secs_between_trades: 600
@@ -895,7 +896,7 @@ NAS100:
         atr_mult: 1.6
         lock_rr: 0.4                     # FIX 2026-04-19 D3
   risk:
-    risk_per_trade: 0.010                 # R19: AUGMENTÉ → 1.0% risk par trade
+    risk_per_trade: 0.005                 # P2 2026-07-26: uniforme (250 USD/trade vise)
     daily_loss_abs: 300                   # R19: kill switch raisonnable
     max_consec_losses: 3                  # R19: pause après 3 pertes
 
@@ -914,7 +915,7 @@ AUDUSD:
     whale_override:
       enable: false
     position_limits:
-      max_volume: 1.0                     # FIX 2026-02-20: 1.5→1.0 (étape 1.4)
+      max_volume: 3.0                   # P2 2026-07-26: filet de securite (2x la taille cible 1.49 lot)
     cooldown:
       enabled: true
       min_secs_between_trades: 600
@@ -928,7 +929,7 @@ AUDUSD:
     prime_hours_utc:
       - {start: 7, end: 17}          # R17: London+NY au lieu de Asie
   risk:
-    risk_per_trade: 0.002             # R17: risque minimal
+    risk_per_trade: 0.005                 # P2 2026-07-26: uniforme (250 USD/trade vise)
     daily_loss_abs: 60                # R17: kill switch serré
     max_consec_losses: 2              # R17: pause après 2 pertes (pas 3)
 
@@ -948,7 +949,7 @@ USDJPY:
     whale_override:
       enable: false
     position_limits:
-      max_volume: 1.0
+      max_volume: 4.0                   # P2 2026-07-26: filet de securite (2x la taille cible 2.00 lot)
     allowed_hours_utc: [8, 9, 10, 11, 12, 13, 14, 15]  # Maintenu London+NY
     cooldown:
       enabled: true
@@ -983,6 +984,6 @@ USDJPY:
         atr_mult: 1.6
         lock_rr: 0.4                     # FIX 2026-04-19 D3
   risk:
-    risk_per_trade: 0.001                 # R19: risque minimal absolu (0.1%)
+    risk_per_trade: 0.005                 # P2 2026-07-26: uniforme (250 USD/trade vise)
     daily_loss_abs: 30                    # R19: kill switch $30/jour
     max_consec_losses: 2                  # R19: pause après 2 pertes
