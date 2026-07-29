@@ -10,6 +10,16 @@ from textblob import TextBlob
 from utils.logger import logger
 from utils.data_sources import aggregate_news
 from agents.utils import merge_agent_params
+
+# AJOUT 2026-07-29 (P6): registre de sources hiérarchisé (crédibilité, pertinence,
+# déduplication, fraîcheur). Import optionnel : si le module est absent, l'agent
+# retombe sur l'ancienne collecte sans rien casser.
+try:
+    from utils import news_sources as _news_src
+    NEWS_SOURCES_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _news_src = None
+    NEWS_SOURCES_AVAILABLE = False
 # NOTE: on ne pousse PAS vers Telegram depuis l'agent (l'orchestrateur s'en charge)
 # from utils.telegram_client import send_telegram_message  # <- volontairement non utilisé
 
@@ -113,6 +123,41 @@ class NewsAgent:
     # Pipeline
     # -----------------------------
     def fetch_news(self) -> List[Dict[str, Any]]:
+        # AJOUT 2026-07-29 (P6): collecte hiérarchisée en priorité.
+        # Chaque article revient avec un poids = crédibilité x fraîcheur x
+        # pertinence x reprises. Repli sur l'ancienne collecte si indisponible.
+        if NEWS_SOURCES_AVAILABLE and bool(self.params.get("use_tiered_sources", True)):
+            try:
+                items = _news_src.collect(
+                    self.symbol,
+                    max_items_per_feed=int(self.params.get("max_per_feed", 15)),
+                    cache_ttl=float(self.params.get("cache_ttl", 600.0)),
+                    max_total=int(self.params.get("max_news_items", 60)),
+                    min_relevance=float(self.params.get("min_relevance", 0.3)),
+                    half_life_h=float(self.params.get("news_half_life_hours", 6.0)),
+                    include_aggregators=bool(self.params.get("include_aggregators", True)),
+                )
+                if items:
+                    entries = [{
+                        "title": it.get("title", ""),
+                        "summary": it.get("summary", ""),
+                        "link": it.get("link", ""),
+                        "published_dt": it.get("published"),
+                        "source": it.get("source_id", "other"),
+                        "source_label": it.get("source_label", ""),
+                        "tier": it.get("tier", 4),
+                        "_w": float(it.get("weight", 1.0)),
+                    } for it in items]
+                    logger.info(
+                        "[NEWS] %s: %d articles pondérés (tiers %s)",
+                        self.symbol, len(entries),
+                        sorted({int(e["tier"]) for e in entries}),
+                    )
+                    return entries
+                logger.info("[NEWS] %s: collecte hiérarchisée vide → repli ancienne source", self.symbol)
+            except Exception as exc:
+                logger.warning("[NEWS] collecte hiérarchisée en échec (%s) → repli", exc)
+
         try:
             entries = aggregate_news(self.symbol, self.params)
         except Exception as exc:
@@ -155,7 +200,13 @@ class NewsAgent:
 
             title = e.get("title", "")
             title_clean = self._clean(title)
-            w = float(self.params["source_weight"].get(e.get("source", "other"), 1))
+            # AJOUT 2026-07-29 (P6): poids calculé par news_sources (crédibilité x
+            # fraîcheur x pertinence x reprises) s'il est présent ; sinon ancien
+            # barème par nom de source.
+            if e.get("_w") is not None:
+                w = float(e["_w"])
+            else:
+                w = float(self.params["source_weight"].get(e.get("source", "other"), 1))
 
             tagged = False
             if any(k in title_clean for k in self.params["keywords_bullish"]):
@@ -247,11 +298,17 @@ class NewsAgent:
     # -----------------------------
     def generate_signal(self, bar=None):
         logger.debug(f"[DEBUG] generate_signal in {self.__class__.__name__}")
-        # FIX 2026-02-20: Désactiver pour non-crypto (étape 4.5)
-        _crypto_kw = ("BTC", "ETH", "SOL", "BNB", "LTC", "DOGE")
-        if not any(c in self.symbol.upper() for c in _crypto_kw):
-            logger.debug(f"[NEWS] {self.symbol} non-crypto — news désactivé")
-            return {"signal": None, "intensity": 0.0, "reason": "non_crypto"}
+        # FIX 2026-07-29 (P6): la restriction crypto est levée. Elle datait d'une
+        # époque où toutes les sources étaient crypto : sur NAS100 ou XAUUSD, des
+        # flux Bitcoin ne produisaient que du bruit. Le registre hiérarchisé
+        # sélectionne désormais des sources adaptées à chaque classe d'actif
+        # (macro, presse financière), donc l'agent a du sens partout.
+        # Le repli reste borné : sans registre, on conserve l'ancien garde-fou.
+        if not (NEWS_SOURCES_AVAILABLE and bool(self.params.get("use_tiered_sources", True))):
+            _crypto_kw = ("BTC", "ETH", "SOL", "BNB", "LTC", "DOGE")
+            if not any(c in self.symbol.upper() for c in _crypto_kw):
+                logger.debug(f"[NEWS] {self.symbol} non-crypto et registre indisponible — news désactivé")
+                return {"signal": None, "intensity": 0.0, "reason": "non_crypto"}
         news = self.dedup(self.fetch_news())
 
         # PHASE 2: Essayer d'abord l'analyse V2 (FinBERT)
