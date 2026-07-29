@@ -1944,6 +1944,20 @@ class Orchestrator:
             self.execute_trade(direction)
             return
 
+        # FIX 2026-07-29 (P5): SHADOW MODE — auto_execute=False ET telegram_validation=False.
+        # Le code retombait ici et envoyait des boutons de validation, alors que le shadow
+        # mode doit seulement OBSERVER : proposition journalisée dans proposals_log.csv,
+        # aucun ordre, aucune notification. Pire, l'écouteur de clics ne démarre que si
+        # telegram_validation=True (voir needs_cb) : ces boutons n'étaient reliés à rien.
+        # Mesuré le 27/07 : 619 boutons morts envoyés en une seule journée.
+        if not getattr(self, "use_telegram_validation", False):
+            logger.info(
+                f"[SHADOW] {self.symbol} {direction} @ {price} SL={sl} TP={tp} lots={lots} "
+                f"score={score_agr:.2f} conf={confluence} — proposition journalisée, "
+                f"aucun ordre, aucune notification"
+            )
+            return
+
         # Sinon: envoi avec boutons
         ttl_min = max(1, self.proposal_ttl_secs // 60)
         msg = f"{msg}\n⏳ Expire dans ~{ttl_min} min"
@@ -6090,7 +6104,11 @@ async def run_for_symbols(symbols: List[str]):
     if started:
         _notify_global_start(started)
         # Ne démarre le worker qu'en cas de validation Telegram requise
-        needs_cb = any(getattr(o, "use_telegram_validation", False) and not getattr(o, "auto_execute", True) for o in orchs)
+        # FIX 2026-07-29 (P5): la condition exigeait aussi auto_execute=False, alors que
+        # des boutons sont envoyés dès que telegram_validation=True, quel que soit
+        # auto_execute. L'écouteur ne démarrait donc pas dans une configuration où des
+        # boutons partaient quand même. Condition alignée sur celle d'envoi.
+        needs_cb = any(getattr(o, "use_telegram_validation", False) for o in orchs)
         if needs_cb:
             _start_tg_callback_worker_once()
 
