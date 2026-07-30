@@ -41,7 +41,14 @@ tmp_*.csv
 *.egg-info/
 
 # --- Rangement du 26/07/2026 ---
-archive/
+# MODIFIE 2026-07-30 (P6) : archive/ n'est plus ignore en bloc. Les modules
+# retires du chemin d'execution y sont DEPLACES, pas supprimes — les ignorer
+# reviendrait a les supprimer du depot. Seuls les sous-dossiers volumineux
+# du rangement de juillet restent hors versionnement.
+archive/backups/
+archive/logs/
+archive/debug-scripts/
+archive/workshop/
 _to_delete/
 _transfert/
 
