@@ -17,7 +17,9 @@ def main(days: int = 30):
     deals = mt5.history_deals_get(start, end) or []
 
     os.makedirs("data", exist_ok=True)
-    path = os.path.join("data", "deals_history.csv")
+    # FIX 2026-07-30 (P5): historique des deals cloisonne par compte MT5.
+    from utils.account_scope import chemin_donnees as _chemin_donnees
+    path = str(_chemin_donnees("deals_history.csv"))
     fields = ["time","symbol","type","entry","volume","price","profit","commission","swap","magic","comment","position_id","order"]
 
     # FIX 2026-02-23: write_header si fichier inexistant OU vide

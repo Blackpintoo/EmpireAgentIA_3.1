@@ -2046,7 +2046,11 @@ class Orchestrator:
                 return 0.0
 
             # Lire les outcomes récents depuis trade_outcomes.csv
-            outcomes_path = pathlib.Path("data/trade_outcomes.csv")
+            # FIX 2026-07-30 (P5): fichier DU COMPTE courant. Avant, le boost
+            # adaptatif — donc le seuil de score effectif — se calculait sur
+            # l'historique d'un compte potentiellement ferme.
+            from utils.account_scope import chemin_donnees as _chemin_donnees
+            outcomes_path = pathlib.Path(_chemin_donnees("trade_outcomes.csv"))
             if not outcomes_path.exists():
                 return 0.0
 
@@ -5794,7 +5798,9 @@ class Orchestrator:
                 return
 
             os.makedirs("data", exist_ok=True)
-            path = os.path.join("data", "deals_history.csv")
+            # FIX 2026-07-30 (P5): historique des deals cloisonne par compte.
+            from utils.account_scope import chemin_donnees as _chemin_donnees
+            path = str(_chemin_donnees("deals_history.csv"))
 
             # FIX 2026-02-23: Déclaration fields avant lecture (Directive 2)
             fields = ["time", "symbol", "type", "entry", "volume", "price", "profit",

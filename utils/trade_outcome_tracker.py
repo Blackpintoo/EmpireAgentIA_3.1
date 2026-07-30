@@ -33,6 +33,9 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+# FIX 2026-07-30 (P5): cloisonnement des donnees par compte MT5.
+from utils.account_scope import chemin_donnees as _chemin_donnees
+
 try:
     import MetaTrader5 as mt5
     MT5_AVAILABLE = True
@@ -85,7 +88,11 @@ _TRACKED_STATE_PATH = os.path.join("data", "tracked_positions.json")
 class OutcomeTrackerConfig:
     """Configuration du tracker de résultats."""
     poll_interval: float = 30.0          # Intervalle de poll en secondes
-    history_file: str = "data/trade_outcomes.csv"
+    # FIX 2026-07-30 (P5): cloisonne par compte MT5. L'historique d'un compte
+    # ferme alimentait _get_adaptive_score_boost, donc le seuil de score du
+    # compte courant.
+    history_file: str = field(
+        default_factory=lambda: str(_chemin_donnees("trade_outcomes.csv")))
     max_history_days: int = 90           # Conserver 90 jours d'historique
     min_deal_profit_for_log: float = 0.0 # Logger tous les deals (même 0)
     enable_loss_analysis: bool = True    # Activer l'analyse des pertes

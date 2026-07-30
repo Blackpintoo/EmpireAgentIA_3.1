@@ -24,8 +24,29 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-_DEFAULT_PATH = Path("data") / "performance" / "performance_tracker.json"
-_PER_SYMBOL_DIR = Path("data") / "performance"
+# FIX 2026-07-30 (P5): les donnees de performance sont cloisonnees par compte
+# MT5. Un historique produit sur un compte ferme ne doit pas alimenter les
+# seuils adaptatifs ni le tracker_vote du compte courant.
+from utils.account_scope import numero_compte as _numero_compte
+
+_PERF_ROOT = Path("data") / "performance"
+_LEGACY_DEFAULT_PATH = _PERF_ROOT / "performance_tracker.json"
+
+
+def _dossier_compte() -> Path:
+    return _PERF_ROOT / ("compte_%s" % _numero_compte())
+
+
+def _chemin_global() -> Path:
+    return _dossier_compte() / "performance_tracker.json"
+
+
+# Noms conserves pour le code externe qui les importe. Ils designent
+# desormais l'HERITAGE (fichiers non rattaches a un compte), pas les chemins
+# actifs : ceux-ci sont resolus par _chemin_global() / _symbol_tracker_path(),
+# car le numero de compte n'est connu qu'apres le chargement du .env.
+_DEFAULT_PATH = _LEGACY_DEFAULT_PATH
+_PER_SYMBOL_DIR = _PERF_ROOT
 _SUCCESS_CODES = {10009, 10008}
 
 
@@ -71,7 +92,8 @@ class PerformanceTracker:
         self.min_history = int(max(1, min_history))
         self.inactivity_half_life_days = float(max(1.0, inactivity_half_life_days))
 
-        self.storage_path = Path(storage_path) if storage_path else _DEFAULT_PATH
+        # FIX 2026-07-30 (P5): par defaut, le fichier du COMPTE courant.
+        self.storage_path = Path(storage_path) if storage_path else _chemin_global()
         try:
             self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
@@ -331,9 +353,12 @@ _SYMBOL_TRACKERS: Dict[str, PerformanceTracker] = {}
 
 
 def _symbol_tracker_path(symbol: str) -> Path:
-    """Retourne le chemin du fichier tracker pour un symbole donné."""
+    """
+    Chemin du fichier tracker pour un symbole, cloisonne par compte MT5.
+    FIX 2026-07-30 (P5) : data/performance/compte_<numero>/tracker_<SYM>.json
+    """
     safe = symbol.upper().replace("/", "_").replace("\\", "_")
-    return _PER_SYMBOL_DIR / f"tracker_{safe}.json"
+    return _dossier_compte() / f"tracker_{safe}.json"
 
 
 def get_tracker_for_symbol(symbol: str) -> PerformanceTracker:
@@ -365,9 +390,10 @@ def load_all_tracker_data() -> Dict[str, Any]:
         Dict unifié {SYMBOL: {agent: {bucket: leaf}}}
     """
     merged: Dict[str, Any] = {}
+    dossier = _dossier_compte()
     try:
-        _PER_SYMBOL_DIR.mkdir(parents=True, exist_ok=True)
-        for path in sorted(_PER_SYMBOL_DIR.glob("tracker_*.json")):
+        dossier.mkdir(parents=True, exist_ok=True)
+        for path in sorted(dossier.glob("tracker_*.json")):
             try:
                 raw = path.read_text(encoding="utf-8")
                 if not raw.strip():
@@ -385,12 +411,23 @@ def load_all_tracker_data() -> Dict[str, Any]:
     except Exception:
         pass
 
-    # Fallback : si aucun fichier per-symbol, lire le global
-    if not merged and _DEFAULT_PATH.exists():
+    # Repli : le fichier global DU COMPTE, jamais l'heritage non rattache.
+    # FIX 2026-07-30 (P5): l'ancien repli lisait data/performance/
+    # performance_tracker.json, qui peut provenir d'un compte ferme.
+    chemin_global = _chemin_global()
+    if not merged and chemin_global.exists():
         try:
-            raw = _DEFAULT_PATH.read_text(encoding="utf-8")
+            raw = chemin_global.read_text(encoding="utf-8")
             if raw.strip():
                 merged = json.loads(raw)
+        except Exception:
+            pass
+
+    if not merged:
+        try:
+            from utils.account_scope import signaler_heritage
+            signaler_heritage(
+                [_LEGACY_DEFAULT_PATH] + sorted(_PERF_ROOT.glob("tracker_*.json")))
         except Exception:
             pass
 
@@ -399,20 +436,21 @@ def load_all_tracker_data() -> Dict[str, Any]:
 
 def migrate_to_per_symbol() -> int:
     """
-    Migration unique : découpe le fichier global performance_tracker.json
-    en fichiers séparés par symbole.
+    Découpe le fichier global DU COMPTE COURANT en fichiers par symbole.
 
-    Ne migre que si le fichier global existe et qu'aucun fichier per-symbol
-    n'existe encore (évite d'écraser des données).
+    FIX 2026-07-30 (P5) : ne lit plus data/performance/performance_tracker.json
+    (fichier hérité, compte inconnu). Adopter cet héritage est une décision
+    explicite de l'utilisateur : tools/adopter_historique_compte.py.
 
     Returns:
         Nombre de fichiers symbole créés.
     """
-    if not _DEFAULT_PATH.exists():
+    source = _chemin_global()
+    if not source.exists():
         return 0
 
     try:
-        raw = _DEFAULT_PATH.read_text(encoding="utf-8")
+        raw = source.read_text(encoding="utf-8")
         if not raw.strip():
             return 0
         global_data = json.loads(raw)
@@ -420,7 +458,7 @@ def migrate_to_per_symbol() -> int:
         return 0
 
     created = 0
-    _PER_SYMBOL_DIR.mkdir(parents=True, exist_ok=True)
+    _dossier_compte().mkdir(parents=True, exist_ok=True)
 
     for symbol, agents_data in global_data.items():
         path = _symbol_tracker_path(symbol)
