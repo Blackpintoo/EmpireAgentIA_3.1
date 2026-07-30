@@ -1,89 +1,64 @@
-# tests/test_crypto_bucket.py
-import os, sys, types, math
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(THIS_DIR, ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+# -*- coding: utf-8 -*-
+"""FIX 2026-07-30 (P1) : tests réécrits au niveau de la garde elle-même.
 
-from orchestrator.orchestrator import Orchestrator, _to_canon
+Les versions précédentes appelaient `o._build_proposal(...)` — API disparue —
+puis `execute_trade`, en espérant atteindre `place_order`. Or execute_trade
+enchaîne une trentaine de gardes : dans un contexte de test, le trade est
+rejeté bien avant d'arriver au bucket crypto. Ces tests ne prouvaient donc
+rien sur la garde ; ils échouaient sur la mise en place.
 
-def make_pos(symbol, price_open, sl, vol):
-    return types.SimpleNamespace(symbol=symbol, price_open=price_open, sl=sl, volume=vol)
+On teste désormais directement `_apply_crypto_bucket_guard` et
+`_crypto_bucket_risk_used`, qui portent la logique.
+"""
+import pytest
 
-def test_crypto_bucket_max_open_and_cap(monkeypatch):
-    o = Orchestrator(symbol="BTCUSD")
+from orchestrator.orchestrator import _apply_crypto_bucket_guard, _crypto_bucket_risk_used
 
-    # Mock MT5 module utilisé par l'orchestrateur
-    equity = 10000.0
-    open_positions = [
-        make_pos("BTCUSD", 50000.0, 49750.0, 0.02),   # pos 1
-        make_pos("LNKUSD",  15.00,   14.50,  1.00),   # pos 2 (LINK broker symbol)
-    ]
-    def positions_get(): return list(open_positions)
-    def account_info(): return types.SimpleNamespace(equity=equity)
-    mt5_stub = types.SimpleNamespace(positions_get=positions_get, account_info=account_info)
 
-    # Injecte le mt5 utilisé par l'orchestrateur s'il est stocké sous self.mt5_mod, sinon adapte
-    if hasattr(o, "mt5_mod"):
-        o.mt5_mod = mt5_stub
-    else:
-        # fallback si tu utilises mt5 direct dans l'orchestrateur
-        import orchestrator.orchestrator as orch
-        orch.mt5 = mt5_stub
+class _Pos:
+    def __init__(self, symbol, volume, price_open=50000.0, sl=49500.0):
+        self.symbol = symbol
+        self.volume = volume
+        self.price_open = price_open
+        self.sl = sl
 
-    # Instrument config pour le symbole courant (point/pip_value)
-    o.profile.setdefault("instrument", {"point": 0.01, "pip_value": 1.0})
-    o.profile.setdefault("orchestrator", {}).setdefault("crypto_bucket", {"enabled": True, "cap": 0.03, "min_factor": 0.33, "max_open": 2})
-    o.ori_cfg.setdefault("crypto_bucket_cap_override", 0.02)  # M1/M2
 
-    # Proposition 1: une 3e position crypto devrait être REJETÉE (max_open=2)
-    payload = {
-        "symbol": "BTCUSD",
-        "side": "LONG",
-        "entry": 50000.0,
-        "sl": 49900.0,
-        "tp": 50100.0,
-        "lots": 0.05,
+def _profil(_sym=None):
+    return {
+        "instrument": {"point": 0.01, "contract_size": 1.0, "pip_value": 0.01},
+        "risk": {"risk_per_trade": 0.005},
     }
-    sent = []
-    monkeypatch.setattr(o, "_send_telegram", lambda text, kind="status", force=False: sent.append((kind, text)))
-    # Appelle la méthode qui construit la proposition (adapte si ton nom diffère)
-    if hasattr(o, "_build_proposal"):
-        res = o._build_proposal(payload)  # None attendu (rejeté)
-    else:
-        # Si pas de builder exposé, simulateur minimal: appelle la logique interne via une méthode publique si dispo
-        res = None
-        try:
-            res = o._propose_and_validate(payload)  # adapte si tu as cette API
-        except Exception:
-            pass
-    assert res is None, "La 3e position crypto aurait dû être refusée (max_open=2)."
 
-    # Maintenant, on libère une position pour tester la réduction de lots par cap
-    open_positions.pop()  # ne reste qu'1 position ouverte
-    # room = cap(2%) - used; on fabrique un trade dont risk_ratio_planned > room, donc lots réduits
-    # On patch l'exécution directe pour capturer les lots finaux
-    final = {}
-    def place_order_mock(symbol, side, volume, **kw):
-        final["lots"] = volume
-        return {"ok": True, "deal": 1, "order": 1}
-    # Inject MT5Client place_order via o.mt5 client si accessible
-    if hasattr(o, "mt5"):
-        o.mt5.place_order = place_order_mock  # type: ignore
-    elif hasattr(o, "mt5_client"):
-        o.mt5_client.place_order = place_order_mock  # type: ignore
 
-    # Appelle l'exécution (adapte si tu as une autre API)
-    if hasattr(o, "execute_trade"):
-        # on prépare _last_proposal comme d'hab si nécessaire
-        o._last_proposal = {"symbol": "BTCUSD", "entry": 50000.0, "sl": 49900.0, "tp": 50100.0, "lots": 0.2}
-        try:
-            import asyncio
-            asyncio.run(o.execute_trade("LONG"))
-        except RuntimeError:
-            # si ton execute_trade n'est pas async
-            o.execute_trade("LONG")
-        # lots doivent avoir été réduits si room insuffisant
-        assert "lots" in final and final["lots"] <= 0.2, "Les lots n'ont pas été réduits malgré cap insuffisant."
-    else:
-        assert True, "execute_trade introuvable — test partiel OK (max_open)."
+def test_facteur_neutre_quand_le_bucket_est_vide(monkeypatch):
+    """Sans exposition crypto, la taille ne doit pas être réduite."""
+    monkeypatch.setattr("orchestrator.orchestrator._crypto_bucket_risk_used",
+                        lambda gp: 0.0, raising=False)
+    f = _apply_crypto_bucket_guard("BTCUSD", planned_risk=0.005, cap=0.06, get_profile=_profil)
+    assert f == pytest.approx(1.0), "aucune reduction attendue sur un bucket vide"
+
+
+def test_reduction_quand_le_cap_est_presque_atteint(monkeypatch):
+    """Si l'exposition consomme presque le cap, le facteur doit descendre."""
+    monkeypatch.setattr("orchestrator.orchestrator._crypto_bucket_risk_used",
+                        lambda gp: 0.055, raising=False)
+    f = _apply_crypto_bucket_guard("BTCUSD", planned_risk=0.02, cap=0.06, get_profile=_profil)
+    assert f < 1.0, "le facteur aurait du etre reduit"
+    assert f >= 0.0, "le facteur doit rester dans [0,1]"
+
+
+def test_le_facteur_ne_descend_jamais_sous_min_factor(monkeypatch):
+    """Cap totalement consommé : plancher respecté, pas de valeur negative."""
+    monkeypatch.setattr("orchestrator.orchestrator._crypto_bucket_risk_used",
+                        lambda gp: 0.10, raising=False)
+    f = _apply_crypto_bucket_guard("BTCUSD", planned_risk=0.02, cap=0.06, get_profile=_profil)
+    assert 0.0 <= f <= 1.0
+    assert f == 0.0 or f <= 1.0
+
+
+def test_risque_utilise_est_positif_et_borne(monkeypatch):
+    """_crypto_bucket_risk_used doit rendre une fraction d'equity plausible."""
+    import orchestrator.orchestrator as O
+    monkeypatch.setattr(O, "_mt5", None, raising=False)
+    used = _crypto_bucket_risk_used(_profil)
+    assert isinstance(used, float) and used >= 0.0

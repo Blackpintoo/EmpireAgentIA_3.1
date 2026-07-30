@@ -3,6 +3,14 @@ import os, sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path: sys.path.insert(0, ROOT)
 
+# AJOUT 2026-07-30 (P1) : garde-fou de démarrage.
+# Le bot ne démarre pas si la suite de tests ne passe pas entièrement.
+# Placé AVANT le chargement du .env et tout import lourd : aucune connexion
+# MT5, aucun ordre, aucun message Telegram ne peut partir avant la validation.
+# Contournement explicite : EMPIRE_SKIP_SELFTEST=1.
+from utils.startup_selftest import enforce_selftest
+enforce_selftest(ROOT)
+
 # Charger .env AVANT tout import qui en dépend
 from utils.config_loader import load_dotenv_env
 load_dotenv_env(path=os.path.join(ROOT, ".env"), extra_paths=(), overwrite=False)

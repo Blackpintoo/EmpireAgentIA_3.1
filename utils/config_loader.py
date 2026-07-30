@@ -29,12 +29,19 @@ def _strip_inline_comment(raw: str) -> str:
     # si quoted, on ne touche pas
     if _QUOTE_RE.match(raw.strip()):
         return raw.strip()
-    # sinon on coupe au premier # non échappé
+    # FIX 2026-07-30 (P1): un # ne démarre un commentaire que s'il est en début
+    # de valeur ou précédé d'un espace, conformément à la convention .env.
+    # L'ancienne version coupait au premier # rencontré : un mot de passe tel
+    # que fw7#PXZ5 était tronqué à "fw7", et MT5 refusait l'authentification
+    # avec le code -6 sans qu'aucun message ne le laisse deviner.
     out = []
     escaped = False
-    for ch in raw:
+    for i, ch in enumerate(raw):
         if ch == "#" and not escaped:
-            break
+            prev = raw[i - 1] if i > 0 else ""
+            if i == 0 or prev.isspace():
+                break          # vrai commentaire inline
+            # sinon : # à l'intérieur d'une valeur, on le conserve
         escaped = (ch == "\\" and not escaped)
         out.append(ch)
     return "".join(out).strip()

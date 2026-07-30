@@ -28,20 +28,41 @@ def _redact(val: Any) -> Any:
         return val
 
 class RedactingFormatter(logging.Formatter):
+    # FIX 2026-07-30 (P1): l'ancienne version faisait str() sur TOUS les
+    # arguments de log, y compris les nombres. Toute ligne utilisant %d,
+    # %.2f, %0.4f... levait alors "TypeError: must be real number, not str"
+    # au moment du formatage. Le message etait perdu et un bloc
+    # "--- Logging error ---" partait sur stderr. Le defaut touchait
+    # l'ensemble du code, pas seulement les tests (ex.
+    # risk_manager.is_daily_limit_reached, qui logue avec %.2f%%).
+    # Deux corrections :
+    #   1. on ne masque que les valeurs textuelles ; un nombre ne peut pas
+    #      contenir de secret, il reste donc intact ;
+    #   2. on ne mute plus le LogRecord — il est partage par tous les
+    #      handlers, et la mutation faussait le formatage des suivants.
     def format(self, record: logging.LogRecord) -> str:
-        # Masque record.msg et record.args sans casser le logging lazy
         try:
-            if record.args:
-                safe_args = []
-                for a in record.args:
-                    safe_args.append(_redact(a))
-                record.args = tuple(safe_args)
-            # Attention: record.msg n'est pas toujours une str avant format();
-            # on laisse logging faire sa concat, mais on applique le masque par sécurité
-            record.msg = _redact(record.msg)
+            original_msg = record.msg
+            original_args = record.args
+            if isinstance(record.msg, (str, bytes)):
+                record.msg = _redact(record.msg)
+            if isinstance(record.args, dict):
+                record.args = {
+                    k: (_redact(v) if isinstance(v, (str, bytes)) else v)
+                    for k, v in record.args.items()
+                }
+            elif record.args:
+                record.args = tuple(
+                    _redact(a) if isinstance(a, (str, bytes)) else a
+                    for a in record.args
+                )
+            try:
+                return super().format(record)
+            finally:
+                record.msg = original_msg
+                record.args = original_args
         except Exception:
-            pass
-        return super().format(record)
+            return super().format(record)
 
 class _DynamicStdoutHandler(logging.StreamHandler):
     def emit(self, record: logging.LogRecord) -> None:

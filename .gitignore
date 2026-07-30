@@ -66,3 +66,6 @@ utilise
 tmp_*.xml
 tmp_*.csv
 desktop.ini
+
+# AJOUT 2026-07-30 (P1) : etat du garde-fou de demarrage, propre a la machine
+data/selftest_state.json

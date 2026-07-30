@@ -313,4 +313,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # AJOUT 2026-07-30 (P1) : ce lanceur alternatif (start-empire.bat) doit
+    # respecter le même garde-fou que main.py. Contournement : EMPIRE_SKIP_SELFTEST=1.
+    from utils.startup_selftest import enforce_selftest
+    enforce_selftest(str(Path(__file__).resolve().parent.parent), logger_obj=logger)
     main()

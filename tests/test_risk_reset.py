@@ -1,58 +1,43 @@
-# tests/test_risk_reset.py
-import os, sys, types
-from datetime import datetime, timezone
-import pytz
+# -*- coding: utf-8 -*-
+"""FIX 2026-07-30 (P1) : test réécrit sur l'API réelle.
 
-# --- Bootstrap chemin projet (ajoute la racine au sys.path) ---
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(THIS_DIR, ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+L'ancienne version appelait `rm._today_loss_pct()`, méthode qui n'existe plus :
+RiskManager ne calcule plus lui-même la perte du jour, elle lui est passée en
+paramètre par l'orchestrateur. Le test échouait donc sur une AttributeError et
+ne vérifiait plus rien depuis la refonte.
+"""
+import pytest
 
-# Deal factice (mimique de l'objet retourné par mt5.history_deals_get)
-class Deal:
-    def __init__(self, symbol: str, profit: float, ts_utc_seconds: float):
-        self.symbol = symbol
-        self.profit = profit
-        # Dans MT5, .time est un timestamp (seconds since epoch, UTC)
-        self.time = ts_utc_seconds
 
-def test_daily_loss_reset_and_limit(monkeypatch):
-    # --- 1) Prépare le faux backend MT5 AVANT d'importer RiskManager
-    fake_deals = []
-
-    def fake_history_deals_get(start_dt, end_dt):
-        # start_dt / end_dt sont des datetimes aware UTC (comme MT5)
-        start_ts = start_dt.timestamp()
-        end_ts = end_dt.timestamp()
-        return [d for d in fake_deals if start_ts <= d.time <= end_ts]
-
-    # Patch du module utils.risk_manager: remplace la variable mt5 par notre stub
-    import utils.risk_manager as rm_mod
-    rm_mod.mt5 = types.SimpleNamespace(history_deals_get=fake_history_deals_get)
-
-    # --- 2) Maintenant on peut importer RiskManager et l'instancier
+def _rm():
     from utils.risk_manager import RiskManager
-
     rm = RiskManager(symbol="BTCUSD")
-    rm._tz = pytz.timezone("Europe/Zurich")
-    rm.get_equity = lambda: 10000.0  # 10'000 CHF d'equity
-    # S'il utilise un mapping broker, on force pour matcher le deal
-    if not hasattr(rm, "broker_symbol") or not rm.broker_symbol:
-        rm.broker_symbol = "BTCUSD"
+    rm.get_equity = lambda: 10000.0
+    return rm
 
-    # 3) Aucun deal aujourd'hui => perte du jour 0 et pas de limite atteinte
-    assert abs(rm._today_loss_pct()) < 1e-9
-    assert rm.is_daily_limit_reached() is False
 
-    # 4) Ajoute une perte aujourd'hui de -250 CHF (~ -2.5% sur 10k)
-    now_utc_ts = datetime.now(timezone.utc).timestamp()
-    fake_deals.append(Deal("BTCUSD", -250.0, now_utc_ts))
+def test_limite_journaliere_non_atteinte_a_zero():
+    rm = _rm()
+    assert rm.is_daily_limit_reached(daily_loss_pct=0.0, consec_losses=0) is False
 
-    loss_pct = rm._today_loss_pct()
-    print("today_loss_pct:", loss_pct)  # attendu ≈ -0.025
-    assert loss_pct < 0
 
-    # 5) Seuil 2% => la limite journalière doit être atteinte
-    rm.daily_loss_limit_pct = 0.02
-    assert rm.is_daily_limit_reached() is True
+def test_limite_journaliere_atteinte_par_perte():
+    rm = _rm()
+    seuil = abs(rm.daily_loss_limit_pct)
+    assert rm.is_daily_limit_reached(daily_loss_pct=-(seuil + 0.001)) is True
+    assert rm.is_daily_limit_reached(daily_loss_pct=-(seuil / 2)) is False
+
+
+def test_limite_journaliere_atteinte_par_serie_de_pertes():
+    rm = _rm()
+    n = int(rm.max_consecutive_losses)
+    assert rm.is_daily_limit_reached(daily_loss_pct=0.0, consec_losses=n) is True
+    assert rm.is_daily_limit_reached(daily_loss_pct=0.0, consec_losses=n - 1) is False
+
+
+def test_reset_journalier_remet_l_echelle_de_risque_a_un():
+    rm = _rm()
+    rm._risk_scale_today = 0.5
+    rm._last_reset_day = "1970-01-01"
+    rm._maybe_reset_day()
+    assert rm._risk_scale_today == 1.0
