@@ -79,3 +79,6 @@ desktop.ini
 
 # AJOUT 2026-07-30 (P1) : etat du garde-fou de demarrage, propre a la machine
 data/selftest_state.json
+
+# AJOUT 2026-07-30 : repertoire temporaire de la suite de tests
+.pytest_tmp/

@@ -96,7 +96,16 @@ def _write_state(root: str, state: Dict[str, object]) -> None:
 
 def run_suite(root: str, timeout_s: int = _DEFAULT_TIMEOUT_S) -> Tuple[bool, str]:
     """Exécute `pytest tests/` et renvoie (succès, sortie tronquée)."""
-    cmd = [sys.executable, "-m", "pytest", "tests", "-q", "--tb=short", "-p", "no:cacheprovider"]
+    # FIX 2026-07-30 : --basetemp impose un répertoire temporaire local au
+    # dépôt. Sans lui, pytest utilise %TEMP%\pytest-of-<utilisateur>\ et
+    # maintient un lien symbolique `pytest-current`. Sous Windows, la purge
+    # de ce lien en fin de session lève « PermissionError: [WinError 5] Accès
+    # refusé » — APRÈS que tous les tests soient passés. pytest sort alors
+    # avec un code non nul, et le garde-fou refusait le démarrage d'un bot
+    # dont la suite était pourtant intégralement verte.
+    basetemp = os.path.join(root, ".pytest_tmp")
+    cmd = [sys.executable, "-m", "pytest", "tests", "-q", "--tb=short",
+           "-p", "no:cacheprovider", "--basetemp", basetemp]
     env = dict(os.environ)
     # Marqueur pour que le code applicatif puisse détecter le contexte de test.
     env["EMPIRE_SELFTEST"] = "1"
