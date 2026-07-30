@@ -17,6 +17,39 @@ SCORE_FINAL = w1 * score_agents
             + w4 * sentiment_score
 
 Objectif: Score final unifié pour décision de trade optimale.
+
+────────────────────────────────────────────────────────────────────────────
+ETAT REEL DU SCORE — mise a jour du 30 juillet 2026 (P3)
+────────────────────────────────────────────────────────────────────────────
+La formule ci-dessus decrit une intention, pas ce qui se calcule aujourd'hui.
+Tel que l'orchestrateur appelle `calculate_composite_score`, DEUX des quatre
+composants ne peuvent structurellement rien produire :
+
+  - inter_market : renvoie 0.0 tant que `symbol_df` et `related_dfs` ne sont
+    pas fournis. L'orchestrateur ne les fournit pas. Consequence directe :
+    `im_should_avoid_long` / `im_should_avoid_short` restent toujours False,
+    donc les deux gardes "Inter-Market recommande d'eviter" de execute_trade
+    n'ont jamais pu bloquer un trade.
+  - sentiment : renvoie 0.0 tant que `news_items` est vide. L'orchestrateur
+    ne le fournit pas.
+
+Ces deux composants pesaient 30 % du poids declare. Ils sont desormais
+desactives explicitement (`enable_inter_market=False`, `enable_sentiment=False`)
+plutot que silencieusement nuls, et leur poids n'entre plus dans le calcul de
+la confiance.
+
+EN PRATIQUE, LE SCORE COMPOSITE REPOSE SUR :
+  - le score des agents actifs (poids declare 50 %),
+  - le Volume Profile quand l'agent VP est disponible pour le symbole
+    (poids declare 20 %), sinon 0.
+
+La redistribution des poids (deja presente) fait que, si le Volume Profile est
+lui aussi indisponible, le score composite vaut exactement le score des agents
+renormalise. Il n'apporte alors AUCUNE information supplementaire : ne pas lui
+preter un pouvoir de filtrage qu'il n'a pas.
+
+Pour reactiver inter-market ou sentiment, il ne suffit pas de remettre le flag
+a True : il faut passer les entrees correspondantes au point d'appel.
 """
 
 from __future__ import annotations
@@ -77,9 +110,24 @@ class CompositeScoreConfig:
     volume_profile_tp_multiplier: float = 1.5  # Multiplicateur pour TP
 
     # Activation des composants
+    # FIX 2026-07-30 (P3): inter-market et sentiment sont desactives par defaut.
+    # Ils ne sont PAS "parfois indisponibles" : ils sont structurellement inertes
+    # tels que le score composite est appele par l'orchestrateur.
+    #   - calculate_inter_market_score retourne (0.0, details) des que
+    #     symbol_df is None or not related_dfs. L'orchestrateur
+    #     (orchestrator.py, appel a calculate_composite_score) ne passe NI
+    #     symbol_df NI related_dfs -> retour 0.0 systematique, et
+    #     should_avoid_long / should_avoid_short restent False, donc les deux
+    #     gardes "Inter-Market recommande d'eviter" ne peuvent jamais declencher.
+    #   - calculate_sentiment_score retourne (0.0, details) des que news_items
+    #     est vide. L'orchestrateur ne passe pas news_items -> retour 0.0
+    #     systematique.
+    # Ces deux composants pesaient 30 % du poids declare tout en ne pouvant
+    # produire aucune valeur. Les activer suppose de leur fournir leurs entrees
+    # au point d'appel, ce qui est un chantier a part entiere.
     enable_volume_profile: bool = True
-    enable_inter_market: bool = True
-    enable_sentiment: bool = True
+    enable_inter_market: bool = False
+    enable_sentiment: bool = False
 
     # Volume Profile
     vp_timeframe: str = "H1"
@@ -155,9 +203,14 @@ class CompositeScoreCalculator:
 
         logger.info(f"[COMPOSITE] Initialisé avec poids: "
                    f"agents={self.config.weight_agents:.0%}, "
-                   f"VP={self.config.weight_volume_profile:.0%}, "
-                   f"IM={self.config.weight_inter_market:.0%}, "
-                   f"sent={self.config.weight_sentiment:.0%}")
+                   f"VP={self.config.weight_volume_profile:.0%}"
+                   # FIX 2026-07-30 (P3): ne plus annoncer un poids pour un
+                   # composant desactive — le log laissait croire que 30 % du
+                   # score venait d'inter-market et du sentiment.
+                   + (f", IM={self.config.weight_inter_market:.0%}"
+                      if self.config.enable_inter_market else ", IM=desactive")
+                   + (f", sent={self.config.weight_sentiment:.0%}"
+                      if self.config.enable_sentiment else ", sent=desactive"))
 
     def _get_vp_agent(self, symbol: str) -> Optional[VolumeProfileAgent]:
         """Récupère ou crée un agent Volume Profile pour un symbole"""
@@ -515,12 +568,19 @@ class CompositeScoreCalculator:
         }
 
         # 6. Calculer la confiance globale
-        # Moyenne pondérée des confiances de chaque composant
+        # FIX 2026-07-30 (P3): la confiance utilisait les poids DECLARES, pas les
+        # poids effectifs. Avec inter-market et sentiment inertes (voir
+        # CompositeScoreConfig), 30 % du denominateur etait occupe par des
+        # composants dont la confiance vaut 0 : la confiance globale etait donc
+        # rabotee d'environ un tiers a chaque calcul, et le seuil min_confidence
+        # comparait a un nombre qui ne voulait rien dire.
+        # On reutilise desormais les poids redistribues (_w_*), c'est-a-dire
+        # exactement ceux qui ont servi au score.
         confidences = [
-            (self.config.weight_agents, min(1.0, agents_confluence / 6)),
-            (self.config.weight_volume_profile, abs(vp_score)),
-            (self.config.weight_inter_market, abs(im_score)),
-            (self.config.weight_sentiment, sent_details.get("confidence", 0.0))
+            (_w_agents, min(1.0, agents_confluence / 6)),
+            (_w_vp, abs(vp_score)),
+            (_w_im, abs(im_score)),
+            (_w_sent, sent_details.get("confidence", 0.0))
         ]
         total_weight = sum(w for w, _ in confidences)
         result.composite_confidence = sum(w * c for w, c in confidences) / total_weight if total_weight > 0 else 0.0
