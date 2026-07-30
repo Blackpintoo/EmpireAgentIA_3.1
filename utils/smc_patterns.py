@@ -206,14 +206,36 @@ def detect_fvg(
     lookback: int = 10,
     *,
     tolerance: float = 0.0,
+    tolerance_ratio: float = 0.0,
+    atr: Optional[float] = None,
+    min_size_atr: float = 0.3,
 ) -> List[PatternEvent]:
     """
     Détecte les Fair Value Gaps / Imbalances sur les trois dernières bougies.
+
+    FIX 2026-07-30 (P4) — deux corrections.
+
+    1. VALIDATION ATR. Le seuil « un FVG doit faire au moins 0,3 × ATR »
+       existait dans agents/smart_money.py mais PAS ici. Or c'est ce module
+       qu'utilise agents/structure.py, l'agent qui vote. Le vote comptait donc
+       des micro-gaps d'un tick comme des Fair Value Gaps. Le seuil 0.3 est
+       repris tel quel de smart_money.py, sans le modifier.
+       `atr=None` conserve l'ancien comportement (aucun filtrage).
+
+    2. TOLERANCE RELATIVE. `tolerance` est exprimée en unités de prix : la
+       même valeur ne veut pas dire la même chose sur AUDUSD (~0,65) et sur
+       BTCUSD (~75 000). `tolerance_ratio` exprime la tolérance en fraction du
+       prix courant et fonctionne sur tous les instruments.
+       Tolérance effective = tolerance + tolerance_ratio × prix_de_référence.
     """
     _validate_df(df)
     events: List[PatternEvent] = []
     if len(df) < 3:
         return events
+
+    ref_price = abs(float(df["close"].iloc[-1])) if len(df) else 0.0
+    tol = float(tolerance) + float(tolerance_ratio) * ref_price
+    seuil_atr = (float(min_size_atr) * float(atr)) if (atr and atr > 0) else 0.0
 
     start = max(2, len(df) - lookback)
     for idx in range(start, len(df)):
@@ -227,7 +249,7 @@ def detect_fvg(
         low_mid = float(df["low"].iloc[mid])
         high_mid = float(df["high"].iloc[mid])
 
-        if low_mid > high_prev + tolerance:
+        if low_mid > high_prev + tol and (low_mid - high_prev) >= seuil_atr:
             events.append(
                 PatternEvent(
                     pattern="FVG",
@@ -242,7 +264,7 @@ def detect_fvg(
                     },
                 )
             )
-        if high_mid < low_prev - tolerance:
+        if high_mid < low_prev - tol and (low_prev - high_mid) >= seuil_atr:
             events.append(
                 PatternEvent(
                     pattern="FVG",
@@ -325,9 +347,19 @@ def detect_order_blocks(
     *,
     lookback: int = 30,
     pivots: Optional[List[Tuple[int, float, str]]] = None,
+    atr: Optional[float] = None,
+    min_reaction_atr: float = 1.5,
 ) -> List[PatternEvent]:
     """
     Identifie les dernières bougies d'impulsion (bullish/bearish) précédant une cassure.
+
+    FIX 2026-07-30 (P4) — VALIDATION ATR portée depuis agents/smart_money.py.
+    Là-bas, un Order Block n'est retenu que si le marché a réagi d'au moins
+    1,5 × ATR après la bougie. Ici, aucune amplitude n'était exigée : toute
+    dernière bougie de couleur opposée près d'un extrême devenait un Order
+    Block, et l'agent structure — celui qui vote — comptait cela comme un
+    signal. Le multiplicateur 1.5 est repris tel quel, sans le modifier.
+    `atr=None` conserve l'ancien comportement (aucun filtrage).
     """
     _validate_df(df)
     pivots = pivots or find_pivots(df)
@@ -335,6 +367,7 @@ def detect_order_blocks(
     if not pivots:
         return events
 
+    seuil_reaction = (float(min_reaction_atr) * float(atr)) if (atr and atr > 0) else 0.0
     recent = df.tail(lookback)
     closes = recent["close"]
     highs = recent["high"]
@@ -354,7 +387,10 @@ def detect_order_blocks(
         if not bearish_candles.empty:
             candle = bearish_candles.iloc[-1]
             idx = int(candle.name)
-            events.append(
+            # Réaction = amplitude parcourue depuis l'OB jusqu'au plus haut récent.
+            reaction = high_last - float(min(candle["open"], candle["close"]))
+            if reaction >= seuil_reaction:
+                events.append(
                 PatternEvent(
                     pattern="ORDER_BLOCK",
                     direction="LONG",
@@ -374,7 +410,9 @@ def detect_order_blocks(
         if not bullish_candles.empty:
             candle = bullish_candles.iloc[-1]
             idx = int(candle.name)
-            events.append(
+            reaction = float(max(candle["open"], candle["close"])) - low_last
+            if reaction >= seuil_reaction:
+                events.append(
                 PatternEvent(
                     pattern="ORDER_BLOCK",
                     direction="SHORT",

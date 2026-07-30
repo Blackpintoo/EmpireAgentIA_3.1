@@ -161,3 +161,78 @@ def test_compute_equilibrium_and_ote_zone():
     low, high = ote
     assert low < high
     assert low > eq["low"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# P4 (2026-07-30) — validations ATR portées depuis agents/smart_money.py
+# vers le module réellement utilisé par l'agent qui vote (agents/structure.py),
+# et tolérance exprimée en ratio du prix plutôt qu'en unités de prix.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _df_fvg_long():
+    return _df(
+        [
+            {"open": 100, "high": 102, "low": 99, "close": 101},
+            {"open": 103, "high": 110, "low": 103, "close": 109},
+            {"open": 109, "high": 115, "low": 108, "close": 114},
+        ]
+    )
+
+
+def test_fvg_seuil_atr_rejette_les_micro_gaps():
+    df = _df_fvg_long()          # gap = 103 - 102 = 1.0
+    assert detect_fvg(df) != []                       # sans ATR : inchangé
+    assert detect_fvg(df, atr=3.0) != []              # seuil 0.9 -> retenu
+    assert detect_fvg(df, atr=10.0) == []             # seuil 3.0 -> rejeté
+
+
+def test_fvg_atr_none_conserve_le_comportement_dorigine():
+    df = _df_fvg_long()
+    assert len(detect_fvg(df)) == len(detect_fvg(df, atr=None))
+
+
+def test_fvg_tolerance_ratio_est_independante_de_lechelle():
+    """
+    Une tolérance absolue ne veut rien dire d'un instrument à l'autre.
+    Le même ratio doit produire le même verdict à 1 et à 1000 fois le prix.
+    """
+    petit = _df_fvg_long()
+    grand = _df([{k: v * 1000 for k, v in row.items()} for row in petit.to_dict("records")])
+
+    # gap = 1 % du prix des deux côtés -> un ratio de 2 % doit tout rejeter
+    assert detect_fvg(petit, tolerance_ratio=0.02) == []
+    assert detect_fvg(grand, tolerance_ratio=0.02) == []
+    # ...et un ratio de 0,1 % doit tout retenir
+    assert detect_fvg(petit, tolerance_ratio=0.001) != []
+    assert detect_fvg(grand, tolerance_ratio=0.001) != []
+
+    # La tolérance absolue, elle, ne survit pas au changement d'échelle :
+    assert detect_fvg(petit, tolerance=2.0) == []
+    assert detect_fvg(grand, tolerance=2.0) != []
+
+
+def _df_ob_long():
+    return _df(
+        [
+            {"open": 100, "high": 101, "low": 99, "close": 100},
+            {"open": 100, "high": 103, "low": 95, "close": 97},  # bougie baissière
+            {"open": 97, "high": 120, "low": 96, "close": 119},
+            {"open": 119, "high": 126, "low": 118, "close": 126},
+        ]
+    )
+
+
+def test_order_block_exige_une_reaction_en_atr():
+    df = _df_ob_long()
+    pivots = [(1, 103, "high"), (2, 95, "low"), (3, 126, "high")]
+    # réaction = plus haut (126) - bas de l'OB (95) = 31
+    assert detect_order_blocks(df, lookback=4, pivots=pivots) != []
+    assert detect_order_blocks(df, lookback=4, pivots=pivots, atr=10.0) != []   # seuil 15
+    assert detect_order_blocks(df, lookback=4, pivots=pivots, atr=30.0) == []   # seuil 45
+
+
+def test_order_block_atr_none_conserve_le_comportement_dorigine():
+    df = _df_ob_long()
+    pivots = [(1, 103, "high"), (2, 95, "low"), (3, 126, "high")]
+    assert (len(detect_order_blocks(df, lookback=4, pivots=pivots))
+            == len(detect_order_blocks(df, lookback=4, pivots=pivots, atr=None)))

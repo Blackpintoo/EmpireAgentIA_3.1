@@ -142,7 +142,18 @@ class StructureAgent:
             "smc_enabled": bool(p.get("smc_enabled", True)),
             "smc_pivot_window": smc_pivot_win,
             "smc_fvg_tol": float(p.get("smc_fvg_tolerance", 0.0)),
+            # FIX 2026-07-30 (P4): tolérances exprimées en fraction du prix.
+            # Les anciennes clés sont en unités de prix : 0.001 valait 10 pips
+            # sur AUDUSD et rien du tout sur BTCUSD. Elles restent lues pour ne
+            # rien casser sur les profils qui les définissent explicitement,
+            # mais la valeur par défaut passe en ratio.
+            "smc_fvg_tol_ratio": float(p.get("smc_fvg_tolerance_ratio", 0.0)),
             "smc_eq_tolerance": float(p.get("smc_eq_tolerance", 0.001)),
+            # Validations ATR portées depuis agents/smart_money.py (P4).
+            # Seuils repris tels quels, non modifiés.
+            "smc_atr_validation": bool(p.get("smc_atr_validation", True)),
+            "smc_fvg_min_atr": float(p.get("smc_fvg_min_size_atr", 0.3)),
+            "smc_ob_min_reaction_atr": float(p.get("smc_ob_min_reaction_atr", 1.5)),
         }
 
     # --------------- Data ---------------
@@ -204,13 +215,30 @@ class StructureAgent:
         except Exception:
             return "WAIT", {}, {}
 
+        # FIX 2026-07-30 (P4): ATR transmis aux détecteurs FVG / Order Block.
+        # Sans lui, un gap d'un tick comptait comme Fair Value Gap et toute
+        # bougie de couleur opposée près d'un extrême comptait comme Order
+        # Block — dans l'agent qui vote, pas dans un module de coulisses.
+        _atr_smc = None
+        if cfg.get("smc_atr_validation", True):
+            try:
+                if "atr" in df.columns:
+                    _v = float(df["atr"].iloc[-1])
+                    _atr_smc = _v if _v == _v and _v > 0 else None   # _v == _v : écarte NaN
+            except Exception:
+                _atr_smc = None
+
         events: Dict[str, List[PatternEvent]] = {
             "bos": detect_bos(df, pivots=pivots),
             "choch": detect_choch(df, pivots=pivots),
-            "fvg": detect_fvg(df, tolerance=cfg["smc_fvg_tol"]),
+            "fvg": detect_fvg(df, tolerance=cfg["smc_fvg_tol"],
+                              tolerance_ratio=cfg["smc_fvg_tol_ratio"],
+                              atr=_atr_smc, min_size_atr=cfg["smc_fvg_min_atr"]),
             "eqh": detect_equal_highs(df, tolerance=cfg["smc_eq_tolerance"]),
             "eql": detect_equal_lows(df, tolerance=cfg["smc_eq_tolerance"]),
-            "order_blocks": detect_order_blocks(df, pivots=pivots),
+            "order_blocks": detect_order_blocks(
+                df, pivots=pivots, atr=_atr_smc,
+                min_reaction_atr=cfg["smc_ob_min_reaction_atr"]),
             "breaker_blocks": detect_breaker_blocks(df, pivots=pivots),
             # PHASE 2: Nouveaux patterns SMC (2025-12-25)
             "inducement": detect_inducement(df, pivots=pivots),
