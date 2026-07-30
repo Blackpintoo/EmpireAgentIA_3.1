@@ -596,7 +596,11 @@ class PositionManager:
         try:
             import csv, os
             from datetime import datetime, timezone as _tz
-            path = os.path.join("data", "trade_mfe.csv")
+            # FIX 2026-07-30 (P5): journal MFE/MAE cloisonne par compte MT5,
+            # comme les autres donnees de performance. Un journal melangeant
+            # deux comptes ne permettrait pas de decider du break-even.
+            from utils.account_scope import chemin_donnees as _chemin_donnees
+            path = str(_chemin_donnees("trade_mfe.csv"))
             os.makedirs("data", exist_ok=True)
             new_file = not os.path.exists(path)
             with open(path, "a", newline="", encoding="utf-8") as f:

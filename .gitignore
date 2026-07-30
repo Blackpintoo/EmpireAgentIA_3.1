@@ -64,6 +64,9 @@ _transfert/
 logs/
 data/equity_log.csv
 data/proposals_log.csv
+# AJOUT 2026-07-30 : journal MFE/MAE, genere a l'execution (et par les tests)
+data/trade_mfe.csv
+data/compte_*/
 
 # Fichiers fantômes issus de commandes ratées
 python
