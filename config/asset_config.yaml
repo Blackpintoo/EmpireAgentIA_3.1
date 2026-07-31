@@ -57,7 +57,10 @@ CRYPTOS:
 # FOREX - Sessions principales, faible spread
 # ============================================================================
 FOREX:
-  symbols: [EURUSD, GBPUSD, USDJPY, AUDUSD]
+  # FIX 2026-07-30 : USDCAD manquait. Il beneficie desormais des memes
+  # sessions et blackouts que les autres paires (pas d'horaire propre a
+  # definir : _check_forex_session utilise les sessions globales).
+  symbols: [EURUSD, GBPUSD, USDJPY, AUDUSD, USDCAD]
 
   trading_sessions:
     enabled: true
@@ -127,7 +130,12 @@ FOREX:
 # INDICES - Horaires stricts, forte volatilité
 # ============================================================================
 INDICES:
-  symbols: [DJ30, NAS100, GER40]
+  # FIX 2026-07-30 : SP500 et UK100 etaient absents de cette liste. Sans
+  # classe d'actif, AssetManager.is_trading_allowed retournait
+  # (True, "no_config") : le filtre de session PHASE4 ne s'appliquait
+  # jamais a eux, alors qu'il s'applique a NAS100, DJ30 et GER40.
+  # SP500 tradait donc en reel sans aucun garde de session.
+  symbols: [DJ30, NAS100, GER40, SP500, UK100]
 
   trading_sessions:
     enabled: true
@@ -142,6 +150,19 @@ INDICES:
         - {name: "us_premarket", start: "13:00", end: "15:30", activity: "medium"}
         - {name: "us_regular", start: "15:30", end: "22:00", activity: "high"}
         - {name: "us_afterhours", start: "22:00", end: "23:00", activity: "low"}
+      # FIX 2026-07-30 : SP500 suit la seance US, identique a DJ30/NAS100.
+      # ATTENTION : un symbole present dans "symbols" mais absent de
+      # "schedules" est bloque 24h/24 (voir _check_index_session).
+      SP500:
+        - {name: "us_premarket", start: "13:00", end: "15:30", activity: "medium"}
+        - {name: "us_regular", start: "15:30", end: "22:00", activity: "high"}
+        - {name: "us_afterhours", start: "22:00", end: "23:00", activity: "low"}
+      # UK100 suit la seance de Londres (08:00-16:30 heure de Londres,
+      # soit 09:00-17:30 heure de Zurich), memes bornes que GER40.
+      UK100:
+        - {name: "uk_premarket", start: "07:00", end: "09:00", activity: "medium"}
+        - {name: "uk_regular", start: "09:00", end: "17:30", activity: "high"}
+        - {name: "uk_afterhours", start: "17:30", end: "22:00", activity: "medium"}
       GER40:
         - {name: "eu_premarket", start: "07:00", end: "09:00", activity: "medium"}
         - {name: "eu_regular", start: "09:00", end: "17:30", activity: "high"}

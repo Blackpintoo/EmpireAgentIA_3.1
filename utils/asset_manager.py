@@ -19,6 +19,9 @@ class AssetManager:
         self.config_path = Path(config_path)
         self.config = self._load_config()
         self.symbol_to_type = self._build_symbol_mapping()
+        # FIX 2026-07-30 : mémorise les indices sans horaire déjà signalés,
+        # pour avertir une fois et non à chaque cycle de 120 s.
+        self._indices_sans_planning: set = set()
 
     def _load_config(self) -> Dict[str, Any]:
         """Charge la configuration des actifs"""
@@ -148,6 +151,23 @@ class AssetManager:
         """Vérifie les sessions pour les indices"""
         schedules = asset_cfg.get("trading_sessions", {}).get("schedules", {})
         symbol_schedule = schedules.get(symbol, [])
+
+        # FIX 2026-07-30 : piège silencieux. Un indice listé dans
+        # INDICES.symbols mais absent de INDICES.schedules tombait dans la
+        # boucle vide et ressortait avec "outside_trading_hours" — un refus
+        # indiscernable d'un refus légitime, 24h/24, pour toujours. Le
+        # comportement est conservé (on bloque), mais le motif dit désormais
+        # la vérité et un avertissement part une fois par symbole.
+        if not symbol_schedule:
+            if symbol not in self._indices_sans_planning:
+                self._indices_sans_planning.add(symbol)
+                logger.warning(
+                    "[AssetManager] %s est classé INDICES mais n'a aucun horaire "
+                    "dans asset_config.yaml -> trading bloqué en permanence. "
+                    "Ajoute une entrée sous INDICES.trading_sessions.schedules.",
+                    symbol,
+                )
+            return False, "no_schedule_configured"
 
         current_time = dt.time()
         for session in symbol_schedule:
