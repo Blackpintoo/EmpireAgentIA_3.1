@@ -41,3 +41,60 @@ def test_manual_freeze_window():
         now=now
     )
     assert frozen and "manual_freeze" in why
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# FIX 2026-07-31 — tri pertinence / bruit du registre de sources.
+# Constate sur la machine de production via tools/test_news_sources.py.
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_mot_ambigu_seul_ne_rend_pas_pertinent():
+    """
+    « Jersey Mike's spent almost "zero dollars" on digital » obtenait 0,70
+    de pertinence pour XAUUSD, AUDUSD ET BTCUSD sur la seule presence du
+    mot « dollars », et pesait plus lourd que la moitie des depeches de
+    banque centrale.
+    """
+    from utils.news_sources import relevance, keywords_for
+
+    item = {"title": "Jersey Mike's spent almost 'zero dollars' on digital",
+            "summary": "The sandwich chain says its digital strategy cost almost nothing.",
+            "tier": 2}
+    for sym in ("XAUUSD", "AUDUSD", "BTCUSD"):
+        assert relevance(item, keywords_for(sym)) == 0.0, sym
+
+
+def test_appariement_sur_les_limites_de_mot():
+    """« aud » se trouvait dans « fraud », « boe » dans « boeing »."""
+    from utils.news_sources import relevance, keywords_for
+
+    item = {"title": "Fraud charges filed against a Boeing supplier",
+            "summary": "No market relevance.", "tier": 2}
+    assert relevance(item, keywords_for("AUDUSD")) == 0.0
+
+
+def test_un_mot_cle_franc_conserve_son_score():
+    """Le correctif ne doit RIEN changer aux articles reellement pertinents."""
+    from utils.news_sources import relevance, keywords_for
+
+    item = {"title": "Australian Dollar sticks to intraday gains",
+            "summary": "AUD/USD holds firm as the RBA stays put.", "tier": 2}
+    assert relevance(item, keywords_for("AUDUSD")) == 1.0
+
+
+def test_crypto_reste_un_mot_cle_franc():
+    """
+    Les flux de tier 3 sont exclusivement crypto : y traiter « crypto »
+    comme ambigu reviendrait a jeter leur contenu.
+    """
+    from utils.news_sources import _MOTS_AMBIGUS
+
+    assert "crypto" not in _MOTS_AMBIGUS
+    assert "digital asset" not in _MOTS_AMBIGUS
+
+
+def test_flux_mort_retire_du_registre():
+    """treasury : 0 article mesure en production le 31/07/2026."""
+    from utils.news_sources import SOURCES
+
+    assert "treasury" not in {f["id"] for f in SOURCES}

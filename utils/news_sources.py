@@ -101,9 +101,13 @@ SOURCES: List[Dict[str, Any]] = [
     {"id": "sec_press",     "tier": 1, "classes": {MACRO, CRYPTO},
      "url": "https://www.sec.gov/news/pressreleases.rss",
      "label": "SEC — communiqués"},
-    {"id": "treasury",      "tier": 1, "classes": {MACRO},
-     "url": "https://home.treasury.gov/rss/press.xml",
-     "label": "US Treasury"},
+    # RETIRE 2026-07-31 : flux verifie mort sur la machine de production
+    # (0 article, 939 ms). home.treasury.gov/rss/press.xml ne renvoie plus
+    # rien d'exploitable. Le Tresor reste couvert indirectement par
+    # investing_news, marketwatch et le mot-cle "treasury yield".
+    # {"id": "treasury", "tier": 1, "classes": {MACRO},
+    #  "url": "https://home.treasury.gov/rss/press.xml",
+    #  "label": "US Treasury"},
     {"id": "boe_news",      "tier": 1, "classes": {MACRO, FOREX},
      "url": "https://www.bankofengland.co.uk/rss/news",
      "label": "Bank of England"},
@@ -207,6 +211,22 @@ _MACRO_KEYWORDS: Tuple[str, ...] = (
     "gdp", "recession", "central bank", "ecb", "boj", "boe",
     "tariff", "treasury yield", "jobless claims", "powell",
 )
+
+# AJOUT 2026-07-31 : mots trop ambigus pour rendre un article pertinent A EUX
+# SEULS. Constate en production : « Jersey Mike's spent almost "zero dollars"
+# on digital » obtenait 0,70 de pertinence pour XAUUSD, AUDUSD ET BTCUSD, sur
+# la seule presence du mot « dollars », et pesait plus lourd que la moitie des
+# depeches de banque centrale. Un article qui ne declenche QUE des mots de
+# cette liste est desormais ecarte ; s'il contient par ailleurs un mot-cle
+# franc, son score ne change pas.
+# Volontairement restreint aux termes dont l'ambiguite est CONSTATEE ou
+# evidente : ce sont des mots qui designent aussi bien une somme d'argent
+# ordinaire qu'un marche. « crypto » et « digital asset » n'y figurent PAS :
+# sur les flux de tier 3, qui sont exclusivement crypto, ces mots portent une
+# vraie information.
+_MOTS_AMBIGUS: frozenset = frozenset({
+    "dollar", "dollars", "stocks", "equities", "currency", "rate", "rates",
+})
 
 # Bruit à écarter : contenus sans valeur informative pour le prix.
 _NOISE_PATTERNS: Tuple[str, ...] = (
@@ -412,14 +432,40 @@ def is_noise(item: Dict[str, Any]) -> bool:
     return any(p in blob for p in _NOISE_PATTERNS)
 
 
+def _contient_mot(blob: str, mot: str) -> bool:
+    """
+    Appariement sur les limites de mot. `re.escape` protege les mots-cles
+    contenant « / » (usd/jpy) ou « . » ; les mots-cles multi-termes
+    fonctionnent tels quels.
+    """
+    m = (mot or "").strip().lower()
+    if not m:
+        return False
+    try:
+        return re.search(r"(?<!\w)%s(?!\w)" % re.escape(m), blob) is not None
+    except re.error:
+        return m in blob
+
+
 def relevance(item: Dict[str, Any], keywords: Sequence[str]) -> float:
     """0.0 = hors sujet. Les sources TIER 1 gardent un plancher : une décision
     de banque centrale compte même sans mot-clé de l'instrument."""
     blob = f"{item.get('title','')} {item.get('summary','')}".lower()
-    hits = sum(1 for k in keywords if k in blob)
-    if hits == 0:
-        return 0.35 if int(item.get("tier", 4)) == 1 else 0.0
-    return min(1.0, 0.55 + 0.15 * hits)
+    tier1 = int(item.get("tier", 4)) == 1
+
+    # FIX 2026-07-31 : deux corrections mesurees en production.
+    #  a) appariement sur les limites de mot. « aud » se trouvait dans
+    #     « fraud », « cad » dans « cadence », « boe » dans « boeing ».
+    #  b) un article qui ne declenche que des mots ambigus (_MOTS_AMBIGUS)
+    #     n'est plus considere comme pertinent. Le score des articles ayant
+    #     au moins un mot-cle franc est INCHANGE.
+    touches = [k for k in keywords if _contient_mot(blob, k)]
+    if not touches:
+        return 0.35 if tier1 else 0.0
+    francs = [k for k in touches if k.strip() not in _MOTS_AMBIGUS]
+    if not francs:
+        return 0.35 if tier1 else 0.0
+    return min(1.0, 0.55 + 0.15 * len(touches))
 
 
 def freshness(item: Dict[str, Any], half_life_h: float = 6.0) -> float:
