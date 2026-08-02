@@ -1,7 +1,7 @@
 # utils/position_manager.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Iterable, Optional, List, Tuple
 import os
 import json
 import math
@@ -98,6 +98,10 @@ def _round_to_step(x: float, step: float) -> float:
 # ------------------------------- state ----------------------------------
 _STATE_PATH = os.path.join("data", "pm_state.json")
 
+# FIX 2026-08-02 : nombre de lectures MT5 consecutives sans un ticket avant de
+# le declarer ferme. A 20 s de cycle, 3 lectures = ~60 s de confirmation.
+_ABSENCES_AVANT_CLOTURE = int(os.environ.get("EMPIRE_PM_ABSENCES", "3") or 3)
+
 # Verrou thread-safe pour accès concurrent au fichier d'état
 _FILE_LOCK = threading.Lock()
 
@@ -113,14 +117,57 @@ def _load_state() -> Dict[str, Any]:
 
 def _save_state(state: Dict[str, Any]) -> None:
     with _FILE_LOCK:
+        _ecrire_etat(state)
+
+
+def _ecrire_etat(state: Dict[str, Any]) -> None:
+    """Écriture atomique. À appeler verrou déjà tenu."""
+    try:
+        os.makedirs(os.path.dirname(_STATE_PATH), exist_ok=True)
+        tmp_path = _STATE_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, _STATE_PATH)
+    except (IOError, OSError) as e:
+        logger.warning(f"[STATE] Erreur I/O écriture {_STATE_PATH}: {e}")
+
+
+def fusionner_etat(maj: Optional[Dict[str, Any]] = None,
+                   suppressions: Optional[Iterable[str]] = None) -> Dict[str, Any]:
+    """
+    FIX 2026-08-02 : écriture par FUSION, relue depuis le disque sous verrou.
+
+    Le défaut corrigé : `self._state` était chargé UNE FOIS à la construction
+    du PositionManager, et `_save_state(self._state)` réécrivait le fichier
+    ENTIER à partir de cette copie mémoire. Avec 12 orchestrateurs, donc 12
+    PositionManager partageant `data/pm_state.json`, chaque sauvegarde
+    écrasait les entrées créées entre-temps par les autres symboles.
+
+    Séquence observée en production :
+      - PM(SP500) ouvre 1690929973  -> sauvegarde {…, SP500:1690929973}
+      - PM(BTCUSD), dont la copie mémoire date du démarrage et ignore cette
+        entrée, ouvre sa position -> sauvegarde {…, BTCUSD:…}
+        => l'entrée SP500 disparaît, sans aucune trace dans les logs.
+
+    Chaque appelant n'affirme désormais que SES clés ; tout le reste du
+    fichier est préservé. Renvoie l'état complet après fusion.
+    """
+    with _FILE_LOCK:
         try:
-            os.makedirs(os.path.dirname(_STATE_PATH), exist_ok=True)
-            tmp_path = _STATE_PATH + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2, ensure_ascii=False)
-            os.replace(tmp_path, _STATE_PATH)
-        except (IOError, OSError) as e:
-            logger.warning(f"[STATE] Erreur I/O écriture {_STATE_PATH}: {e}")
+            disque: Dict[str, Any] = {}
+            if os.path.exists(_STATE_PATH):
+                with open(_STATE_PATH, "r", encoding="utf-8") as f:
+                    disque = json.load(f) or {}
+        except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
+            logger.warning("[STATE] Relecture impossible avant fusion (%s) — "
+                           "on repart de l'état mémoire pour ne rien perdre", e)
+            disque = {}
+        if maj:
+            disque.update(maj)
+        for cle in (suppressions or ()):
+            disque.pop(cle, None)
+        _ecrire_etat(disque)
+        return disque
 
 
 # ----------------------------- Market Hours -------------------------------
@@ -197,6 +244,8 @@ class PositionManager:
         self.min_lot = float(inst.get("min_lot", 0.01) or 0.01)
         self.lot_step = float(inst.get("lot_step", 0.01) or 0.01)
         self._state: Dict[str, Any] = _load_state()
+        # FIX 2026-08-02 : compte les lectures consecutives sans un ticket.
+        self._absences: Dict[str, int] = {}
         pm_cfg = ((self.profile.get("orchestrator") or {}).get("position_manager") or {}) if isinstance(self.profile, dict) else {}
         self.enabled = bool(pm_cfg.get("enabled", True))
         be_cfg = pm_cfg.get("break_even") or {}
@@ -630,8 +679,11 @@ class PositionManager:
         })
 
     def _set_tstate(self, ticket: int, st: Dict[str, Any]) -> None:
-        self._state[self._tk(ticket)] = st
-        _save_state(self._state)
+        # FIX 2026-08-02 : fusion au lieu d'écrasement global (voir
+        # fusionner_etat). On resynchronise la copie mémoire sur le disque.
+        cle = self._tk(ticket)
+        self._state[cle] = st
+        self._state = fusionner_etat(maj={cle: st})
 
     # ---------------------------- core rules -----------------------------
     def _apply_break_even(
@@ -776,8 +828,42 @@ class PositionManager:
                 }
             except Exception:
                 continue
-        # tickets fermés = présents avant, absents maintenant
-        closed_ids = [int(k) for k in prev.keys() if k not in current]
+        # FIX 2026-08-02 : un ticket n'est declare ferme qu'apres N lectures
+        # consecutives sans lui.
+        #
+        # Defaut corrige, observe en production le 01/08/2026 a 08:25:49 :
+        # sur 5 534 cycles, UN SEUL a renvoye "SP500: 0 position(s)" — le
+        # cycle suivant, 20 s plus tard, revoyait la position, et elle est
+        # restee visible les 5 533 cycles suivants. Ce hoquet unique a suffi
+        # a supprimer definitivement l'entree pm_state du ticket 1690929973 :
+        # plus de break-even, plus de trailing, plus de suivi MFE/MAE sur une
+        # position restee ouverte 61 heures.
+        #
+        # `_positions_get()` renvoie aussi [] quand MT5 leve une exception :
+        # une indisponibilite passagere condamnait donc TOUTES les positions
+        # du symbole. Exiger plusieurs absences ne supprime pas le risque, il
+        # le rend improbable : il faut desormais que la lecture echoue
+        # _ABSENCES_AVANT_CLOTURE fois d'affilee.
+        absents = [k for k in prev.keys() if k not in current]
+        for k in list(self._absences.keys()):
+            if k not in absents:
+                self._absences.pop(k, None)
+        closed_ids = []
+        for k in absents:
+            n = self._absences.get(k, 0) + 1
+            self._absences[k] = n
+            if n >= _ABSENCES_AVANT_CLOTURE:
+                closed_ids.append(int(k))
+            else:
+                logger.warning(
+                    "[PM] %s ticket=%s absent de la lecture MT5 (%d/%d) — "
+                    "cloture NON declaree pour l'instant",
+                    self.symbol_canon, k, n, _ABSENCES_AVANT_CLOTURE)
+        if absents and not current:
+            logger.warning(
+                "[PM] %s : lecture MT5 vide alors que %d position(s) etaient "
+                "connues. Hoquet de lecture ou fermeture reelle ?",
+                self.symbol_canon, len(prev))
         if closed_ids:
             try:
                 from datetime import datetime, timedelta, timezone as _tz
@@ -818,17 +904,31 @@ class PositionManager:
 
             # (audit fev2026) Nettoyage positions fantômes dans pm_state
             cleaned = 0
+            a_supprimer = []
             for tk in closed_ids:
+                self._absences.pop(str(tk), None)
                 for key_fmt in [f"{self.symbol_canon}:{tk}", str(tk)]:
                     if key_fmt in self._state:
                         del self._state[key_fmt]
                         cleaned += 1
+                    a_supprimer.append(key_fmt)
             if cleaned > 0:
-                _save_state(self._state)
+                # FIX 2026-08-02 : suppression par fusion — on ne retire que
+                # nos propres cles, les entrees des autres symboles restent.
+                self._state = fusionner_etat(suppressions=a_supprimer)
                 logger.info(f"[PM] Cleaned ghost positions from pm_state: {cleaned} entries for {self.symbol_canon} (tickets: {closed_ids})")
 
         # persister l'état courant
-        state = self._load_open_state(); state[self.symbol_canon] = current; self._save_open_state(state)
+        # FIX 2026-08-02 : ne pas effacer d'open_positions.json un ticket dont
+        # l'absence n'est pas encore confirmee. Sans cela, le compteur
+        # d'absences ne pourrait jamais grimper : au cycle suivant, `prev`
+        # serait deja vide et le ticket sortirait du suivi sans qu'aucune
+        # cloture ne soit declaree — la position deviendrait invisible pour
+        # le gestionnaire tout en restant ouverte chez le broker.
+        en_attente = {k: v for k, v in prev.items() if k in self._absences}
+        state = self._load_open_state()
+        state[self.symbol_canon] = {**en_attente, **current}
+        self._save_open_state(state)
         try:
             positions = self._positions_get()
             if not positions:

@@ -115,6 +115,14 @@ def test_requote_refresh_price(monkeypatch):
 
     c = MT5Client()
     c.cfg.setdefault("execution", {"max_retries": 3, "backoff_seconds": [0, 0, 0], "price_refresh_on_requote": True})
+    # FIX 2026-08-02 : ce test dependait du jour de la semaine reel.
+    # `_is_market_open` refuse XAUUSD le samedi et le dimanche avant 22h UTC :
+    # le test echouait donc tous les week-ends. Combine au garde-fou de
+    # demarrage, qui refuse de lancer le bot si la suite n'est pas verte,
+    # cela rendait le bot INDEMARRABLE tous les dimanches avant 22h.
+    # On neutralise le garde horaire : ce test porte sur le requote, pas sur
+    # les horaires de marche (couverts par leurs propres tests).
+    monkeypatch.setattr(c, "_is_market_open", lambda symbol: (True, "test"))
     res = c.place_order("XAUUSD", "BUY", 0.05, price=2000.0, sl=1995.0, tp=2005.0, comment="rq")
     assert res.get("ok") is True
     assert res.get("order") == 42

@@ -99,8 +99,18 @@ def test_close_trade_event_from_position_manager(monkeypatch, tmp_path):
     # Patch de la méthode interne pour récupérer les positions en cours
     monkeypatch.setattr(pm, "_positions_get", fake_positions_get, raising=False)
 
-    # Exécute la gestion — doit émettre #CLOSE_TRADE
+    # FIX 2026-08-02 : une cloture n'est plus declaree sur une seule lecture
+    # vide. Il faut _ABSENCES_AVANT_CLOTURE lectures consecutives sans le
+    # ticket — c'est precisement ce qui empeche un hoquet MT5 d'un cycle de
+    # supprimer l'etat d'une position bien vivante.
+    from utils.position_manager import _ABSENCES_AVANT_CLOTURE
+
     pm.manage_open_positions()
+    assert "CLOSE_TRADE" not in [t for (t, _) in sent], (
+        "une seule lecture vide ne doit pas suffire a declarer la cloture")
+
+    for _ in range(_ABSENCES_AVANT_CLOTURE - 1):
+        pm.manage_open_positions()
 
     # Vérifications
     # On s'attend à recevoir au moins un tag CLOSE_TRADE
