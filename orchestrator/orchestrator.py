@@ -2930,6 +2930,46 @@ class Orchestrator:
         except Exception as _risk_cap_err:
             logger.debug(f"[RISK_CAP] Erreur: {_risk_cap_err}")
 
+        # AJOUT 2026-08-02 : trace du risque REELLEMENT engage, juste avant
+        # l'envoi. Constate sur le trade BTCUSD du 01/08 : 1 R valait 486,63 USD
+        # alors que le profil demande 0,5 % d'une equite d'environ 49 000 USD,
+        # soit ~245 USD — le double. Les profils des 6 symboles declarent tous
+        # risk_per_trade = 0.005, et RiskManager renvoie le meme budget pour
+        # tous : l'ecart nait donc APRES le calcul de risque, quelque part
+        # entre la proposition et l'envoi. Cette trace rend l'ecart mesurable
+        # a chaque ordre au lieu de devoir le reconstituer a posteriori.
+        # Elle ne modifie AUCUNE decision.
+        try:
+            _pv = float((self.profile.get("instrument") or {}).get(
+                "pip_value", 0) or 0) or (
+                float((self.profile.get("instrument") or {}).get("contract_size", 1) or 1)
+                * float((self.profile.get("instrument") or {}).get("point", 0.01) or 0.01))
+            _dist_pts = abs(float(entry) - float(sl)) / max(
+                float((self.profile.get("instrument") or {}).get("point", 0.01) or 0.01), 1e-9)
+            _risque_reel = _dist_pts * _pv * float(lots)
+            _eq = None
+            try:
+                _ai = _mt5.account_info() if _mt5 else None
+                _eq = float(_ai.equity) if _ai else None
+            except Exception:
+                _eq = None
+            _pct_vise = float((self.profile.get("risk") or {}).get("risk_per_trade", 0.0) or 0.0)
+            _budget = (_eq * _pct_vise) if (_eq and _pct_vise) else None
+            _ecart = (_risque_reel / _budget) if _budget else None
+            logger.warning(
+                "[RISK_TRACE] %s %s: lots=%s dist=%.1f pts pip_value=%.5f "
+                "-> risque_engage=%.2f USD | budget=%s (%.3f%% de %s) | ratio=%s",
+                symbol, action, lots, _dist_pts, _pv, _risque_reel,
+                ("%.2f USD" % _budget) if _budget else "inconnu",
+                _pct_vise * 100, ("%.0f USD" % _eq) if _eq else "equite inconnue",
+                ("%.2fx" % _ecart) if _ecart else "n/a")
+            if _ecart and (_ecart > 1.25 or _ecart < 0.75):
+                logger.error(
+                    "[RISK_TRACE] %s: le risque engage vaut %.2fx le budget vise. "
+                    "Dimensionnement incoherent avec le profil.", symbol, _ecart)
+        except Exception as _rt_err:
+            logger.debug("[RISK_TRACE] %s: trace indisponible (%s)", symbol, _rt_err)
+
         # FIX 2026-03-18 R13: Diagnostic TP avant order_send
         logger.warning(
             f"[TP_TRACE] {symbol} {action}: entry={entry}, sl={sl}, tp={tp}, lots={lots}, "
