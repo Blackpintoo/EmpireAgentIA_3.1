@@ -11,6 +11,12 @@ if ROOT not in sys.path: sys.path.insert(0, ROOT)
 from utils.startup_selftest import enforce_selftest
 enforce_selftest(ROOT)
 
+# AJOUT 2026-08-02 : declarer que LE BOT tourne, pour que les outils du depot
+# (purge des journaux, maintenance) sachent qu'il ne faut pas toucher aux
+# fichiers ouverts. Le verrou est retire automatiquement a la sortie.
+from utils.verrou_bot import poser_verrou
+poser_verrou(point_entree="main.py")
+
 # Charger .env AVANT tout import qui en dépend
 from utils.config_loader import load_dotenv_env
 load_dotenv_env(path=os.path.join(ROOT, ".env"), extra_paths=(), overwrite=False)

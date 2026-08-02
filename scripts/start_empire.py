@@ -317,4 +317,7 @@ if __name__ == "__main__":
     # respecter le même garde-fou que main.py. Contournement : EMPIRE_SKIP_SELFTEST=1.
     from utils.startup_selftest import enforce_selftest
     enforce_selftest(str(Path(__file__).resolve().parent.parent), logger_obj=logger)
+    # AJOUT 2026-08-02 : meme verrou que main.py (voir utils/verrou_bot.py).
+    from utils.verrou_bot import poser_verrou
+    poser_verrou(point_entree="scripts/start_empire.py")
     main()

@@ -20,8 +20,10 @@ les nettoie.
 
 A LANCER BOT ARRETE. Le journal est ouvert en ecriture par le processus ;
 le reecrire pendant qu'il tourne perdrait des lignes ou corromprait le
-fichier. Le script refuse de s'executer s'il detecte un python.exe actif,
-sauf --forcer.
+fichier. Le script refuse de s'executer si le VERROU DU BOT (data/bot.pid, pose au
+demarrage) designe un processus vivant. Il ne se fie plus a la simple
+presence d'un python.exe : pytest, un notebook ou un IDE en declenchaient
+un faux positif.
 
 Ce script ne remplace pas la regeneration de la cle. Une cle qui a fuite est
 compromise, meme apres nettoyage des journaux : elle a pu etre lue entre-temps.
@@ -86,17 +88,24 @@ def _nettoyer(texte: str, litteraux) -> tuple:
     return texte, n
 
 
-def _python_tourne() -> bool:
-    if os.name != "nt":
-        return False
+def _bot_actif():
+    """
+    FIX 2026-08-02 : on interroge le VERROU DU BOT (data/bot.pid), pas la
+    liste des processus.
+
+    L'ancienne version refusait d'agir des qu'un `python.exe` apparaissait
+    dans tasklist. Elle a bloque la purge appelee depuis un test — pytest est
+    un python.exe, le garde se declenchait donc sur le processus qui
+    l'interrogeait. En production, un notebook, un IDE ou un autre outil de ce
+    depot auraient produit le meme faux positif.
+    """
     try:
-        import subprocess
-        out = subprocess.run(["tasklist", "/fi", "imagename eq python.exe"],
-                             stdout=subprocess.PIPE, timeout=15).stdout.decode(
-                                 "utf-8", "replace").lower()
-        return "python.exe" in out
-    except Exception:
-        return False
+        from utils.verrou_bot import bot_actif
+        return bot_actif()
+    except Exception as e:
+        # Sans le module, on ne bloque pas : le garde protege d'une
+        # maladresse, il ne doit pas devenir un point de panne.
+        return False, "verrou indisponible (%s), on continue" % e
 
 
 def main() -> int:
@@ -125,10 +134,15 @@ def main() -> int:
         print("  Aucun journal trouve.")
         return 0
 
-    if a.appliquer and not a.forcer and _python_tourne():
-        print("  [ARRET] Un python.exe tourne. Arrete le bot avant de purger,")
-        print("  sinon des lignes seront perdues. --forcer pour passer outre.")
-        return 2
+    if a.appliquer and not a.forcer:
+        actif, pourquoi = _bot_actif()
+        if actif:
+            print("  [ARRET] %s" % pourquoi)
+            print("  Arrete le bot avant de purger : reecrire un journal ouvert")
+            print("  en ecriture perdrait des lignes. --forcer pour passer outre.")
+            return 2
+        print("  Verrou : %s" % pourquoi)
+        print()
 
     total = 0
     for f in fichiers:
