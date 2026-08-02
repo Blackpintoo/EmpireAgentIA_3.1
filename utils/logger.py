@@ -8,13 +8,24 @@ from typing import Any
 
 # --------- Redaction (masquage secrets) ---------
 _MASK = "****"
+# FIX 2026-08-02 : la cle Finnhub circulait EN CLAIR dans logs/empire_agent.log,
+# via l'URL complete d'un appel en echec (…/calendar/economic?…&token=…).
+# Le masquage ne couvrait que Telegram et MT5. Toute cle d'API du .env est
+# desormais masquee, et le motif generique attrape aussi les jetons passes en
+# parametre d'URL par du code qui ne serait pas passe par cette liste.
 _SENSITIVE = [
-    ("TELEGRAM_BOT_TOKEN", os.environ.get("TELEGRAM_BOT_TOKEN")),
-    ("MT5_PASSWORD",       os.environ.get("MT5_PASSWORD")),
-    # ajoute ici d'autres secrets si besoin (API keys, etc.)
+    ("TELEGRAM_BOT_TOKEN",   os.environ.get("TELEGRAM_BOT_TOKEN")),
+    ("MT5_PASSWORD",         os.environ.get("MT5_PASSWORD")),
+    ("FINNHUB_API_KEY",      os.environ.get("FINNHUB_API_KEY")),
+    ("ALPHA_VANTAGE_API_KEY", os.environ.get("ALPHA_VANTAGE_API_KEY")),
+    ("NEWSAPI_KEY",          os.environ.get("NEWSAPI_KEY")),
+    ("CRYPTOPANIC_TOKEN",    os.environ.get("CRYPTOPANIC_TOKEN")),
 ]
 
 _TOKEN_PATTERN = re.compile(r"\b\d{9,}:[A-Za-z0-9_\-]{20,}\b")  # tokens Telegram-like
+# Jetons passes en parametre d'URL : ?token=…, &api_key=…, &apikey=…
+_URL_TOKEN_PATTERN = re.compile(
+    r"([?&](?:token|api_?key|apikey|access_token)=)[^&\s]+", re.IGNORECASE)
 
 def _redact(val: Any) -> Any:
     try:
@@ -23,6 +34,7 @@ def _redact(val: Any) -> Any:
             if secret:
                 s = s.replace(secret, _MASK)
         s = _TOKEN_PATTERN.sub(_MASK, s)
+        s = _URL_TOKEN_PATTERN.sub(r"\1" + _MASK, s)
         return s
     except Exception:
         return val

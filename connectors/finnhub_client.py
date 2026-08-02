@@ -56,6 +56,9 @@ class FinnhubClient:
             time.sleep(sleep_time)
         self._last_call = time.time()
 
+    # FIX 2026-08-02 : un seul avertissement 403 par execution du processus.
+    _403_signale: bool = False
+
     def _get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
         Effectue une requête GET vers l'API Finnhub
@@ -84,6 +87,24 @@ class FinnhubClient:
         except requests.exceptions.HTTPError as e:
             if response.status_code == 429:
                 logger.error("[Finnhub] Rate limit exceeded")
+            elif response.status_code == 403:
+                # FIX 2026-08-02 : /calendar/economic est un endpoint premium.
+                # Sur le palier gratuit il repond 403 a chaque appel. Le code
+                # appelant (utils/econ_api.py) le sait et bascule sur la source
+                # CSV, qui fonctionne. Mais ce log ERROR partait toutes les
+                # 2 heures et faisait passer une condition normale pour une
+                # panne — il m'a moi-meme induit en erreur dans le rapport du
+                # 2 aout. On l'annonce une fois, puis on se tait.
+                # L'URL n'est PAS journalisee : elle contient le jeton API.
+                if not FinnhubClient._403_signale:
+                    FinnhubClient._403_signale = True
+                    logger.warning(
+                        "[Finnhub] %s : 403 Forbidden. Cet endpoint est premium ; "
+                        "le palier gratuit ne le couvre pas. Bascule sur la source "
+                        "CSV du calendrier. Message affiche une seule fois.",
+                        endpoint)
+                else:
+                    logger.debug("[Finnhub] %s : 403 (deja signale)", endpoint)
             else:
                 logger.error(f"[Finnhub] HTTP error {response.status_code}: {e}")
             return None
