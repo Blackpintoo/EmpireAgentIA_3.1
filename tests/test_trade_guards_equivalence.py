@@ -417,3 +417,35 @@ def test_couverture_des_gardes(monkeypatch):
             vus.add(refus.garde)
     manquants = sorted(set(TG.ORDRE) - vus)
     assert not manquants, "gardes jamais declenches par le tirage : %s" % manquants
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# AJOUT 2026-08-02 — journalisation du garde qui refuse.
+# Sans elle, 99,3 % des propositions mouraient sans laisser de trace
+# exploitable : impossible de distinguer un filtrage sain d'un blocage.
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_chaque_refus_est_journalise(tmp_path, monkeypatch):
+    import orchestrator.orchestrator as O
+
+    ecrits = []
+    monkeypatch.setattr(O, "_record_guard_event",
+                        lambda sym, tag, msg: ecrits.append((sym, tag, msg)))
+
+    faux = SimpleNamespace(
+        symbol="XAUUSD",
+        _send_telegram=lambda *a, **k: None,
+    )
+    refus = TG.Refus(garde="hard_min_score", motif="3.9|8.0",
+                     log=None, telegram=None, retour=False, leve=None)
+    retour = O.Orchestrator._appliquer_refus(faux, refus)
+
+    assert retour is False
+    assert ecrits == [("XAUUSD", "garde:hard_min_score", "3.9|8.0")]
+
+
+def test_les_vingt_gardes_ont_un_nom_journalisable():
+    """Un nom vide ou duplique rendrait l'agregation inexploitable."""
+    noms = [g.nom for g in TG.GARDES]
+    assert len(noms) == len(set(noms)) == 20
+    assert all(n and n.replace("_", "").isalnum() for n in noms)

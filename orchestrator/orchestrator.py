@@ -1432,6 +1432,22 @@ class Orchestrator:
     # Reproduit exactement ce que faisait le code inline : le log, puis le
     # message Telegram, puis la valeur de retour (ou l'exception).
     def _appliquer_refus(self, refus) -> Any:
+        # AJOUT 2026-08-02 : journaliser QUEL garde a refuse.
+        #
+        # Sur la periode du 31/07 au 02/08 : 1 325 propositions sur les
+        # 6 symboles reels, 9 executions — 0,68 %. Impossible de dire si les
+        # 99,3 % restants relevent d'un filtrage sain ou d'un blocage
+        # involontaire : seuls news-freeze et live-guard ecrivaient dans
+        # guards.log, les 18 autres gardes ne laissaient qu'un texte libre
+        # dans le log applicatif, sans identifiant exploitable.
+        # XAUUSD (188 propositions, 0 trade) et USDJPY (45, 0 trade) restent
+        # inexplicables sans cette trace.
+        try:
+            _record_guard_event(
+                self.symbol, "garde:%s" % refus.garde,
+                (refus.motif or "").replace("\n", " ")[:200])
+        except Exception:
+            pass
         if refus.log:
             niveau, message = refus.log
             getattr(logger, niveau, logger.info)(message)
