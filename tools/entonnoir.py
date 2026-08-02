@@ -30,6 +30,27 @@ sys.path.insert(0, str(ROOT))
 GUARDS = Path("logs") / "guards.log"
 
 
+def _le_nouveau_code_a_deja_tourne() -> bool:
+    """
+    FIX 2026-08-02 : distinguer deux situations que le message precedent
+    confondait — il affirmait « le bot tourne encore avec l'ancien code »
+    meme quand la vraie cause etait « aucune proposition sur la periode ».
+
+    Le marqueur : la moindre ligne `garde:` OU QUE CE SOIT dans le fichier
+    prouve que la version instrumentee a deja tourne au moins une fois.
+    """
+    if not GUARDS.exists():
+        return False
+    try:
+        with GUARDS.open(encoding="utf-8", errors="replace") as fh:
+            for l in fh:
+                if "|garde:" in l:
+                    return True
+    except Exception:
+        pass
+    return False
+
+
 def lire(depuis=None, symbole=None):
     lignes = []
     if not GUARDS.exists():
@@ -62,11 +83,25 @@ def main() -> int:
     if a.depuis:
         depuis = dt.datetime.fromisoformat(a.depuis).replace(tzinfo=dt.timezone.utc)
 
+    instrumente = _le_nouveau_code_a_deja_tourne()
     lignes = lire(depuis, a.symbole)
+
     if not lignes:
-        print("Aucun evenement de garde sur la periode.")
-        print("Si le fichier est vide, c'est que le bot n'a pas encore tourne")
-        print("avec la journalisation des gardes (ajoutee le 02/08/2026).")
+        print("Aucun evenement de garde sur la periode demandee.")
+        print()
+        if instrumente:
+            print("  CAUSE : aucune proposition n'a ete refusee sur cette periode.")
+            print("  La journalisation des gardes fonctionne — des lignes 'garde:'")
+            print("  existent ailleurs dans le fichier. Marche ferme, bot arrete,")
+            print("  ou periode trop courte : elargis --depuis.")
+        elif not GUARDS.exists():
+            print("  CAUSE : logs/guards.log n'existe pas. Le bot n'a jamais tourne")
+            print("  depuis ce repertoire.")
+        else:
+            print("  CAUSE : aucune ligne 'garde:' nulle part dans le fichier.")
+            print("  Le processus tourne encore sur le code d'avant le 02/08/2026 :")
+            print("  deployer les fichiers ne suffit pas, Python ne recharge pas ses")
+            print("  modules. REDEMARRE LE BOT.")
         return 0
 
     gardes = [l for l in lignes if l[2].startswith("garde:")]
@@ -79,8 +114,16 @@ def main() -> int:
     print("=" * 74)
 
     if not gardes:
-        print("\n  Aucune ligne 'garde:*'. Le bot tourne encore avec l'ancien")
-        print("  code : seuls news-freeze et live-guard sont traces.")
+        print()
+        if instrumente:
+            print("  Aucun refus de garde sur cette periode, mais la journalisation")
+            print("  fonctionne : des lignes 'garde:' existent ailleurs dans le")
+            print("  fichier. Les %d evenement(s) ci-dessous viennent des gardes" % len(autres))
+            print("  hors extraction P2. Elargis --depuis pour couvrir une seance.")
+        else:
+            print("  Aucune ligne 'garde:' nulle part dans le fichier : le processus")
+            print("  tourne encore sur le code d'avant le 02/08/2026. Deployer les")
+            print("  fichiers ne suffit pas — REDEMARRE LE BOT.")
     else:
         c = collections.Counter(l[2][len("garde:"):] for l in gardes)
         total = sum(c.values())
