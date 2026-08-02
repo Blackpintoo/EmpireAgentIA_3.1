@@ -6,8 +6,30 @@ variables d'environnement de la machine : `test_redaction` échoue si
 EMPIRE_CONSOLE=0, `test_config_loader` échoue si MT5_PASSWORD est déjà défini.
 Deux des sept échecs constatés lors de l'audit venaient de là, pas du code.
 """
+import importlib.util
 import os
+from pathlib import Path
+
 import pytest
+
+# FIX 2026-08-02 : racine reelle du depot, independante du repertoire courant.
+# La suite tourne desormais depuis un bac a sable temporaire
+# (tools/valider_avant_demarrage.py) : tout test qui ouvre un fichier du depot
+# par un chemin RELATIF echoue la-bas alors qu'il passe en local. C'est
+# exactement ce qui est arrive a test_purge_masque_les_secrets_deja_ecrits.
+DEPOT = Path(__file__).resolve().parent.parent
+
+# Le module MetaTrader5 n'existe que sous Windows. Plusieurs defauts connus ne
+# se manifestent QUE lorsqu'il est absent : le marqueur xfail correspondant
+# doit donc etre conditionnel, sans quoi il produit des xpassed trompeurs sur
+# la machine de production.
+MT5_ABSENT = importlib.util.find_spec("MetaTrader5") is None
+
+
+@pytest.fixture(scope="session")
+def depot() -> Path:
+    """Racine du depot. A utiliser des qu'un test lit un fichier du projet."""
+    return DEPOT
 
 # FIX 2026-07-30 (P1) — SECURITE.
 # `tests/test_mt5_connection.py` n'est pas un test : c'est un diagnostic

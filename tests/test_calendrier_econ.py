@@ -75,10 +75,14 @@ def test_fenetre_de_gel_couvre_bien_avant_et_apres(tmp_path):
 # suite de tests hors du processus du bot.
 # ══════════════════════════════════════════════════════════════════════════
 
-def test_purge_masque_les_secrets_deja_ecrits(tmp_path, monkeypatch):
+def test_purge_masque_les_secrets_deja_ecrits(tmp_path, monkeypatch, depot):
     """
     Le masquage ne protege que les NOUVELLES lignes. Celles deja ecrites,
     et les fichiers de rotation, doivent etre nettoyes separement.
+
+    FIX 2026-08-02 : le script etait charge par un chemin RELATIF. Ce test
+    passait en local et echouait dans le bac a sable de validation, ou le
+    repertoire courant n'est pas le depot. On passe par la fixture `depot`.
     """
     import importlib.util
 
@@ -89,7 +93,7 @@ def test_purge_masque_les_secrets_deja_ecrits(tmp_path, monkeypatch):
         encoding="utf-8")
 
     spec = importlib.util.spec_from_file_location(
-        "purger", "tools/purger_secrets_logs.py")
+        "purger", str(depot / "tools" / "purger_secrets_logs.py"))
     mod = importlib.util.module_from_spec(spec)
     monkeypatch.setenv("EMPIRE_RACINE", str(tmp_path))
     monkeypatch.setattr("sys.argv", ["purger", "--appliquer", "--racine", str(tmp_path)])
@@ -118,14 +122,10 @@ def test_le_bot_ne_lance_plus_la_suite_de_tests():
     assert "_read_state" in source
 
 
-def test_le_validateur_isole_les_ecritures(tmp_path):
+def test_le_validateur_isole_les_ecritures(tmp_path, depot):
     """Le bac a sable doit contenir data/ et logs/ vides, et une copie de config/."""
     import importlib.util
-    from pathlib import Path
 
-    # Le module precedent a fait chdir vers un repertoire temporaire :
-    # on repart d'un chemin absolu, ancre sur le depot.
-    depot = Path(__file__).resolve().parent.parent
     spec = importlib.util.spec_from_file_location(
         "valideur", str(depot / "tools" / "valider_avant_demarrage.py"))
     mod = importlib.util.module_from_spec(spec)
@@ -134,3 +134,28 @@ def test_le_validateur_isole_les_ecritures(tmp_path):
     bac = mod._bac_a_sable(tmp_path)
     assert (bac / "data").is_dir() and not list((bac / "data").iterdir())
     assert (bac / "logs").is_dir() and not list((bac / "logs").iterdir())
+
+
+def test_aucun_test_ne_lit_le_depot_par_chemin_relatif():
+    """
+    Garde-fou contre la regression qui a fait echouer la validation isolee :
+    un test qui ouvre un fichier du depot par un chemin RELATIF passe en local
+    et echoue dans le bac a sable, ou le repertoire courant est temporaire.
+    La fixture `depot` existe pour ca.
+    """
+    import re
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parent
+    motif = re.compile(
+        r"""spec_from_file_location\(\s*["'][^"']+["']\s*,\s*["'](?!/)"""
+        r"""(?:tools|utils|orchestrator|agents|config)/""")
+    coupables = []
+    for f in sorted(racine.glob("test_*.py")):
+        texte = f.read_text(encoding="utf-8", errors="replace")
+        if motif.search(texte):
+            coupables.append(f.name)
+    assert not coupables, (
+        "ces tests chargent un fichier du depot par un chemin relatif et "
+        "echoueront dans le bac a sable de validation : %s. Utilise la "
+        "fixture `depot`." % coupables)

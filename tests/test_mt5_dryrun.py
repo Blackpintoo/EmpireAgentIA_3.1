@@ -6,7 +6,21 @@ ROOT = THIS.parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# FIX 2026-08-02 : marqueur rendu CONDITIONNEL.
+# Il produisait un XPASS sous Windows, ou le module MetaTrader5 existe et ou
+# le defaut ne se manifeste donc pas. Un xpassed n'est ni un succes ni un
+# echec : il brouille la lecture de la suite et laisse croire qu'un bug a ete
+# corrige. Le defaut, lui, EST TOUJOURS LA — il ne se voit que sans le module.
+# Consequences du conditionnel :
+#   - sous Windows (module present) : le marqueur ne s'applique pas, le test
+#     doit reellement passer, et une regression sera signalee ;
+#   - sous Linux / CI (module absent) : xfail STRICT, donc le jour ou le
+#     routage dry-run sera corrige, la suite exigera le retrait du marqueur.
+from tests.conftest import MT5_ABSENT
+
 @pytest.mark.xfail(
+    MT5_ABSENT,
+    strict=True,
     reason=(
         "DEFAUT REEL DU CODE, pas du test (constate 2026-07-30, P1). "
         "place_order() verifie `mt5 is None` et abandonne avec "
@@ -18,7 +32,6 @@ if str(ROOT) not in sys.path:
         "simulateur modifie le chemin d'execution : a traiter separement, avec "
         "verification, et non dans un lot de correction de tests."
     ),
-    strict=False,
 )
 def test_dry_run_basic(monkeypatch):
     os.environ["MT5_DRY_RUN"] = "1"
