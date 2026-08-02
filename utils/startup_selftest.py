@@ -95,7 +95,14 @@ def _write_state(root: str, state: Dict[str, object]) -> None:
 
 
 def run_suite(root: str, timeout_s: int = _DEFAULT_TIMEOUT_S) -> Tuple[bool, str]:
-    """Exécute `pytest tests/` et renvoie (succès, sortie tronquée)."""
+    """
+    Exécute `pytest tests/` dans le répertoire courant.
+
+    ATTENTION : cette fonction écrit dans le `data/` et le `logs/` du
+    répertoire d'où elle est lancée. Ne l'appelle PAS depuis le processus du
+    bot — c'est ce qui polluait la production jusqu'au 2 août 2026. Utilise
+    `tools/valider_avant_demarrage.py`, qui l'isole dans un bac à sable.
+    """
     # FIX 2026-07-30 : --basetemp impose un répertoire temporaire local au
     # dépôt. Sans lui, pytest utilise %TEMP%\pytest-of-<utilisateur>\ et
     # maintient un lien symbolique `pytest-current`. Sous Windows, la purge
@@ -153,8 +160,20 @@ def check(root: str, *, force: bool = False,
 def enforce_selftest(root: str, *, logger_obj: Optional[object] = None,
                      exit_code: int = 3) -> None:
     """
-    Garde-fou de démarrage. À appeler le plus tôt possible dans le point
-    d'entrée, avant toute connexion MT5 ou envoi d'ordre.
+    Garde-fou de démarrage — VÉRIFICATION SEULE depuis le 2 août 2026.
+
+    Ce que faisait la version précédente, et pourquoi c'était un problème :
+    elle lançait `pytest` DEPUIS le processus du bot, dans le répertoire de
+    production. Les tests écrivaient donc dans les vrais `data/` et `logs/` —
+    `data/compte_111/`, `compte_222/`, `compte_888/`, `compte_inconnu/`,
+    des ordres simulés et des tickets fictifs dans `logs/empire_agent.log`.
+    Toute vérification ultérieure devait démêler le réel du factice.
+
+    Désormais, la suite tourne dans un bac à sable jetable, AVANT le
+    lancement, via `tools/valider_avant_demarrage.py` (appelé par
+    START_EMPIRE.bat). Cette fonction ne fait plus que lire le jeton produit
+    par ce script et refuser le démarrage s'il est absent, périmé ou en échec.
+    Le processus du bot n'exécute plus jamais de test.
     """
     def _dire(msg: str, erreur: bool = False) -> None:
         if logger_obj is not None:
@@ -170,19 +189,31 @@ def enforce_selftest(root: str, *, logger_obj: Optional[object] = None,
               "le bot démarre SANS validation de la suite de tests.", erreur=True)
         return
 
-    force = os.environ.get("EMPIRE_FORCE_SELFTEST", "").strip() in ("1", "true", "True", "yes")
-    ok, motif = check(root, force=force)
-    if ok:
-        _dire("[SELFTEST] OK — %s" % motif)
+    empreinte = code_fingerprint(root)
+    etat = _read_state(root)
+
+    if etat.get("ok") is True and etat.get("fingerprint") == empreinte:
+        _dire("[SELFTEST] OK — suite validée le %s, code inchangé depuis."
+              % etat.get("ts_utc", "?"))
         return
 
     _dire("=" * 70, erreur=True)
-    _dire("[SELFTEST] DEMARRAGE REFUSE : la suite de tests ne passe pas.", erreur=True)
+    _dire("[SELFTEST] DEMARRAGE REFUSE", erreur=True)
     _dire("=" * 70, erreur=True)
-    _dire(motif, erreur=True)
+    if not etat:
+        _dire("Aucune validation enregistrée.", erreur=True)
+    elif etat.get("ok") is not True:
+        _dire("La dernière validation a ECHOUE (%s)." % etat.get("ts_utc", "?"), erreur=True)
+        _dire(str(etat.get("tail", ""))[-1500:], erreur=True)
+    else:
+        # Le cas le plus frequent, et celui qui a coute le plus de temps :
+        # des fichiers deployes mais un processus jamais redemarre, ou une
+        # validation faite avant le deploiement.
+        _dire("Le code a CHANGE depuis la dernière validation (%s)."
+              % etat.get("ts_utc", "?"), erreur=True)
     _dire("", erreur=True)
-    _dire("Relance la suite pour voir le détail :", erreur=True)
-    _dire("    python -m pytest tests -q", erreur=True)
+    _dire("Valide le code, puis relance :", erreur=True)
+    _dire("    python tools/valider_avant_demarrage.py", erreur=True)
     _dire("Pour démarrer malgré tout (à tes risques) : "
           "définis EMPIRE_SKIP_SELFTEST=1", erreur=True)
     sys.exit(exit_code)

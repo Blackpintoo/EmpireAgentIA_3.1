@@ -255,6 +255,12 @@ set TRADING_PROFILE=%TRADING_PROFILE%
 echo [INFO] Demarrage du bot...
 echo.
 
+echo.
+echo [VALIDATION] Suite de tests, dans un repertoire temporaire isole...
+%PYTHON_CMD% tools\valider_avant_demarrage.py
+if errorlevel 1 goto :validation_ko
+echo.
+
 %PYTHON_CMD% main.py
 
 echo.
@@ -269,3 +275,16 @@ goto :restart_loop
 
 endlocal
 exit /b 0
+
+goto :eof
+
+:validation_ko
+echo.
+echo ==========================================================
+echo   DEMARRAGE ANNULE : la suite de tests ne passe pas.
+echo ==========================================================
+echo   Le detail est affiche ci-dessus.
+echo   Pour rejouer la validation seule :
+echo       .venv\Scripts\python.exe tools\valider_avant_demarrage.py --verbeux
+echo.
+pause
