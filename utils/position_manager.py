@@ -102,6 +102,10 @@ _STATE_PATH = os.path.join("data", "pm_state.json")
 # le declarer ferme. A 20 s de cycle, 3 lectures = ~60 s de confirmation.
 _ABSENCES_AVANT_CLOTURE = int(os.environ.get("EMPIRE_PM_ABSENCES", "3") or 3)
 
+# FIX 2026-08-02 : nombre de cycles d'attente du deal MT5 avant d'ecrire quand
+# meme la ligne MFE, marquee non resolue (~5 min a 20 s de cycle).
+_MFE_ATTENTE_MAX_CYCLES = int(os.environ.get("EMPIRE_MFE_ATTENTE", "15") or 15)
+
 # Verrou thread-safe pour accès concurrent au fichier d'état
 _FILE_LOCK = threading.Lock()
 
@@ -246,6 +250,8 @@ class PositionManager:
         self._state: Dict[str, Any] = _load_state()
         # FIX 2026-08-02 : compte les lectures consecutives sans un ticket.
         self._absences: Dict[str, int] = {}
+        # FIX 2026-08-02 : clotures dont le deal MT5 n'est pas encore publie.
+        self._clotures_en_attente: Dict[int, Dict[str, Any]] = {}
         pm_cfg = ((self.profile.get("orchestrator") or {}).get("position_manager") or {}) if isinstance(self.profile, dict) else {}
         self.enabled = bool(pm_cfg.get("enabled", True))
         be_cfg = pm_cfg.get("break_even") or {}
@@ -639,31 +645,112 @@ class PositionManager:
 
         return closed_count
 
-    def _log_mfe_row(self, ticket, side, entry, px_close, pnl, mfe, mae, st) -> None:
-        """FIX 2026-07-26 (P3): journalise MFE/MAE pour permettre d'arbitrer
-        partiels / break-even / trailing sur donnees plutot qu'a l'aveugle."""
+    _MFE_COLONNES = ["ts_utc", "symbol", "ticket", "side", "entry", "exit",
+                     "pnl", "mfe_r", "mae_r", "sl_orig", "be_done",
+                     "trail_active", "resolu"]
+
+    def _mfe_chemin(self) -> str:
+        # FIX 2026-07-30 (P5): journal cloisonne par compte MT5.
+        from utils.account_scope import chemin_donnees as _chemin_donnees
+        return str(_chemin_donnees("trade_mfe.csv"))
+
+    def _mfe_migrer_entete(self, path: str) -> None:
+        """
+        FIX 2026-08-02 : ajoute la colonne `resolu` a un journal existant.
+        Migration unique, non destructive : les lignes deja ecrites sont
+        conservees et marquees resolu=False, puisqu'on ne peut pas savoir
+        apres coup si leur P&L etait connu au moment de l'ecriture.
+        """
+        import csv, os
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path, "r", newline="", encoding="utf-8") as f:
+                lignes = list(csv.reader(f))
+            if not lignes or lignes[0] == self._MFE_COLONNES:
+                return
+            corps = [l + [""] * (len(self._MFE_COLONNES) - 1 - len(l)) + ["False"]
+                     for l in lignes[1:] if l]
+            tmp = path + ".tmp"
+            with open(tmp, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(self._MFE_COLONNES)
+                w.writerows(corps)
+            os.replace(tmp, path)
+            logger.info("[PM] trade_mfe.csv migre : colonne 'resolu' ajoutee "
+                        "(%d lignes existantes marquees non resolues)", len(corps))
+        except Exception as e:
+            logger.debug("[PM] migration trade_mfe.csv impossible: %s", e)
+
+    def _log_mfe_row(self, ticket, side, entry, px_close, pnl, mfe, mae, st,
+                     resolu: bool = True) -> None:
+        """
+        Journalise MFE/MAE a la CLOTURE, pour arbitrer partiels / break-even /
+        trailing sur donnees plutot qu'a l'aveugle.
+
+        FIX 2026-08-02 : la ligne etait ecrite des la detection de la cloture,
+        avant que MT5 n'ait publie le deal correspondant. Consequence mesuree
+        sur le journal de production : `pnl` valait 0.0 sur 8 lignes sur 8, et
+        `exit` etait vide sur 5 sur 8. Le journal documentait la trajectoire
+        mais pas l'issue — donc inutilisable pour decider d'un break-even.
+        L'ecriture est desormais differee tant que le deal n'est pas trouve
+        (voir _resoudre_clotures_en_attente) ; `resolu` dit si la ligne
+        s'appuie sur un deal reellement lu.
+        """
         try:
             import csv, os
             from datetime import datetime, timezone as _tz
-            # FIX 2026-07-30 (P5): journal MFE/MAE cloisonne par compte MT5,
-            # comme les autres donnees de performance. Un journal melangeant
-            # deux comptes ne permettrait pas de decider du break-even.
-            from utils.account_scope import chemin_donnees as _chemin_donnees
-            path = str(_chemin_donnees("trade_mfe.csv"))
-            os.makedirs("data", exist_ok=True)
+            path = self._mfe_chemin()
+            os.makedirs(os.path.dirname(path) or "data", exist_ok=True)
             new_file = not os.path.exists(path)
+            if not new_file:
+                self._mfe_migrer_entete(path)
             with open(path, "a", newline="", encoding="utf-8") as f:
                 w = csv.writer(f)
                 if new_file:
-                    w.writerow(["ts_utc", "symbol", "ticket", "side", "entry", "exit",
-                                "pnl", "mfe_r", "mae_r", "sl_orig", "be_done", "trail_active"])
+                    w.writerow(self._MFE_COLONNES)
                 w.writerow([datetime.now(_tz.utc).isoformat(), self.symbol_canon, ticket, side,
-                            entry, px_close, round(float(pnl), 2),
+                            entry, px_close if px_close is not None else "",
+                            round(float(pnl), 2) if pnl is not None else "",
                             mfe if mfe is not None else "",
                             mae if mae is not None else "",
-                            st.get("sl_orig", ""), st.get("be_done", ""), st.get("trail_active", "")])
+                            st.get("sl_orig", ""), st.get("be_done", ""),
+                            st.get("trail_active", ""), bool(resolu)])
         except Exception as e:
             logger.debug(f"[PM] _log_mfe_row failed: {e}")
+
+    def _resoudre_clotures_en_attente(self, deals) -> None:
+        """
+        FIX 2026-08-02 : rejoue les clotures dont le deal n'etait pas encore
+        publie par MT5 au moment ou on les a detectees. Au-dela de
+        _MFE_ATTENTE_MAX_CYCLES tentatives (~5 min a 20 s de cycle), la ligne
+        est ecrite quand meme avec resolu=False : mieux vaut une ligne
+        signalee incomplete qu'un trade absent du journal.
+        """
+        if not self._clotures_en_attente:
+            return
+        for tk in list(self._clotures_en_attente.keys()):
+            ctx = self._clotures_en_attente[tk]
+            ctx["essais"] = ctx.get("essais", 0) + 1
+            tk_deals = [d for d in (deals or [])
+                        if int(getattr(d, "position_id", 0) or 0) == int(tk)
+                        or int(getattr(d, "order", 0) or 0) == int(tk)]
+            pnl = sum(float(getattr(d, "profit", 0.0) or 0.0) for d in tk_deals) if tk_deals else None
+            px = next((float(getattr(d, "price") or 0) for d in tk_deals
+                       if getattr(d, "price", None)), None)
+            if tk_deals and px is not None:
+                self._log_mfe_row(tk, ctx["side"], ctx["entry"], px, pnl,
+                                  ctx["mfe"], ctx["mae"], ctx["st"], resolu=True)
+                logger.info("[PM] %s ticket=%s : P&L resolu apres %d cycle(s) "
+                            "-> %.2f", self.symbol_canon, tk, ctx["essais"], pnl or 0.0)
+                self._clotures_en_attente.pop(tk, None)
+            elif ctx["essais"] >= _MFE_ATTENTE_MAX_CYCLES:
+                self._log_mfe_row(tk, ctx["side"], ctx["entry"], None, None,
+                                  ctx["mfe"], ctx["mae"], ctx["st"], resolu=False)
+                logger.warning("[PM] %s ticket=%s : aucun deal trouve apres %d "
+                               "cycles, ligne MFE ecrite comme NON RESOLUE",
+                               self.symbol_canon, tk, ctx["essais"])
+                self._clotures_en_attente.pop(tk, None)
 
     # ---------------------------- state per ticket -----------------------
     def _tk(self, ticket: int) -> str:
@@ -864,13 +951,15 @@ class PositionManager:
                 "[PM] %s : lecture MT5 vide alors que %d position(s) etaient "
                 "connues. Hoquet de lecture ou fermeture reelle ?",
                 self.symbol_canon, len(prev))
-        if closed_ids:
+        if closed_ids or self._clotures_en_attente:
             try:
                 from datetime import datetime, timedelta, timezone as _tz
                 end = datetime.now(_tz.utc); start = end - timedelta(days=2)
                 deals = mt5.history_deals_get(start, end) if mt5 else []
             except Exception:
                 deals = []
+            # Rejoue d'abord les clotures en attente de leur deal.
+            self._resoudre_clotures_en_attente(deals)
             for tk in closed_ids:
                 tk_deals = [d for d in (deals or []) if int(getattr(d, "position_id", 0) or 0) == int(tk)
                             or int(getattr(d, "order", 0) or 0) == int(tk)]
@@ -900,7 +989,20 @@ class PositionManager:
                     "mfe": f"{float(_mfe):+.2f}R" if _mfe is not None else "N/A",
                     "mae": f"{float(_mae):+.2f}R" if _mae is not None else "N/A",
                 })
-                self._log_mfe_row(tk, side, entry, px_close, pnl, _mfe, _mae, _stc)
+                # FIX 2026-08-02 : ne pas ecrire une ligne vide. Si MT5 n'a pas
+                # encore publie le deal, on met la cloture en attente et on
+                # reessaie aux cycles suivants.
+                if tk_deals and px_close is not None:
+                    self._log_mfe_row(tk, side, entry, px_close, pnl, _mfe, _mae, _stc,
+                                      resolu=True)
+                else:
+                    self._clotures_en_attente[int(tk)] = {
+                        "side": side, "entry": entry, "mfe": _mfe, "mae": _mae,
+                        "st": dict(_stc), "essais": 0,
+                    }
+                    logger.info("[PM] %s ticket=%s : cloture detectee mais deal "
+                                "absent de l'historique MT5 — ligne MFE differee",
+                                self.symbol_canon, tk)
 
             # (audit fev2026) Nettoyage positions fantômes dans pm_state
             cleaned = 0
