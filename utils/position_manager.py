@@ -106,6 +106,9 @@ _ABSENCES_AVANT_CLOTURE = int(os.environ.get("EMPIRE_PM_ABSENCES", "3") or 3)
 # meme la ligne MFE, marquee non resolue (~5 min a 20 s de cycle).
 _MFE_ATTENTE_MAX_CYCLES = int(os.environ.get("EMPIRE_MFE_ATTENTE", "15") or 15)
 
+# FIX 2026-08-02 : paliers de backoff (minutes) apres un refus de cloture.
+_BACKOFF_CLOTURE_MIN = (1, 2, 5, 15, 30, 60)
+
 # Verrou thread-safe pour accès concurrent au fichier d'état
 _FILE_LOCK = threading.Lock()
 
@@ -252,6 +255,8 @@ class PositionManager:
         self._absences: Dict[str, int] = {}
         # FIX 2026-08-02 : clotures dont le deal MT5 n'est pas encore publie.
         self._clotures_en_attente: Dict[int, Dict[str, Any]] = {}
+        # FIX 2026-08-02 : backoff par ticket sur les clotures refusees.
+        self._echecs_cloture: Dict[int, Dict[str, Any]] = {}
         pm_cfg = ((self.profile.get("orchestrator") or {}).get("position_manager") or {}) if isinstance(self.profile, dict) else {}
         self.enabled = bool(pm_cfg.get("enabled", True))
         be_cfg = pm_cfg.get("break_even") or {}
@@ -546,10 +551,43 @@ class PositionManager:
         # Si on est dans la fenêtre de fermeture (entre 0 et close_before_minutes avant)
         return 0 <= diff_minutes <= self.close_before_minutes
 
+    def _cloture_en_backoff(self, ticket: int) -> bool:
+        """
+        FIX 2026-08-02 : vrai si une nouvelle tentative de cloture doit etre
+        differee pour ce ticket.
+
+        Constate en production : le ticket SP500 1690929973 a genere
+        10 659 lignes de log en une journee. Toutes les 20 s, le timeout de
+        duree declenchait une fermeture, le broker repondait "Market closed",
+        et le cycle recommencait a l'identique. Un marche ferme ne rouvre pas
+        parce qu'on insiste : reessayer 3 fois par minute n'apporte rien et
+        noie les logs ou l'on cherche les vrais incidents.
+        """
+        info = self._echecs_cloture.get(int(ticket))
+        return bool(info and time.time() < info.get("prochain_essai", 0.0))
+
+    def _noter_echec_cloture(self, ticket: int, motif: str) -> None:
+        """Recule la prochaine tentative : 1, 2, 5, 15, 30 puis 60 min."""
+        info = self._echecs_cloture.setdefault(int(ticket), {"essais": 0})
+        info["essais"] += 1
+        delai = _BACKOFF_CLOTURE_MIN[min(info["essais"] - 1, len(_BACKOFF_CLOTURE_MIN) - 1)]
+        info["prochain_essai"] = time.time() + delai * 60.0
+        info["motif"] = motif
+        logger.warning(
+            "[PM] %s ticket=%s : cloture refusee (%s). Tentative %d ; "
+            "prochaine dans %d min.",
+            self.symbol_canon, ticket, motif, info["essais"], delai)
+
     def _close_position_full(self, ticket: int, volume: float, side: str) -> bool:
         """Ferme entièrement une position."""
         try:
             if not mt5:
+                return False
+
+            # FIX 2026-08-02 : ne pas marteler un broker qui vient de refuser.
+            if self._cloture_en_backoff(ticket):
+                logger.debug("[PM] %s ticket=%s : cloture differee (backoff)",
+                             self.symbol_canon, ticket)
                 return False
 
             # Déterminer le type d'ordre inverse
@@ -583,10 +621,11 @@ class PositionManager:
             result = mt5.order_send(request)
             if result and result.retcode == mt5.TRADE_RETCODE_DONE:
                 logger.info(f"[PM] Position {ticket} closed before market close")
+                self._echecs_cloture.pop(int(ticket), None)   # backoff leve
                 return True
             else:
                 err = result.comment if result else "Unknown"
-                logger.warning(f"[PM] Failed to close position {ticket}: {err}")
+                self._noter_echec_cloture(ticket, str(err))
                 return False
 
         except Exception as e:
@@ -1140,6 +1179,10 @@ class PositionManager:
                         _side = "BUY" if int(getattr(p, "type", 0)) == 0 else "SELL"
                         _hours = int(_elapsed_min // 60)
                         _mins = int(_elapsed_min % 60)
+                        # FIX 2026-08-02 : ne pas reannoncer la fermeture a
+                        # chaque cycle quand elle est en backoff.
+                        if self._cloture_en_backoff(ticket):
+                            continue
                         logger.warning(f"[PM_TIMEOUT] {self.symbol_canon} ticket={ticket} durée={_hours}h{_mins:02d}m P&L={_pnl:.2f} → fermeture")
                         closed = self._close_position_full(ticket, _vol, _side)
                         if closed:
