@@ -106,6 +106,83 @@ _ABSENCES_AVANT_CLOTURE = int(os.environ.get("EMPIRE_PM_ABSENCES", "3") or 3)
 # meme la ligne MFE, marquee non resolue (~5 min a 20 s de cycle).
 _MFE_ATTENTE_MAX_CYCLES = int(os.environ.get("EMPIRE_MFE_ATTENTE", "15") or 15)
 
+
+# FIX 2026-08-04 : ne retenir que les deals de SORTIE.
+#
+# Le correctif du 02/08 attendait « un deal » correspondant au ticket avant
+# d'ecrire la ligne MFE. Or MT5 publie le deal d'ENTREE des l'ouverture, et le
+# ticket de position est egal au ticket de l'ordre d'ouverture : la condition
+# etait donc satisfaite immediatement, par le mauvais deal. Mesure sur les
+# 5 lignes ecrites entre le 02/08 22:16 et le 04/08 : `pnl` = 0.0 sur 5/5
+# (le profit d'un deal d'entree est nul) et `exit` = `entry` sur 5/5 (le prix
+# retenu etait celui de l'ouverture). Les lignes etaient marquees resolu=True,
+# ce qui masquait le defaut au lieu de le signaler.
+#
+# DEAL_ENTRY_OUT (1) : fermeture. INOUT (2) : renversement, qui solde la
+# position existante. OUT_BY (3) : fermeture par position opposee. Les valeurs
+# sont lues sur le module MT5 quand il est present, avec repli sur les
+# constantes officielles pour que les tests puissent injecter de faux deals.
+def _valeurs_sortie() -> tuple:
+    return (
+        int(getattr(mt5, "DEAL_ENTRY_OUT", 1) or 1),
+        int(getattr(mt5, "DEAL_ENTRY_INOUT", 2) or 2),
+        int(getattr(mt5, "DEAL_ENTRY_OUT_BY", 3) or 3),
+    )
+
+
+def _deals_de_sortie(deals, ticket) -> list:
+    """
+    Deals de SORTIE rattaches a `ticket`, tries du plus ancien au plus recent.
+
+    Le rattachement se fait par `position_id`. `order` n'est PAS utilise comme
+    critere : pour la position N, l'ordre d'ouverture porte lui aussi le
+    numero N, et c'est precisement ce qui ramenait le deal d'entree.
+    """
+    sortie = []
+    for d in (deals or []):
+        try:
+            if int(getattr(d, "position_id", 0) or 0) != int(ticket):
+                continue
+            if int(getattr(d, "entry", -1)) not in _valeurs_sortie():
+                continue
+        except (TypeError, ValueError):
+            continue
+        sortie.append(d)
+    sortie.sort(key=lambda d: int(getattr(d, "time", 0) or 0))
+    return sortie
+
+
+def _pnl_et_prix_sortie(deals, ticket):
+    """
+    Renvoie (pnl, prix_de_sortie, deals_de_sortie).
+
+    `pnl` somme le profit de TOUS les deals de sortie — les cloture partielles
+    comprises — et y ajoute commission et swap quand MT5 les expose, sans quoi
+    le P&L du journal ne correspond pas a celui du compte. `prix_de_sortie`
+    est celui du DERNIER deal de sortie. (None, None, []) si aucun deal de
+    sortie n'est encore publie : l'appelant doit alors patienter.
+    """
+    sorties = _deals_de_sortie(deals, ticket)
+    if not sorties:
+        return None, None, []
+    pnl = 0.0
+    for d in sorties:
+        for champ in ("profit", "commission", "swap"):
+            try:
+                pnl += float(getattr(d, champ, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                pass
+    prix = None
+    for d in reversed(sorties):
+        try:
+            p = float(getattr(d, "price", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if p:
+            prix = p
+            break
+    return pnl, prix, sorties
+
 # FIX 2026-08-02 : paliers de backoff (minutes) apres un refus de cloture.
 _BACKOFF_CLOTURE_MIN = (1, 2, 5, 15, 30, 60)
 
@@ -771,12 +848,8 @@ class PositionManager:
         for tk in list(self._clotures_en_attente.keys()):
             ctx = self._clotures_en_attente[tk]
             ctx["essais"] = ctx.get("essais", 0) + 1
-            tk_deals = [d for d in (deals or [])
-                        if int(getattr(d, "position_id", 0) or 0) == int(tk)
-                        or int(getattr(d, "order", 0) or 0) == int(tk)]
-            pnl = sum(float(getattr(d, "profit", 0.0) or 0.0) for d in tk_deals) if tk_deals else None
-            px = next((float(getattr(d, "price") or 0) for d in tk_deals
-                       if getattr(d, "price", None)), None)
+            # FIX 2026-08-04 : seuls les deals de SORTIE resolvent une cloture.
+            pnl, px, tk_deals = _pnl_et_prix_sortie(deals, tk)
             if tk_deals and px is not None:
                 self._log_mfe_row(tk, ctx["side"], ctx["entry"], px, pnl,
                                   ctx["mfe"], ctx["mae"], ctx["st"], resolu=True)
@@ -1000,14 +1073,15 @@ class PositionManager:
             # Rejoue d'abord les clotures en attente de leur deal.
             self._resoudre_clotures_en_attente(deals)
             for tk in closed_ids:
-                tk_deals = [d for d in (deals or []) if int(getattr(d, "position_id", 0) or 0) == int(tk)
-                            or int(getattr(d, "order", 0) or 0) == int(tk)]
-                pnl = sum(float(getattr(d, "profit", 0.0) or 0.0) for d in tk_deals)
+                # FIX 2026-08-04 : le P&L et le prix de cloture ne peuvent venir
+                # que des deals de SORTIE. Le deal d'ENTREE, publie des
+                # l'ouverture, portait un profit nul et le prix d'entree.
+                _pnl_sortie, px_close, tk_deals = _pnl_et_prix_sortie(deals, tk)
+                pnl = _pnl_sortie if _pnl_sortie is not None else 0.0
                 close_time = max((int(getattr(d, "time", 0) or 0) for d in tk_deals), default=None)
                 entry = float(prev[str(tk)].get("entry") or 0.0)
                 side = prev[str(tk)].get("side")
                 point = float(getattr(mt5.symbol_info(self.broker_symbol), "point", 0.01)) if mt5 else 0.01
-                px_close = next((float(getattr(d, "price") or 0) for d in tk_deals if getattr(d, "price", None)), None)
                 pnl_pips = ((px_close - entry)/point if side=="BUY" else (entry - px_close)/point) if (px_close and entry) else 0.0
                 dur = "N/A"
                 try:

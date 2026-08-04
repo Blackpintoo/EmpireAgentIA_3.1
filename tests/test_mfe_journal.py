@@ -56,9 +56,20 @@ def test_cloture_sans_deal_est_differee_puis_resolue(tmp_path):
     assert not pm._chemin.exists()
     assert 111 in pm._clotures_en_attente
 
-    # Cycle 2 : le deal apparait -> la ligne est ecrite, complete.
-    deal = SimpleNamespace(position_id=111, order=0, profit=507.30, price=7497.48)
-    pm._resoudre_clotures_en_attente([deal])
+    # Cycle 2 : seul le deal d'ENTREE est publie -> toujours rien.
+    # MAJ 2026-08-04 : c'est le cas qui produisait pnl=0.0 et exit==entry en
+    # production. Un deal d'entree porte entry=0 (DEAL_ENTRY_IN), un profit
+    # nul et le prix d'ouverture ; il ne resout pas une cloture.
+    entree = SimpleNamespace(position_id=111, order=111, entry=0, profit=0.0,
+                             price=7462.97, time=100)
+    pm._resoudre_clotures_en_attente([entree])
+    assert not pm._chemin.exists()
+    assert 111 in pm._clotures_en_attente
+
+    # Cycle 3 : le deal de SORTIE apparait -> la ligne est ecrite, complete.
+    deal = SimpleNamespace(position_id=111, order=0, entry=1, profit=507.30,
+                           price=7497.48, time=900)
+    pm._resoudre_clotures_en_attente([entree, deal])
     (r,) = _lignes(pm._chemin)
     assert r["pnl"] == "507.3" and r["exit"] == "7497.48" and r["resolu"] == "True"
     assert not pm._clotures_en_attente
