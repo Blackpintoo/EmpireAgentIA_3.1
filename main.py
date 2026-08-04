@@ -1,5 +1,12 @@
 # main.py (tout en haut)
-import os, sys
+import os, sys, time
+
+# AJOUT 2026-08-04 : heure de demarrage, prise AVANT tout import du depot.
+# Elle sert de reference au garde-fou de fraicheur (utils/fraicheur_code.py) :
+# tout .py plus recent que cet instant a pu etre importe dans sa version
+# precedente. Elle doit rester la premiere instruction executee du fichier.
+T_DEMARRAGE = time.time()
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path: sys.path.insert(0, ROOT)
 
@@ -28,6 +35,15 @@ from utils.telegram_client_async import AsyncTelegramClient
 from utils.telegram_client import send_telegram_message
 from utils.config import get_enabled_symbols, load_config
 from utils.logger import logger
+
+# AJOUT 2026-08-04 : le code sur le disque est-il celui qu'on vient de charger ?
+# Place APRES les imports lourds, pour couvrir orchestrator/, utils/ et
+# connectors/ : c'est le seul point ou l'on sait ce qui a reellement ete
+# importe. Le 02/08, un checkout tombe 4 s avant le demarrage avait laisse
+# tourner l'ancien connectors/finnhub_client.py pendant six heures.
+# Contournement explicite : EMPIRE_SKIP_FRAICHEUR=1.
+from utils.fraicheur_code import verifier_fraicheur_code
+verifier_fraicheur_code(ROOT, T_DEMARRAGE, logger_obj=logger)
 
 # =============================================================================
 # AUDIT 2025-12-27: Import des nouveaux modules de monitoring
