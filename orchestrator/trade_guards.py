@@ -425,6 +425,42 @@ def calculer_blocked_hours(symbol: str, local_blocked: Sequence[int],
     return sorted(set(local_blocked) | set(global_blocked)), False
 
 
+def budget_risque_effectif(equite: Optional[float], pct_vise: Optional[float],
+                           cap_usd: Optional[float]
+                           ) -> Tuple[Optional[float], str]:
+    """
+    Budget de risque REELLEMENT vise pour un trade, et sa source.
+
+    AJOUT 2026-08-04. Deux plafonds coexistent et le plus bas gagne :
+      - `risk_per_trade` du profil, en pourcentage de l'equite ;
+      - `max_risk_per_trade_usd`, un plafond absolu (250 $).
+
+    La trace [RISK_TRACE] ne comparait qu'au premier. Sur une equite de
+    ~98 500 $, 0,5 % vaut ~492 $, tandis que le cap absolu vaut 250 $ : les
+    lots de SP500 et NAS100 etaient donc reduits DELIBEREMENT a ~250 $ de
+    risque, et la trace les denoncait a 0,51x comme « incoherents » — 4 ERROR
+    le 03/08 pour un comportement conforme. Rapporte au budget effectif, le
+    meme dimensionnement vaut 1,00x.
+
+    Renvoie (budget, source). `budget` vaut None si rien n'est calculable.
+    """
+    budget_pct = None
+    if equite and pct_vise:
+        budget_pct = float(equite) * float(pct_vise)
+
+    cap = float(cap_usd) if cap_usd else None
+
+    if budget_pct and cap:
+        if cap < budget_pct:
+            return cap, "cap max_risk_per_trade_usd"
+        return budget_pct, "profil"
+    if cap:
+        return cap, "cap max_risk_per_trade_usd"
+    if budget_pct:
+        return budget_pct, "profil"
+    return None, "inconnu"
+
+
 def calculer_liq_penalty(est_crypto: bool, current_hour_utc: int,
                          liq_hours: Sequence[int], penalite: float) -> float:
     if not est_crypto and current_hour_utc in liq_hours:

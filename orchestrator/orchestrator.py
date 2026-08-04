@@ -57,6 +57,7 @@ from utils.risk_manager import RiskManager
 from orchestrator.trade_guards import (
     evaluer as _tg_evaluer,
     calculer_blocked_hours as _tg_blocked_hours,
+    budget_risque_effectif as _tg_budget_effectif,
     calculer_liq_penalty as _tg_liq_penalty,
     calculer_daily_pnl_pct as _tg_daily_pnl_pct,
     calculer_crypto_exempt as _tg_crypto_exempt,
@@ -226,7 +227,36 @@ CRYPTO_REAL  = {"BTCUSD", "ETHUSD", "LTCUSD", "BNBUSD", "ADAUSD", "SOLUSD"}
 # FIX 2026-04-30: Symboles autorisés à contourner la blacklist horaire globale
 # via leur whitelist locale (allowed_hours_utc). Pour tous les autres symboles,
 # la blacklist globale s'applique strictement (union global ∪ local).
-BLACKLIST_OVERRIDE_WHITELIST = ["XAUUSD"]
+#
+# AJOUT 2026-08-04 — USDJPY.
+#
+# Mesure sur la journee du 03/08 (marche ouvert, 632 decisions USDJPY) :
+# la blacklist GLOBALE [3,4,7,10,11,12,13,14] et la whitelist locale
+# allowed_hours_utc [8..15] se cumulaient en union, ne laissant que TROIS
+# heures ouvertes : 8, 9 et 15. Ces trois heures n'ont produit que 2 signaux
+# au-dessus du seuil de proposition (min_score_for_proposal = 7.0), tandis que
+# 67 signaux de ce niveau tombaient dans une heure fermee. Aucun trade execute.
+#
+#   heure UTC   signaux >= 7.0   score max   conf. moyenne   statut avant
+#       12            20           10.10         4.27        bloque (globale)
+#       13            11            8.70         4.47        bloque (globale)
+#       14            11            7.10         4.53        bloque (globale)
+#       11             3            8.10         4.00        bloque (globale)
+#       10             1            7.10         2.97        bloque (globale)
+#
+# Inscrire USDJPY ici ne leve PAS la blacklist : elle continue de s'appliquer
+# partout hors de la fenetre que le symbole declare lui-meme. Le calcul
+# devient (globale ∪ locale) − allowed_hours, soit {3, 4, 7} encore bloquees.
+# Les heures 6 (6 signaux) et 19 (4 signaux) restent fermees puisqu'elles sont
+# hors de la whitelist London+NY — les rouvrir supposerait d'elargir cette
+# fenetre, ce que les donnees d'UNE journee ne justifient pas.
+#
+# Portee de la preuve : ces chiffres etablissent que la fenetre laissait
+# passer des SIGNAUX, pas qu'elle laissait passer des trades RENTABLES.
+# USDJPY est en probation (0 % de reussite, -241 $ sur 6 jours) ; ce sont
+# min_score_for_proposal=7.0, votes_required=4 et max_trades_per_day=1 qui
+# encadrent l'exposition, et ils restent inchanges.
+BLACKLIST_OVERRIDE_WHITELIST = ["XAUUSD", "USDJPY"]
 
 def _is_crypto_canon(s: str) -> bool:
     return (s or "").upper() in CRYPTO_CANON
@@ -1431,6 +1461,31 @@ class Orchestrator:
     # AJOUT 2026-07-30 (P2) : applique les effets d'un refus de garde.
     # Reproduit exactement ce que faisait le code inline : le log, puis le
     # message Telegram, puis la valeur de retour (ou l'exception).
+    def _tracer_refus_amont(self, nom: str, motif: Any = "") -> None:
+        """
+        AJOUT 2026-08-04 : journaliser un refus qui ne passe PAS par la chaine
+        des 20 gardes extraits en P2.
+
+        Mesure sur le journal du 03/08 : XAUUSD a produit 471 decisions pour
+        seulement 111 refus traces. L'entonnoir ne voyait donc qu'un quart de
+        l'attrition, et sa lecture — « direction_filter domine » — portait sur
+        un echantillon tronque. Plusieurs points de sortie anterieurs ou
+        posterieurs a la chaine ne laissaient qu'un texte libre :
+        `[ECON_CAL] … bloque`, `[RR_SAFETY] … REJETE`, `[MOMENTUM_CHECK] …
+        BLOQUE`, `[HARD_FILTER][min_rr] … rejet`, et l'abandon sous
+        `min_score_for_proposal`.
+
+        Ils ecrivent desormais la meme ligne `garde:<nom>` dans guards.log, ce
+        qui les rend comparables aux autres dans tools/entonnoir.py. Aucune
+        decision n'est modifiee : on ajoute une observation.
+        """
+        try:
+            _record_guard_event(
+                self.symbol, "garde:%s" % nom,
+                str(motif or "").replace("\n", " ")[:200])
+        except Exception:
+            pass
+
     def _appliquer_refus(self, refus) -> Any:
         # AJOUT 2026-08-02 : journaliser QUEL garde a refuse.
         #
@@ -2859,6 +2914,7 @@ class Orchestrator:
 
         if _rr_trade_blocked:
             logger.error(f"[RR_SAFETY] {symbol}: Trade REJETÉ (RR aberrant)")
+            self._tracer_refus_amont("rr_safety", "RR aberrant")
             return None
 
         # FIX 2026-03-13 R9: Garde-fou risque absolu par trade
@@ -2881,10 +2937,27 @@ class Orchestrator:
                                 _cs = getattr(_sym_info, "trade_contract_size", 0)
                                 _pt = getattr(_sym_info, "point", 0)
                                 if _cs > 0 and _pt > 0:
-                                    _point_val = _cs * _pt
+                                    # FIX 2026-08-04 : ERREUR D'UNITE.
+                                    # `_risk_usd` vaut `_sl_dist * lots * _point_val`
+                                    # ou `_sl_dist` est une distance en UNITES DE PRIX
+                                    # (abs(entry - sl)). `_point_val` doit donc etre la
+                                    # valeur d'UNE UNITE DE PRIX pour 1 lot, ce que
+                                    # donne la voie native `trade_tick_value /
+                                    # trade_tick_size`. L'ancien repli `contract_size ×
+                                    # point` donnait la valeur d'UN POINT, soit `point`
+                                    # fois trop petit — 100 fois pour un point de 0.01.
+                                    # Consequence mesuree le 03/08 : sur BTCUSD, le cap
+                                    # calculait un risque de 4,48 $ la ou la trace
+                                    # mesurait 448,31 $. Le plafond de 250 $ ne pouvait
+                                    # donc jamais s'appliquer. C'est aussi la vraie
+                                    # raison de l'override ci-dessous : il ne corrigeait
+                                    # pas une specificite des indices, il compensait
+                                    # cette erreur, pour 3 symboles seulement.
+                                    _point_val = float(_cs)
                                     logger.info(
                                         f"[RISK_CAP] {symbol}: point_val fallback via "
-                                        f"contract_size={_cs} × point={_pt} = {_point_val}"
+                                        f"contract_size={_cs} (valeur d'une unite de "
+                                        f"prix par lot) = {_point_val}"
                                     )
                 except Exception as _pv_err:
                     logger.warning(f"[RISK_CAP] symbol_info({broker_symbol}) échoué: {_pv_err}")
@@ -2970,19 +3043,43 @@ class Orchestrator:
             except Exception:
                 _eq = None
             _pct_vise = float((self.profile.get("risk") or {}).get("risk_per_trade", 0.0) or 0.0)
-            _budget = (_eq * _pct_vise) if (_eq and _pct_vise) else None
-            _ecart = (_risque_reel / _budget) if _budget else None
+            _budget_pct = (_eq * _pct_vise) if (_eq and _pct_vise) else None
+
+            # FIX 2026-08-04 : comparer a ce qui est REELLEMENT vise.
+            #
+            # La trace du 02/08 rapportait le seul budget en pourcentage. Or
+            # `max_risk_per_trade_usd` (250 $) plafonne le risque en absolu, et
+            # ce plafond est plus bas que 0,5 % d'une equite de ~98 500 $
+            # (~492 $). Sur SP500 et NAS100, les lots etaient donc reduits
+            # DELIBEREMENT par le cap, et la trace criait « dimensionnement
+            # incoherent » a chaque fois : 4 ERROR le 03/08 pour un
+            # comportement conforme. Un garde-fou qui denonce le respect d'un
+            # autre garde-fou n'est pas exploitable.
+            #
+            # Le budget effectif est le plus contraignant des deux. L'ecart
+            # mesure desormais ce qu'il pretend mesurer.
+            try:
+                _cap_usd = float((self.cfg.get("risk") or {}).get(
+                    "max_risk_per_trade_usd", 300.0))
+            except Exception:
+                _cap_usd = None
+            _budget_eff, _source = _tg_budget_effectif(_eq, _pct_vise, _cap_usd)
+
+            _ecart = (_risque_reel / _budget_eff) if _budget_eff else None
             logger.warning(
                 "[RISK_TRACE] %s %s: lots=%s dist=%.1f pts pip_value=%.5f "
-                "-> risque_engage=%.2f USD | budget=%s (%.3f%% de %s) | ratio=%s",
+                "-> risque_engage=%.2f USD | budget_effectif=%s (%s) | "
+                "budget_profil=%s (%.3f%% de %s) | ratio=%s",
                 symbol, action, lots, _dist_pts, _pv, _risque_reel,
-                ("%.2f USD" % _budget) if _budget else "inconnu",
+                ("%.2f USD" % _budget_eff) if _budget_eff else "inconnu", _source,
+                ("%.2f USD" % _budget_pct) if _budget_pct else "inconnu",
                 _pct_vise * 100, ("%.0f USD" % _eq) if _eq else "equite inconnue",
                 ("%.2fx" % _ecart) if _ecart else "n/a")
             if _ecart and (_ecart > 1.25 or _ecart < 0.75):
                 logger.error(
-                    "[RISK_TRACE] %s: le risque engage vaut %.2fx le budget vise. "
-                    "Dimensionnement incoherent avec le profil.", symbol, _ecart)
+                    "[RISK_TRACE] %s: le risque engage vaut %.2fx le budget "
+                    "effectif (%s). Dimensionnement incoherent.",
+                    symbol, _ecart, _source)
         except Exception as _rt_err:
             logger.debug("[RISK_TRACE] %s: trace indisponible (%s)", symbol, _rt_err)
 
@@ -3040,6 +3137,10 @@ class Orchestrator:
                             f"({_confirm_ratio*100:.0f}% confirm, net={_net_move:.5f}). "
                             f"Trade BLOQUÉ — streak={_MOMENTUM_STREAK[_streak_key]}"
                         )
+                        self._tracer_refus_amont(
+                            "momentum_inverse",
+                            "%s|confirm=%.0f%%|net=%.5f" % (
+                                action, _confirm_ratio * 100, _net_move))
                         _momentum_ok = False
                     else:
                         # FIX R16: Vérifier le streak avant de PASS
@@ -3051,6 +3152,10 @@ class Orchestrator:
                                 f"({_confirm_ratio*100:.0f}% confirm) — BLOQUÉ car "
                                 f"streak={_streak_count} INVERSE consécutifs"
                             )
+                            self._tracer_refus_amont(
+                                "momentum_streak",
+                                "%s|confirm=%.0f%%|streak=%d" % (
+                                    action, _confirm_ratio * 100, _streak_count))
                             _momentum_ok = False
                         else:
                             logger.info(
@@ -4014,6 +4119,9 @@ class Orchestrator:
                         reasons.append(f"econ_calendar:{avoid_reason}")
                         decision_notes.append(f"econ_blocked:{avoid_reason}")
                         logger.info(f"[ECON_CAL] {symbol} bloque: {avoid_reason}")
+                        # La trace guards.log est emise au point de sortie
+                        # unique (`if reasons:` plus bas), pour ne pas compter
+                        # deux fois le meme abandon.
                 except Exception as e:
                     logger.debug(f"[ECON_CAL] Erreur verification: {e}")
 
@@ -4359,6 +4467,17 @@ class Orchestrator:
             # 7) Décision : auto ou validation
             if reasons:
                 logger.info(f"[RISK] Conditions non remplies → pas d'action. Raison: {', '.join(reasons)}")
+                # AJOUT 2026-08-04 : point de sortie UNIQUE de l'etage amont.
+                # Toutes les conditions accumulees dans `reasons` (score,
+                # confluence, calendrier econ, volatilite, regime, sentiment,
+                # swing/scalping, RR…) abandonnaient la proposition ici sans
+                # laisser de ligne exploitable. C'est cette masse qui manquait
+                # a l'entonnoir : 471 decisions XAUUSD pour 111 refus traces.
+                # On emet une ligne par motif, avec un nom normalise, pour que
+                # la repartition par garde reste lisible.
+                for _raison in reasons:
+                    _nom = str(_raison).split(":")[0].split("(")[0].strip() or "amont"
+                    self._tracer_refus_amont("amont_%s" % _nom, _raison)
                 if confluence_components:
                     logger.info(
                         "[RISK] %s confluence breakdown=%s notes=%s",
