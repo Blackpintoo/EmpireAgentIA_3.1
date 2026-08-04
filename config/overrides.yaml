@@ -365,7 +365,17 @@ XAUUSD:
   orchestrator:
     # R19: MODE PROBATION TEMPORAIRE — 0% HR, -$1,276 sur 6 jours
     probation: true
-    allowed_directions: ["LONG"]          # R19: LONG only — SHORTs en volatilité macro = suicide
+    # 2026-08-04 : SHORT réautorisé, sur décision explicite.
+    # Mesure du 03/08 (marché ouvert, journée complète) : XAUUSD a produit
+    # 471 décisions, dont 348 SHORT (74 %). `direction_filter` a refusé
+    # 79 propositions, TOUTES avec le même motif ['LONG'] — c'est-à-dire
+    # SHORT proposé, SHORT interdit. Le symbole n'a exécuté aucun trade.
+    # La restriction R19 rejetait donc la direction majoritaire du signal.
+    # La contrepartie assumée : R19 l'avait posée après -$1 276 en 6 jours,
+    # et cette perte portait précisément sur des SHORTs. Le mode probation
+    # (min_score 6.5, votes 3, 2 trades/jour) reste en place pour encadrer
+    # la réouverture ; c'est lui qui limite l'exposition, pas la direction.
+    allowed_directions: ["LONG", "SHORT"]
     min_score_for_proposal: 6.5           # R19: relevé (score élevé requis)
     votes_required: 3                     # R19: 3 agents d'accord (moins strict que crypto car historiquement bon)
     max_trades_per_day: 2                 # R19: 2 trades/jour max (était 4)
