@@ -103,8 +103,17 @@ _STATE_PATH = os.path.join("data", "pm_state.json")
 _ABSENCES_AVANT_CLOTURE = int(os.environ.get("EMPIRE_PM_ABSENCES", "3") or 3)
 
 # FIX 2026-08-02 : nombre de cycles d'attente du deal MT5 avant d'ecrire quand
-# meme la ligne MFE, marquee non resolue (~5 min a 20 s de cycle).
-_MFE_ATTENTE_MAX_CYCLES = int(os.environ.get("EMPIRE_MFE_ATTENTE", "15") or 15)
+# meme la ligne MFE, marquee non resolue.
+#
+# FIX 2026-08-12 : 15 -> 90 cycles (~30 min a 20 s de cycle, au lieu de ~5 min).
+# Mesure sur 7 jours : 33 clotures, 44 abandons « aucun deal trouve apres
+# 15 cycles », 0 resolution. La cause premiere etait la lecture par fenetre
+# temporelle, corrigee par l'interrogation directe (_deals_du_ticket) ; cette
+# marge couvre le cas ou le broker publie le deal avec un retard superieur a
+# cinq minutes, qu'aucune mesure ne permet pour l'instant d'exclure. Le cout
+# d'attendre est une ligne ecrite plus tard ; le cout d'abandonner trop tot est
+# une ligne definitivement inexploitable.
+_MFE_ATTENTE_MAX_CYCLES = int(os.environ.get("EMPIRE_MFE_ATTENTE", "90") or 90)
 
 
 # FIX 2026-08-04 : ne retenir que les deals de SORTIE.
@@ -150,6 +159,55 @@ def _deals_de_sortie(deals, ticket) -> list:
         sortie.append(d)
     sortie.sort(key=lambda d: int(getattr(d, "time", 0) or 0))
     return sortie
+
+
+def _deals_du_ticket(ticket):
+    """
+    Deals rattaches a `ticket`, demandes DIRECTEMENT a MT5 par position.
+
+    FIX 2026-08-12. Le chemin precedent lisait une fenetre temporelle
+    (`history_deals_get(debut, fin)`) puis filtrait par `position_id`. Mesure
+    sur 7 jours de production : 33 clotures, 33 lignes ecrites en
+    `resolu=False`, 44 avertissements « aucun deal trouve apres 15 cycles » et
+    ZERO resolution reelle. La fenetre ne ramenait pas les deals de sortie —
+    le filtre, lui, etait correct (verifie sur 6 clotures rejouees).
+
+    `history_deals_get(position=...)` interroge l'historique du compte par
+    identifiant de position, sans fenetre : ni la duree de la position, ni
+    l'heure du serveur, ni la profondeur d'historique chargee dans le terminal
+    n'entrent plus en jeu.
+
+    Renvoie None (et non []) quand l'appel n'a pas pu aboutir, pour que
+    l'appelant distingue « MT5 muet » de « aucun deal ».
+    """
+    if mt5 is None:
+        return None
+    try:
+        deals = mt5.history_deals_get(position=int(ticket))
+    except Exception as err:
+        logger.debug("[PM] history_deals_get(position=%s) a echoue : %s", ticket, err)
+        return None
+    if deals is None:
+        return None
+    return list(deals)
+
+
+def _pnl_et_prix_sortie_par_ticket(ticket, deals_fenetre=None):
+    """
+    (pnl, prix_de_sortie, deals, origine) pour `ticket`.
+
+    Interroge d'abord MT5 par position ; a defaut seulement, retombe sur la
+    liste deja lue par fenetre temporelle. Le repli est conserve pour que le
+    correctif ne dependre pas d'une seule voie : si `position=` n'est pas
+    supporte par la version du terminal, on ne fait pas pire qu'avant.
+    """
+    directs = _deals_du_ticket(ticket)
+    if directs:
+        pnl, prix, sorties = _pnl_et_prix_sortie(directs, ticket)
+        if sorties:
+            return pnl, prix, sorties, "position_id"
+    pnl, prix, sorties = _pnl_et_prix_sortie(deals_fenetre or [], ticket)
+    return pnl, prix, sorties, ("fenetre" if sorties else "aucun")
 
 
 def _pnl_et_prix_sortie(deals, ticket):
@@ -849,12 +907,14 @@ class PositionManager:
             ctx = self._clotures_en_attente[tk]
             ctx["essais"] = ctx.get("essais", 0) + 1
             # FIX 2026-08-04 : seuls les deals de SORTIE resolvent une cloture.
-            pnl, px, tk_deals = _pnl_et_prix_sortie(deals, tk)
+            # FIX 2026-08-12 : interrogation directe par position_id.
+            pnl, px, tk_deals, _origine = _pnl_et_prix_sortie_par_ticket(tk, deals)
             if tk_deals and px is not None:
                 self._log_mfe_row(tk, ctx["side"], ctx["entry"], px, pnl,
                                   ctx["mfe"], ctx["mae"], ctx["st"], resolu=True)
                 logger.info("[PM] %s ticket=%s : P&L resolu apres %d cycle(s) "
-                            "-> %.2f", self.symbol_canon, tk, ctx["essais"], pnl or 0.0)
+                            "via %s -> %.2f", self.symbol_canon, tk,
+                            ctx["essais"], _origine, pnl or 0.0)
                 self._clotures_en_attente.pop(tk, None)
             elif ctx["essais"] >= _MFE_ATTENTE_MAX_CYCLES:
                 self._log_mfe_row(tk, ctx["side"], ctx["entry"], None, None,
@@ -1076,7 +1136,7 @@ class PositionManager:
                 # FIX 2026-08-04 : le P&L et le prix de cloture ne peuvent venir
                 # que des deals de SORTIE. Le deal d'ENTREE, publie des
                 # l'ouverture, portait un profit nul et le prix d'entree.
-                _pnl_sortie, px_close, tk_deals = _pnl_et_prix_sortie(deals, tk)
+                _pnl_sortie, px_close, tk_deals, _orig = _pnl_et_prix_sortie_par_ticket(tk, deals)
                 pnl = _pnl_sortie if _pnl_sortie is not None else 0.0
                 close_time = max((int(getattr(d, "time", 0) or 0) for d in tk_deals), default=None)
                 entry = float(prev[str(tk)].get("entry") or 0.0)
