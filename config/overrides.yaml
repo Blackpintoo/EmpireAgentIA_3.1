@@ -140,6 +140,31 @@ BTCUSD:
       max_positions: 6
       max_volume: 0.91                  # P2 2026-07-26: filet de securite (2x la taille cible 0.46 lot)
       max_net_volume: 0.05
+      # 2026-08-12 : plafond de volume exprimé en ARGENT plutôt qu'en lots.
+      #
+      # Mesure sur 5 ordres BTCUSD du 05/08 au 08/08 : lots figés à 0,91 (le
+      # plafond), risque engagé de 51,75 $ à 153,90 $ selon la distance de stop
+      # — soit 0,21x à 0,62x du budget de 250 $. En remontant au 03/08
+      # (49 264 points de stop), le même 0,91 lot valait 448,31 $, soit 1,79x.
+      # Le même plafond en lots produisait donc une exposition variant d'un
+      # facteur 9. Le dimensionnement demandait 7,6 lots pour consommer le
+      # budget ; le plafond le ramenait à 0,91 sans que le risque résultant ne
+      # soit recalculé.
+      #
+      # `max_volume_dynamique` fait porter le plafond sur le budget de risque :
+      # il s'élargit quand le stop se resserre, se resserre quand il s'écarte,
+      # et maintient le risque à ~250 $.
+      max_volume_dynamique: true
+      # Garde anti-emballement, en lots. À risque monétaire constant, un stop
+      # très serré ferait exploser le nombre de lots, donc le notionnel, le
+      # slippage et la marge. 5,0 lots couvrent les stops observés jusqu'à
+      # ~3 750 points (250 $ / 0,05 $ par point). CONTREPARTIE ASSUMÉE : à
+      # 5 lots le notionnel atteint ~320 000 $ pour ~99 500 $ d'équité, contre
+      # ~58 000 $ à 0,91 lot. Le risque AU STOP reste 250 $ ; c'est le risque
+      # de gap et le slippage qui augmentent. Valeur à réviser si ce notionnel
+      # est jugé trop élevé — le ratio sortira alors par le bas sur les stops
+      # les plus serrés, ce qui est visible dans [RISK_TRACE].
+      max_volume_absolu: 5.0
 
     news_filter:
       enabled: true

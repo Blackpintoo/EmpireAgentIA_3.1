@@ -82,6 +82,83 @@ def _round_step(value: float, step: float) -> float:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# AJOUT 2026-08-12 : plafond de volume exprime en ARGENT, pas en lots.
+#
+# Le defaut, mesure sur 5 ordres BTCUSD entre le 05/08 et le 08/08 :
+#
+#   date         distance de stop   lots   risque engage   ratio / budget 250 $
+#   05/08 08:06     16 912 pts      0.91      153.90 $           0.62x
+#   06/08 10:30      6 585 pts      0.91       59.92 $           0.24x
+#   08/08 19:30      5 686 pts      0.91       51.75 $           0.21x
+#
+# Les lots sont constants et le risque varie d'un facteur 3 — d'un facteur 9
+# si l'on remonte au 03/08 (49 264 pts, 448,31 $, 1,79x). Cause : le
+# dimensionnement demandait 7,6 lots pour consommer le budget, et le plafond
+# `max_volume: 0.91` le ramenait a 0,91 sans que personne ne recalcule le
+# risque resultant. Un plafond exprime en LOTS ne veut rien dire tant qu'on ne
+# connait pas la distance de stop : c'est le meme lot qui vaut 51 $ ou 448 $.
+#
+# Le plafond pertinent est donc monetaire. `plafond_lots_par_risque` renvoie le
+# nombre de lots dont la perte au stop consomme exactement le budget ; il
+# s'elargit quand le stop se resserre et se resserre quand le stop s'ecarte,
+# ce qui maintient le risque constant.
+#
+# Le garde anti-emballement reste necessaire : un stop tres serre ferait
+# exploser le nombre de lots (et donc le notionnel, le slippage et la marge)
+# a risque monetaire constant. Il est desormais explicite et distinct, sous
+# la cle `max_volume_absolu`.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def plafond_lots_par_risque(budget_usd: Optional[float],
+                            points_effectifs: float,
+                            valeur_point: float) -> Optional[float]:
+    """
+    Lots dont la perte au stop consomme exactement `budget_usd`.
+
+    None si le budget ou la distance ne permettent pas le calcul — l'appelant
+    doit alors conserver son plafond statique plutot que d'inventer un chiffre.
+    """
+    try:
+        perte_par_lot = float(points_effectifs) * float(valeur_point)
+    except (TypeError, ValueError):
+        return None
+    if perte_par_lot <= 0 or not budget_usd or float(budget_usd) <= 0:
+        return None
+    return float(budget_usd) / perte_par_lot
+
+
+def plafond_volume_effectif(budget_usd: Optional[float],
+                            points_effectifs: float,
+                            valeur_point: float,
+                            max_volume: float,
+                            max_volume_absolu: float = 0.0,
+                            dynamique: bool = False) -> Tuple[float, str]:
+    """
+    Plafond de volume a appliquer, et sa source.
+
+    `dynamique=False` (defaut) reproduit exactement l'ancien comportement :
+    le plafond statique `max_volume`. Les symboles qui n'ont pas explicitement
+    demande le mode monetaire ne changent donc pas de dimensionnement.
+
+    `dynamique=True` : plafond monetaire, borne par `max_volume_absolu`
+    (a defaut `max_volume`, ce qui revient a ne rien changer — la cle absolue
+    doit etre posee sciemment).
+    """
+    statique = float(max_volume or 0.0)
+    if not dynamique:
+        return statique, "max_volume"
+
+    absolu = float(max_volume_absolu or 0.0) or statique
+    par_risque = plafond_lots_par_risque(budget_usd, points_effectifs, valeur_point)
+    if par_risque is None:
+        return statique, "max_volume (budget indisponible)"
+
+    if absolu > 0 and par_risque > absolu:
+        return absolu, "max_volume_absolu"
+    return par_risque, "budget de risque"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # FIX 2026-02-20: Kill Switch Global (étape 2.1)
 # Stoppe TOUT le trading quand la perte journalière cumulée dépasse le seuil.
 # Inclut P&L réalisé ET flottant. Persisté dans data/daily_loss_state.json.
@@ -231,6 +308,16 @@ class RiskManager:
         self.slippage_out: float = float(broker_costs.get("slippage_points_exit", 0.0))
 
         risk_cfg = self.cfg.get("risk") or {}
+        # AJOUT 2026-08-12 : le plafond absolu par trade, jusqu'ici lu seulement
+        # par l'orchestrateur (bloc RISK_CAP), sert desormais aussi a calculer
+        # le plafond de volume. Sans lui, le dimensionnement visait 0,5 % de
+        # l'equite (~498 $) et l'orchestrateur redescendait ensuite a 250 $ :
+        # deux etages qui ne visaient pas la meme chose.
+        try:
+            self.max_risk_per_trade_usd: Optional[float] = float(
+                risk_cfg.get("max_risk_per_trade_usd", 0) or 0) or None
+        except (TypeError, ValueError):
+            self.max_risk_per_trade_usd = None
         self.daily_loss_limit_pct: float = float(risk_cfg.get("daily_loss_limit_pct", 0.02))
         self.max_consecutive_losses: int = int(risk_cfg.get("max_consecutive_losses", 3))
         self.reset_limits_daily: bool = bool(risk_cfg.get("reset_limits_daily", True))
@@ -320,22 +407,40 @@ class RiskManager:
             risk_budget = equity * self.risk_per_trade_pct * self._risk_scale_today
             point_value = max(self.point_value_per_lot, 1e-6)
 
-            lots = risk_budget / (effective_points * point_value)
+            # AJOUT 2026-08-12 : viser le budget EFFECTIF, le plus contraignant
+            # des deux (pourcentage du profil, plafond absolu par trade). Sans
+            # cela, cet etage visait ~498 $ et le bloc RISK_CAP de
+            # l'orchestrateur redescendait a 250 $ : le plafond de volume
+            # s'appliquait donc a des lots calcules pour un budget qui n'etait
+            # pas celui reellement vise.
+            budget_effectif = risk_budget
+            if self.max_risk_per_trade_usd and self.max_risk_per_trade_usd < risk_budget:
+                budget_effectif = self.max_risk_per_trade_usd
+
+            lots = budget_effectif / (effective_points * point_value)
             lots = _round_step(lots, self.lot_step)
             lots = max(self.min_lot, lots)
 
             # Plafond max_volume depuis position_limits (audit fev2026)
+            # 2026-08-12 : le plafond peut desormais etre monetaire (voir
+            # plafond_volume_effectif). Comportement inchange pour les symboles
+            # qui n'ont pas pose `max_volume_dynamique: true`.
             try:
-                max_vol = float(
-                    (self.profile.get("orchestrator") or {})
-                    .get("position_limits", {})
-                    .get("max_volume", 0)
+                _pl = ((self.profile.get("orchestrator") or {})
+                       .get("position_limits", {}) or {})
+                max_vol = float(_pl.get("max_volume", 0) or 0)
+                plafond, _source = plafond_volume_effectif(
+                    budget_effectif, effective_points, point_value,
+                    max_volume=max_vol,
+                    max_volume_absolu=float(_pl.get("max_volume_absolu", 0) or 0),
+                    dynamique=bool(_pl.get("max_volume_dynamique", False)),
                 )
-                if max_vol > 0 and lots > max_vol:
+                if plafond > 0 and lots > plafond:
                     logger.info(
-                        f"[RISK] {self.symbol}: lots {lots:.4f} plafonné à max_volume {max_vol}"
+                        f"[RISK] {self.symbol}: lots {lots:.4f} plafonné à "
+                        f"{plafond:.4f} (source={_source})"
                     )
-                    lots = min(lots, max_vol)
+                    lots = min(lots, plafond)
                     lots = _round_step(lots, self.lot_step)
                     if lots < self.min_lot:
                         logger.info(
@@ -344,6 +449,20 @@ class RiskManager:
                         return None
             except Exception:
                 pass
+
+            # AJOUT 2026-08-12 : refus explicite quand meme le lot minimum
+            # depasse le budget de plus de 25 %. Jusqu'ici un stop tres large
+            # sortait silencieusement de la fourchette par le bas du nombre de
+            # lots : `max(self.min_lot, lots)` reintroduisait du risque que
+            # personne ne mesurait.
+            risque_final = lots * effective_points * point_value
+            if budget_effectif > 0 and risque_final > 1.25 * budget_effectif:
+                logger.warning(
+                    "[RISK] %s: %.4f lot(s) engagent %.2f USD pour un budget de "
+                    "%.2f USD (%.2fx) — au-dela de la tolerance de 25 %%, trade "
+                    "refuse.", self.symbol, lots, risque_final, budget_effectif,
+                    risque_final / budget_effectif)
+                return None
 
             return lots
         except Exception as exc:
