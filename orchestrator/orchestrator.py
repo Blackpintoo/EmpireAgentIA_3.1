@@ -53,6 +53,7 @@ from utils.logger import logger
 from utils.rotation_jsonl import rouler_si_besoin
 from utils.tracabilite_agents import (
     resumer_news, resumer_sentiment, resumer_fundamental)
+from utils.pertinence_sentiment import sentiment_pertinent
 from utils.mt5_client import MT5Client
 from utils.performance_tracker import PerformancePoint, default_tracker, get_tracker_for_symbol
 from utils.risk_manager import RiskManager
@@ -5111,7 +5112,19 @@ class Orchestrator:
 
         def _run_sentiment() -> Dict[str, Any]:
             r: Dict[str, Any] = {"global": {}}
-            agent = load_agent("sentiment", "SentimentAgent") if agent_enabled("sentiment") else None
+            if not agent_enabled("sentiment"):
+                return r
+            # FIX 2026-08-16: SentimentAgent refuse tout symbole non crypto a son
+            # point d'entree (reason="non_crypto"). On chargeait pourtant l'agent
+            # et on l'appelait 1 fois en global + 1 fois par TF pour ne rien
+            # recolter, sur 11 symboles sur 12. On court-circuite, et surtout on
+            # ECRIT le motif au lieu de le taire.
+            pertinent, motif = sentiment_pertinent(symbol, agents_cfg)
+            if not pertinent:
+                r["tracabilite"] = {"sentiment": {"trend": "disabled",
+                                                  "reason": motif}}
+                return r
+            agent = load_agent("sentiment", "SentimentAgent")
             if not agent:
                 return r
             out_g = call_agent(agent, timeframe=None)
