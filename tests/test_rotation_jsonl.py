@@ -108,3 +108,50 @@ def test_lignes_jsonl_restent_lisibles_apres_rotation(tmp_path):
     for p in sorted(tmp_path.glob("s.jsonl*")):
         for ligne in p.read_text(encoding="utf-8").splitlines():
             json.loads(ligne)          # leve si une ligne a ete tronquee
+
+
+# --------------------------------------------------------- seuils reglables
+# AJOUT 2026-08-16 : ces tests couvrent le chemin REELLEMENT emprunte en
+# production — celui ou l'appelant ne passe aucun seuil. Les tests ci-dessus
+# les passaient tous explicitement et masquaient donc le defaut : les seuils
+# etaient figes a l'import et la rotation ne se declenchait jamais.
+
+def test_seuil_par_defaut_lu_a_chaque_appel(tmp_path, monkeypatch):
+    f = tmp_path / "s.jsonl"
+    f.write_text("z" * 5000, encoding="utf-8")
+
+    monkeypatch.setenv("EMPIRE_SNAP_MAX_MO", "50")
+    assert rouler_si_besoin(f) is False          # 5 ko < 50 Mo
+
+    monkeypatch.setenv("EMPIRE_SNAP_MAX_MO", "0")
+    monkeypatch.setattr("utils.rotation_jsonl.TAILLE_MAX_DEFAUT", 1024)
+    # 0 Mo -> valeur nulle, donc on retombe sur le comportement inerte
+    assert rouler_si_besoin(f) is False
+
+    monkeypatch.setenv("EMPIRE_SNAP_MAX_MO", "1")
+    f.write_bytes(b"x" * (2 * 1024 * 1024))
+    assert rouler_si_besoin(f) is True
+    assert (tmp_path / "s.jsonl.1").exists()
+
+
+def test_nombre_de_fichiers_conserves_reglable(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMPIRE_SNAP_MAX_MO", "1")
+    monkeypatch.setenv("EMPIRE_SNAP_CONSERVER", "1")
+    f = tmp_path / "s.jsonl"
+    for _ in range(4):
+        f.write_bytes(b"x" * (2 * 1024 * 1024))
+        rouler_si_besoin(f)
+    assert sorted(p.name for p in tmp_path.glob("s.jsonl*")) == ["s.jsonl.1"]
+
+
+@pytest.mark.parametrize("valeur", ["", "   ", "abc", "-5", None])
+def test_env_illisible_retombe_sur_le_defaut(tmp_path, monkeypatch, valeur):
+    if valeur is None:
+        monkeypatch.delenv("EMPIRE_SNAP_MAX_MO", raising=False)
+    else:
+        monkeypatch.setenv("EMPIRE_SNAP_MAX_MO", valeur)
+    f = tmp_path / "s.jsonl"
+    f.write_bytes(b"x" * 4096)
+    # defaut = 50 Mo : 4 ko ne declenche rien, et surtout aucune exception
+    assert rouler_si_besoin(f) is False
+    assert f.exists()

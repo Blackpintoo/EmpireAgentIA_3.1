@@ -36,29 +36,67 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 # 50 Mo par fichier, 3 fichiers conservés → 200 Mo au total, plafond dur.
 TAILLE_MAX_DEFAUT = 50 * 1024 * 1024
 CONSERVER_DEFAUT = 3
 
 
+def _depuis_env(nom: str, defaut: int) -> int:
+    """
+    Lit un entier d'environnement, en retombant sur le défaut si absurde.
+
+    FIX 2026-08-16 : la première version prenait un `facteur` qu'elle
+    n'appliquait QUE sur la valeur lue, pas sur le défaut. Sans variable
+    d'environnement, le seuil valait donc 50 octets au lieu de 50 Mo, et le
+    journal tournait à chaque écriture. Le facteur est désormais appliqué par
+    l'appelant, sur les deux branches à la fois.
+    """
+    try:
+        brut = os.environ.get(nom)
+        if brut is None or str(brut).strip() == "":
+            return defaut
+        v = int(float(str(brut).strip()))
+        return v if v >= 0 else defaut
+    except Exception:
+        return defaut
+
+
 def rouler_si_besoin(
     chemin: Union[str, Path],
-    taille_max: int = TAILLE_MAX_DEFAUT,
-    conserver: int = CONSERVER_DEFAUT,
+    taille_max: Optional[int] = None,
+    conserver: Optional[int] = None,
 ) -> bool:
     """
     Fait tourner `chemin` s'il dépasse `taille_max`.
 
     Renvoie True si une rotation a eu lieu, False sinon (y compris en cas
     d'erreur — l'appelant ne doit jamais avoir à s'en soucier).
+
+    FIX 2026-08-16 : les seuils sont lus À CHAQUE APPEL, depuis
+    `EMPIRE_SNAP_MAX_MO` et `EMPIRE_SNAP_CONSERVER`. La première version les
+    figeait comme valeurs par défaut de paramètres, donc évaluées une seule
+    fois à l'import : impossible à régler en exploitation, et impossible à
+    prouver en conditions réelles autrement qu'en écrivant 50 Mo. C'est la
+    vérification de bout en bout qui l'a fait apparaître, pas la suite de
+    tests — celle-ci passait les seuils explicitement et ne touchait donc
+    jamais au chemin réellement emprunté en production.
     """
     try:
+        if taille_max is None:
+            taille_max = _depuis_env(
+                "EMPIRE_SNAP_MAX_MO", TAILLE_MAX_DEFAUT // (1024 * 1024)
+            ) * 1024 * 1024
+        if conserver is None:
+            conserver = _depuis_env("EMPIRE_SNAP_CONSERVER", CONSERVER_DEFAUT)
+
         p = Path(chemin)
         if taille_max <= 0 or conserver < 0:
             return False
-        if not p.exists() or p.stat().st_size < taille_max:
+        # FIX 2026-08-16 : `is_file()` et pas `exists()`. Sur un repertoire,
+        # os.replace() reussit — la rotation aurait renomme le dossier.
+        if not p.is_file() or p.stat().st_size < taille_max:
             return False
 
         # Le plus ancien d'abord, sinon on écrase en cascade.
