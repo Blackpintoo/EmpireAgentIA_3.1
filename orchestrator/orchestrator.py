@@ -50,6 +50,7 @@ from utils.order_result import to_dict as order_res_dict, get as order_res_get
 from utils.position_manager import PositionManager  # type: ignore
 from utils.config import get_symbol_profile, get_enabled_symbols, is_symbol_active_now, load_config, reload_global_config
 from utils.logger import logger
+from utils.rotation_jsonl import rouler_si_besoin
 from utils.mt5_client import MT5Client
 from utils.performance_tracker import PerformancePoint, default_tracker, get_tracker_for_symbol
 from utils.risk_manager import RiskManager
@@ -1847,7 +1848,11 @@ class Orchestrator:
                 "indicators": {k: _serialize_value(v) for k, v in (indicators or {}).items()},
                 "market": _serialize_value(market or {}),
             }
-            with open(os.path.join("data", "agents_snap.jsonl"), "a", encoding="utf-8") as f:
+            chemin = os.path.join("data", "agents_snap.jsonl")
+            # FIX 2026-08-16: rotation. Ce fichier etait ouvert en ajout sans
+            # aucune borne et pesait 530 Mo. Plafond dur : 50 Mo x 4 fichiers.
+            rouler_si_besoin(chemin)
+            with open(chemin, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         except Exception as e:
             logger.warning(f"[LOG] agents_snap.jsonl erreur: {e}")
