@@ -50,6 +50,10 @@ from utils.order_result import to_dict as order_res_dict, get as order_res_get
 from utils.position_manager import PositionManager  # type: ignore
 from utils.config import get_symbol_profile, get_enabled_symbols, is_symbol_active_now, load_config, reload_global_config
 from utils.logger import logger
+from utils.rotation_jsonl import rouler_si_besoin
+from utils.tracabilite_agents import (
+    resumer_news, resumer_sentiment, resumer_fundamental)
+from utils.pertinence_sentiment import sentiment_pertinent
 from utils.mt5_client import MT5Client
 from utils.performance_tracker import PerformancePoint, default_tracker, get_tracker_for_symbol
 from utils.risk_manager import RiskManager
@@ -1109,6 +1113,9 @@ class Orchestrator:
         # --- Cache d'agents & proposition / contexte ---
         self._agents: Dict[str, Any] = {}
         self._agent_cache: Dict[str, Any] = {}  # cache instances agents (Part A perf)
+        # FIX 2026-08-16: dernier resume explicatif des agents API, ecrit
+        # dans data/agents_snap.jsonl. Ne participe a aucune decision.
+        self._tracabilite_agents: Dict[str, Any] = {}
         self.tracker = get_tracker_for_symbol(self.symbol)
         self._last_proposal: Optional[Dict[str, Any]] = None
         self._last_ctx: Optional[Dict[str, Any]] = None  # per_tf_signals / global_signals / indicators / market
@@ -1902,7 +1909,15 @@ class Orchestrator:
                 "indicators": {k: _serialize_value(v) for k, v in (indicators or {}).items()},
                 "market": _serialize_value(market or {}),
             }
-            with open(os.path.join("data", "agents_snap.jsonl"), "a", encoding="utf-8") as f:
+            # FIX 2026-08-16: le POURQUOI des agents news/sentiment/fundamental.
+            trc = getattr(self, "_tracabilite_agents", None)
+            if trc:
+                rec["agents_detail"] = _serialize_value(trc)
+            chemin = os.path.join("data", "agents_snap.jsonl")
+            # FIX 2026-08-16: rotation. Ce fichier etait ouvert en ajout sans
+            # aucune borne et pesait 530 Mo. Plafond dur : 50 Mo x 4 fichiers.
+            rouler_si_besoin(chemin)
+            with open(chemin, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         except Exception as e:
             logger.warning(f"[LOG] agents_snap.jsonl erreur: {e}")
@@ -4913,6 +4928,8 @@ class Orchestrator:
         swing_details: Dict[str, Dict[str, float]] = {}
         structure_details: Dict[str, Dict[str, float]] = {}
         whale_details: Dict[str, Dict[str, float]] = {}
+        # FIX 2026-08-16: resumes explicatifs des agents, pour le journal seul.
+        tracabilite: Dict[str, Any] = {}
 
         # --- Loader dynamique (utilise cache self._agent_cache) ---
         def load_agent(module_name: str, class_name: str):
@@ -5193,6 +5210,9 @@ class Orchestrator:
             out_g = call_agent(agent, timeframe=None)
             if isinstance(out_g, dict):
                 s = _norm(out_g.get("signal"))
+                # FIX 2026-08-16: on conserve le POURQUOI, pas seulement le sens.
+                # Journal de diagnostic uniquement — n'entre pas dans le vote.
+                r["tracabilite"] = {"news": resumer_news(out_g)}
             if s:
                 r["global"]["news"] = s
             if "news" not in r["global"]:
@@ -5211,12 +5231,26 @@ class Orchestrator:
 
         def _run_sentiment() -> Dict[str, Any]:
             r: Dict[str, Any] = {"global": {}}
-            agent = load_agent("sentiment", "SentimentAgent") if agent_enabled("sentiment") else None
+            if not agent_enabled("sentiment"):
+                return r
+            # FIX 2026-08-16: SentimentAgent refuse tout symbole non crypto a son
+            # point d'entree (reason="non_crypto"). On chargeait pourtant l'agent
+            # et on l'appelait 1 fois en global + 1 fois par TF pour ne rien
+            # recolter, sur 11 symboles sur 12. On court-circuite, et surtout on
+            # ECRIT le motif au lieu de le taire.
+            pertinent, motif = sentiment_pertinent(symbol, agents_cfg)
+            if not pertinent:
+                r["tracabilite"] = {"sentiment": {"trend": "disabled",
+                                                  "reason": motif}}
+                return r
+            agent = load_agent("sentiment", "SentimentAgent")
             if not agent:
                 return r
             out_g = call_agent(agent, timeframe=None)
             if isinstance(out_g, dict):
                 s = _norm(out_g.get("signal"))
+                # FIX 2026-08-16: cf. _run_news. Diagnostic uniquement.
+                r["tracabilite"] = {"sentiment": resumer_sentiment(out_g)}
                 if s:
                     r["global"]["sentiment"] = s
             if "sentiment" not in r["global"]:
@@ -5250,6 +5284,8 @@ class Orchestrator:
                 out_g = call_agent(agent, timeframe=None)
                 if isinstance(out_g, dict):
                     s = _norm(out_g.get("signal"))
+                    # FIX 2026-08-16: cf. _run_news. Diagnostic uniquement.
+                    r["tracabilite"] = {"fundamental": resumer_fundamental(out_g)}
                     if s:
                         r["global"]["fundamental"] = s
             return r
@@ -5440,6 +5476,14 @@ class Orchestrator:
             elif name == "whale":
                 whale_details.update(details)
 
+            # FIX 2026-08-16: tracabilite des agents API (news/sentiment/fundamental).
+            # Canal separe du vote : rien de ce qui suit n'atteint le score composite.
+            trc = res.get("tracabilite") or {}
+            if isinstance(trc, dict):
+                for _a, _d in trc.items():
+                    if _d:
+                        tracabilite[_a] = _d
+
             # market context
             mkt = res.get("market") or {}
             for mk, mv in mkt.items():
@@ -5470,6 +5514,11 @@ class Orchestrator:
             "atr": atr_ctx,
             "volatility_zscore": indicators.get("VOL_ZSCORE") or indicators.get("VOL_Z") or 0.0,
         }
+        # FIX 2026-08-16: depose hors de la valeur de retour, pour que la
+        # signature de _gather_agent_signals reste identique — le score
+        # composite et la direction agregee ne doivent rien voir de nouveau.
+        self._tracabilite_agents = tracabilite
+
         return per_tf_signals, global_signals, indicators, market
 
     def _compute_aggregate_direction(
