@@ -204,6 +204,152 @@ def main() -> int:
         e("    fin   : %s" % tous[-1][:19])
         e("    %d lignes" % len(tous))
 
+    # ---- 7. RISK_TRACE par symbole ---------------------------------------
+    # AJOUT 2026-08-17. La distorsion de risque etait etablie sur BTCUSD
+    # (1R ~487 USD au lieu de ~255). Question ouverte : le plafonnement
+    # max_volume produit-il le meme ecart ailleurs ?
+    e("")
+    e("## 7. RISK_TRACE PAR SYMBOLE  (distorsion de dimensionnement)")
+    rt = re.compile(
+        r"\[RISK_TRACE\] (\w+) (\w+): lots=(\S+) dist=([\d.]+) pts "
+        r"pip_value=([\d.]+) -> risque_engage=([\d.]+) USD \| budget=(\S+ USD|inconnu)"
+        r".*?ratio=([\d.]+)x")
+    par_sym_rt = collections.defaultdict(list)
+    erreurs_rt = collections.Counter()
+    for l in tous:
+        m = rt.search(l)
+        if m:
+            par_sym_rt[m.group(1)].append({
+                "sens": m.group(2), "lots": m.group(3),
+                "risque": float(m.group(6)), "ratio": float(m.group(8)),
+                "ts": l[:19],
+            })
+        elif "[RISK_TRACE]" in l and "vaut" in l:
+            ms = re.search(r"\[RISK_TRACE\] (\w+): le risque engage vaut ([\d.]+)x", l)
+            if ms:
+                erreurs_rt[ms.group(1)] += 1
+
+    if not par_sym_rt:
+        e("  Aucune ligne [RISK_TRACE] exploitable.")
+        e("  ATTENTION : [RISK_TRACE] n'est emis qu'APRES les gardes de session")
+        e("  et juste avant order_send. Un symbole bloque par session_filter")
+        e("  n'en produit AUCUNE — l'absence ne prouve donc rien sur ce symbole.")
+    else:
+        e("  %-9s %5s %10s %10s %10s %8s" % ("SYMBOLE", "n", "ratio_min",
+                                             "ratio_med", "ratio_max", "hors_[.75-1.25]"))
+        for sym in sorted(par_sym_rt, key=lambda s: -len(par_sym_rt[s])):
+            r = sorted(x["ratio"] for x in par_sym_rt[sym])
+            hors = sum(1 for x in r if x > 1.25 or x < 0.75)
+            e("  %-9s %5d %10.2f %10.2f %10.2f %8d" %
+              (sym, len(r), r[0], r[len(r) // 2], r[-1], hors))
+        e("")
+        e("  Lignes ERROR '[RISK_TRACE] ... vaut Nx le budget' par symbole :")
+        for sym, n in erreurs_rt.most_common():
+            e("    %-9s %d" % (sym, n))
+        e("")
+        e("  5 dernieres traces par symbole :")
+        for sym in sorted(par_sym_rt):
+            e("    --- %s ---" % sym)
+            for x in par_sym_rt[sym][-5:]:
+                e("      %s %-5s lots=%-6s risque=%8.2f USD ratio=%.2fx"
+                  % (x["ts"], x["sens"], x["lots"], x["risque"], x["ratio"]))
+
+    e("")
+    e("  Plafonnements max_volume observes (contexte du point 2) :")
+    cap = collections.Counter()
+    for l in tous:
+        m = re.search(r"\[RISK\] (\w+): Volume ([\d.]+) depasse limite "
+                      r"max_volume=([\d.]+)", l.replace("é", "e"))
+        if m:
+            cap[m.group(1)] += 1
+    for sym, n in cap.most_common():
+        avec_trace = len(par_sym_rt.get(sym, []))
+        e("    %-9s plafonne %3d fois | traces RISK_TRACE ensuite : %d" % (sym, n, avec_trace))
+    if not cap:
+        e("    aucun")
+
+    # ---- 8. tracabilite des agents en conditions reelles ------------------
+    # AJOUT 2026-08-17. Le champ agents_detail a ete valide en bac a sable ;
+    # ici on lit la FIN du vrai journal, sans le charger en entier.
+    e("")
+    e("## 8. TRACABILITE DES AGENTS  (agents_snap.jsonl)")
+    snap = Path("data/agents_snap.jsonl")
+    if not snap.exists():
+        e("  data/agents_snap.jsonl absent")
+    else:
+        taille = snap.stat().st_size
+        e("  taille : %.1f Mo" % (taille / 1024 / 1024))
+        _rot = sorted(p.name for p in Path("data").glob("agents_snap.jsonl.*"))
+        e("  rotation : %s" % (", ".join(_rot) if _rot else "aucun fichier .1/.2/.3"))
+        lignes_fin = []
+        try:
+            with snap.open("rb") as fh:
+                fh.seek(max(0, taille - 400_000))
+                lignes_fin = fh.read().decode("utf-8", "replace").splitlines()[1:]
+        except Exception as ex:
+            e("  lecture impossible : %s" % ex)
+        recs = []
+        for l in lignes_fin[-400:]:
+            try:
+                recs.append(json.loads(l))
+            except Exception:
+                continue
+        e("  %d enregistrement(s) lus en fin de fichier" % len(recs))
+        avec = [r for r in recs if r.get("agents_detail")]
+        e("  dont avec agents_detail : %d" % len(avec))
+        if recs:
+            e("  horodatage du plus recent : %s" % recs[-1].get("ts_utc"))
+        if not avec:
+            e("")
+            e("  Aucun agents_detail. Deux causes possibles, a departager par la")
+            e("  section 0 : soit le processus tourne encore l'ancien code (le")
+            e("  commit 5e9c6d7 n'est pas dans le HEAD affiche plus haut), soit il")
+            e("  a ete deploye mais le bot n'a pas ete redemarre depuis.")
+        else:
+            par_sym_tr = collections.Counter(r.get("symbol") for r in avec)
+            e("")
+            e("  Par symbole :")
+            for sym, n in par_sym_tr.most_common():
+                e("    %-9s %d" % (sym, n))
+            cles = collections.Counter()
+            motifs = collections.Counter()
+            for r in avec:
+                for agent, d in (r["agents_detail"] or {}).items():
+                    cles[agent] += 1
+                    if isinstance(d, dict) and d.get("reason"):
+                        motifs["%s:%s" % (agent, d["reason"])] += 1
+            e("")
+            e("  Par agent :")
+            for a, n in cles.most_common():
+                e("    %-12s %d" % (a, n))
+            e("")
+            e("  Motifs rencontres :")
+            for m, n in motifs.most_common(10):
+                e("    %-34s %d" % (m, n))
+            e("")
+            e("  3 derniers agents_detail (bruts) :")
+            for r in avec[-3:]:
+                e("    %s %-9s %s" % (r.get("ts_utc", "?")[:19], r.get("symbol"),
+                                      json.dumps(r["agents_detail"], ensure_ascii=False)[:400]))
+
+    # ---- 9. repetition des collectes news --------------------------------
+    e("")
+    e("## 9. REPETITION DES LIGNES [NEWS_SRC]")
+    ns = collections.defaultdict(list)
+    for l in tous:
+        m = re.search(r"\[NEWS_SRC\] (\w+): (\d+) sources, (\d+) bruts", l)
+        if m:
+            ns[m.group(1)].append((l[:19], m.group(2), m.group(3)))
+    for sym, v in sorted(ns.items(), key=lambda kv: -len(kv[1]))[:6]:
+        e("  %-9s %d ligne(s)" % (sym, len(v)))
+        for x in v[-4:]:
+            e("      %s  sources=%s bruts=%s" % x)
+    if ns:
+        e("")
+        e("  Lecture : des comptes 'bruts' IDENTIQUES d'une ligne a l'autre en")
+        e("  moins de 600 s indiquent un service par le cache de flux, pas un")
+        e("  nouvel appel reseau. Des comptes qui varient indiqueraient l'inverse.")
+
     cible.write_text("\n".join(out) + "\n", encoding="utf-8")
     print("Rapport ecrit : %s" % cible)
     print("Envoie ce fichier a Claude (ou dis-lui simplement qu'il est pret).")
