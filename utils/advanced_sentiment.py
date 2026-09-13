@@ -53,6 +53,50 @@ _SYMBOL_TO_COT_QUERY: Dict[str, str] = {
 }
 
 
+# FIX 2026-09-13 : convention de signe entre le future COT et la paire tradee.
+#
+# Le rapport COT porte sur UNE devise (ou UN metal), pas sur une paire. Pour
+# EURUSD, le future « EURO FX » suit la devise de BASE : des speculateurs longs
+# EUR, c'est EURUSD qui monte, l'axe coincide. Pour USDCAD, le future
+# « CANADIAN DOLLAR » suit la devise de COTATION : des speculateurs longs CAD,
+# c'est USDCAD qui BAISSE. L'axe est retourne.
+#
+# Rien ne traduisait cet ecart. `contrarian_signal`, calcule sur l'axe du
+# future, etait compare tel quel a la direction proposee sur la paire, dans
+# orchestrator.py (garde sentiment_extreme_against). Mesure sur guards.log du
+# 10 au 14 aout : le garde a bloque en continu les propositions SHORT USDCAD —
+# systematiquement "against:LONG", jamais l'inverse — alors que les
+# speculateurs etaient massivement SHORT le CAD. La lecture contrarienne
+# attendait donc un rebond du CAD, soit une BAISSE de USDCAD : elle soutenait
+# le SHORT que le garde eliminait. Le garde ne filtrait pas un trade risque, il
+# supprimait celui qu'il etait cense defendre.
+#
+# Regle : tous les futures de ce registre se negocient contre l'USD. Si l'USD
+# est la devise de BASE du symbole (USDCAD, USDJPY, USDCHF...), le future porte
+# donc sur la devise de COTATION et l'axe doit etre retourne. Sinon (EURUSD,
+# AUDUSD, XAUUSD...) il porte sur la base et l'axe coincide.
+#
+# La regle se deduit du symbole, pas d'une seconde table : un symbole ajoute
+# plus tard a _SYMBOL_TO_COT_QUERY est traite correctement sans autre geste.
+# Limite assumee : un croisement sans USD (EURGBP) sortirait de ce cadre — il
+# n'y en a aucun ici, et son future serait de toute facon ambigu.
+
+def axe_inverse(symbole: str) -> bool:
+    """Vrai si le future COT porte sur la devise de COTATION du symbole."""
+    try:
+        return str(symbole or "").upper().startswith("USD")
+    except Exception:
+        return False
+
+
+def _retourner(direction):
+    if direction == "LONG":
+        return "SHORT"
+    if direction == "SHORT":
+        return "LONG"
+    return direction
+
+
 # ── Dataclasses ──────────────────────────────────────────────────────────────
 
 @dataclass
@@ -603,6 +647,31 @@ class AdvancedSentimentAnalyzer:
                     result["contrarian_signal"] = "SHORT"
                 elif sr < self.config.extreme_short_threshold:
                     result["contrarian_signal"] = "LONG"
+
+            # FIX 2026-09-13 : tout ce qui precede est exprime sur l'axe du
+            # future COT. On le traduit ici, une fois, sur l'axe de la paire
+            # reellement tradee — c'est le seul endroit ou l'on dispose des
+            # trois grandeurs directionnelles a la fois. L'appelant (le garde
+            # sentiment_extreme_against) recoit donc des directions
+            # directement comparables a sa proposition.
+            #
+            # Le SCORE change de signe, pas d'amplitude : la question de sa
+            # renormalisation sur le forex sans funding est distincte et reste
+            # ouverte.
+            if axe_inverse(self.symbol):
+                result["signal"] = _retourner(result.get("signal"))
+                result["contrarian_signal"] = _retourner(result.get("contrarian_signal"))
+                result["institutional_bias"] = _retourner(result.get("institutional_bias"))
+                try:
+                    result["sentiment_score"] = -float(result.get("sentiment_score") or 0.0)
+                except Exception:
+                    pass
+                result["axe_traduit"] = True
+                result["details"]["axe"] = (
+                    "future COT sur la devise de cotation (%s) : sens retourne "
+                    "pour %s" % (_SYMBOL_TO_COT_QUERY.get(self.symbol, "?"), self.symbol))
+            else:
+                result["axe_traduit"] = False
 
             return result
 
