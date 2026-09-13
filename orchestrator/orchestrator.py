@@ -54,6 +54,7 @@ from utils.rotation_jsonl import rouler_si_besoin
 from utils.tracabilite_agents import (
     resumer_news, resumer_sentiment, resumer_fundamental)
 from utils.pertinence_sentiment import sentiment_pertinent
+from utils import journal_cycles as _jc
 from utils.mt5_client import MT5Client
 from utils.performance_tracker import PerformancePoint, default_tracker, get_tracker_for_symbol
 from utils.risk_manager import RiskManager
@@ -643,6 +644,12 @@ def _norm(sig: Optional[str]) -> str:
     return s if s in ("LONG", "SHORT") else ""
 
 def _record_guard_event(symbol: str, tag: str, message: str) -> None:
+    # AJOUT 2026-09-13 : on note le garde pour le journal de cycles. Passer par
+    # ce point unique evite de toucher a la vingtaine d'endroits qui refusent.
+    try:
+        _jc.noter_garde(symbol, tag)
+    except Exception:
+        pass
     try:
         logs_dir = pathlib.Path("logs")
         logs_dir.mkdir(parents=True, exist_ok=True)
@@ -3660,6 +3667,34 @@ class Orchestrator:
             return 0
 
     async def _run_agents_and_decide(self):
+        """
+        AJOUT 2026-09-13 : enveloppe de mesure. La decision elle-meme est
+        INTACTE dans _run_agents_and_decide_impl ; on se contente d'ouvrir un
+        collecteur avant, et d'ecrire une ligne apres.
+
+        Le `finally` est le coeur du dispositif : la methode de decision compte
+        une trentaine de `return` anticipes (cooldown, gardes quotidiens,
+        limites de position, marche ferme, EOD...). Sans lui, le journal ne
+        contiendrait a nouveau que les cycles « interessants », et reproduirait
+        exactement le biais de selection qu'on cherche a supprimer.
+
+        La valeur de retour est rendue telle quelle, exception comprise.
+        """
+        self._cycle = {
+            "symbole": self.symbol,
+            "ts_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        try:
+            return await self._run_agents_and_decide_impl()
+        finally:
+            try:
+                c = getattr(self, "_cycle", None) or {}
+                c.setdefault("garde", _jc.reprendre_garde(self.symbol))
+                _jc.ecrire(_jc.lignes_du_cycle(c, getattr(self, "tfs", None)))
+            except Exception:
+                pass
+
+    async def _run_agents_and_decide_impl(self):
         # === Cooldown guard ==========================================================
         if self._cooldown_active():
             try:
@@ -3958,6 +3993,17 @@ class Orchestrator:
 
             # 1) Collecte des signaux agents + indicateurs (+ hints SL/TP/PRICE)
             per_tf_signals, global_signals, indicators, market = await self._gather_agent_signals(symbol)
+            # AJOUT 2026-09-13 : transcription pour le journal de cycles.
+            # Purement additif — rien ici n'est relu par la chaine de decision.
+            try:
+                self._cycle.update({
+                    "per_tf_signals": per_tf_signals,
+                    "global_signals": global_signals,
+                    "indicators": indicators,
+                    "px": (market or {}).get("price"),
+                })
+            except Exception:
+                pass
 
             # Sauvegarde pour dashboard live
             self.save_signals_to_json(symbol, global_signals)
@@ -3994,6 +4040,14 @@ class Orchestrator:
             direction, score_agr, confluence, _details = self._compute_aggregate_direction(
                 per_tf_signals, global_signals, indicators
             )
+            # AJOUT 2026-09-13 : transcription pour le journal de cycles.
+            try:
+                _sl, _ss = getattr(self, "_derniers_scores_ls", (None, None))
+                self._cycle.update({"direction": direction or "WAIT",
+                                    "score_L": _sl, "score_S": _ss,
+                                    "confluence": confluence})
+            except Exception:
+                pass
             regime_label, tracker_input = self._build_tracker_signals(per_tf_signals, global_signals)
 
             # FIX 2026-03-23 R15: Log décision finale
@@ -5694,6 +5748,15 @@ class Orchestrator:
 
         # FIX 2026-02-24: Cap confluence relevé 5.0→8.0 (le HARD_MIN est à 5, cap=5 rendait le filtre binaire)
         confluence = min(confluence, 8.0)
+
+        # AJOUT 2026-09-13 : score_long et score_short sont locaux et ne sont
+        # pas renvoyes. On les depose sur l'instance pour le journal de cycles,
+        # PLUTOT que de les ajouter a `details` : la valeur de retour de
+        # l'agregation reste ainsi identique au caractere pres.
+        try:
+            self._derniers_scores_ls = (float(score_long), float(score_short))
+        except Exception:
+            self._derniers_scores_ls = (None, None)
 
         return direction, float(score_agr), float(confluence), details
     def _estimate_rr(self, proposal: Optional[Dict[str, Any]]) -> Optional[float]:
