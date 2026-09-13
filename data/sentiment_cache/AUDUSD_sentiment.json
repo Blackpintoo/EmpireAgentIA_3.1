@@ -1,16 +1,16 @@
 {
-  "timestamp": "2026-04-17T19:24:48.860192+00:00",
+  "timestamp": "2026-09-11T19:32:01.167011+00:00",
   "symbol": "AUDUSD",
   "cot": {
-    "report_date": "2026-04-07T00:00:00+00:00",
-    "commercial_long": 81872,
-    "commercial_short": 179219,
-    "commercial_net": -97347,
-    "noncommercial_long": 137959,
-    "noncommercial_short": 67146,
-    "noncommercial_net": 70813,
-    "open_interest": 264658,
-    "noncommercial_net_change": -10693,
-    "commercial_net_change": 11694
+    "report_date": "2026-09-01T00:00:00+00:00",
+    "commercial_long": 235152,
+    "commercial_short": 216342,
+    "commercial_net": 18810,
+    "noncommercial_long": 114105,
+    "noncommercial_short": 153511,
+    "noncommercial_net": -39406,
+    "open_interest": 391678,
+    "noncommercial_net_change": 5049,
+    "commercial_net_change": -264
   }
 }

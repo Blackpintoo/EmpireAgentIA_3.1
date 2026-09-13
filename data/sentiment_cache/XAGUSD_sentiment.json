@@ -1,9 +1,16 @@
 {
-  "timestamp": "2025-12-24T17:13:27.635749+00:00",
+  "timestamp": "2026-09-11T19:30:13.656465+00:00",
   "symbol": "XAGUSD",
-  "retail": {
-    "long_percentage": 46.0,
-    "short_percentage": 54.0,
-    "source": "simulated"
+  "cot": {
+    "report_date": "2026-09-01T00:00:00+00:00",
+    "commercial_long": 31424,
+    "commercial_short": 76704,
+    "commercial_net": -45280,
+    "noncommercial_long": 35403,
+    "noncommercial_short": 8664,
+    "noncommercial_net": 26739,
+    "open_interest": 104362,
+    "noncommercial_net_change": 1478,
+    "commercial_net_change": -227
   }
 }

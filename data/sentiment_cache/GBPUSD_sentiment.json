@@ -1,9 +1,16 @@
 {
-  "timestamp": "2025-12-26T15:24:22.720056+00:00",
+  "timestamp": "2026-09-11T19:35:36.138746+00:00",
   "symbol": "GBPUSD",
-  "retail": {
-    "long_percentage": 37.0,
-    "short_percentage": 63.0,
-    "source": "simulated"
+  "cot": {
+    "report_date": "2026-09-01T00:00:00+00:00",
+    "commercial_long": 17891,
+    "commercial_short": 25819,
+    "commercial_net": -7928,
+    "noncommercial_long": 8912,
+    "noncommercial_short": 8293,
+    "noncommercial_net": 619,
+    "open_interest": 40451,
+    "noncommercial_net_change": 631,
+    "commercial_net_change": -220
   }
 }

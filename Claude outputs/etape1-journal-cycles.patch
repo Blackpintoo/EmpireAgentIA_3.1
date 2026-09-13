@@ -1,0 +1,862 @@
+From 56f1ab6e68f8ff457ab82f678303b5825248f56d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sun, 13 Sep 2026 10:41:01 +0000
+Subject: [PATCH] feat(mesure): journal de cycles inconditionnel, pour rendre
+ l'edge mesurable
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+agents_snap.jsonl n'est ecrit qu'APRES qu'une direction a ete decidee :
+context="executed" rejoue le contexte qui a produit un ordre, context=
+"proposed" n'existe qu'une fois une proposition formee. Mesure du 13/09 sur
+les 33 trades appariables : 0 vote « contre », 0 « WAIT », sur les cinq
+agents. Le fichier est conditionne sur l'accord des agents — une selection sur
+la variable expliquee. Aucune mesure de pouvoir predictif n'y survit.
+
+Ce journal ecrit une ligne par cycle ET par timeframe, quel que soit le sort du
+cycle : proposition, WAIT, refus par un garde, sortie anticipee, exception.
+
+Mecanique. _run_agents_and_decide devient une enveloppe de trois lignes
+utiles ; le corps intact est renomme _run_agents_and_decide_impl. Le `finally`
+est le coeur du dispositif : la methode de decision compte une trentaine de
+`return` anticipes (cooldown, gardes quotidiens, limites de position, marche
+ferme, EOD). Sans lui, le journal ne contiendrait a nouveau que les cycles
+« interessants » et reproduirait le biais qu'on supprime.
+
+Neutralite. Diff de 63 insertions et 0 suppression sur l'orchestrateur. Le
+resultat de la decision traverse l'enveloppe sans etre touche, exception
+comprise — huit valeurs de retour verrouillees par test, plus la propagation
+d'exception a l'identique. score_long/score_short sont deposes sur l'instance
+plutot qu'ajoutes a `details`, pour que la valeur de retour de l'agregation
+reste identique au caractere pres. Un test interdit que la decision RELISE
+self._cycle.
+
+Format. CSV et non JSONL : 75 octets par ligne contre 142 en JSONL positionnel
+et 250 en verbeux. A 12 symboles x 3 TF x 720 cycles/jour, 1,94 Mo/jour contre
+3,68 et 6,48. Le contenu est strictement tabulaire, le CSV ne perd donc rien.
+Rotation 48 Mo x 4 = 192 Mo, soit ~99 jours a 7j/7 et ~139 a 5j/7 : l'objectif
+de 90 jours tient sous l'hypothese la plus defavorable. agents_snap.jsonl ne
+change pas.
+
+Prix de reference. Le close par TF n'existe nulle part dans ce que le cycle a
+deja calcule (market ne porte qu'un prix instantane, indicators que des ATR).
+L'obtenir exigerait un appel MT5, ce que la consigne interdit. On ecrit donc le
+prix a l'instant de la decision et l'ATR du TF — tous deux deja calcules, et
+preferables pour un contrefactuel : on veut le prix au moment du vote, et l'ATR
+donne l'echelle pour normaliser en R.
+
+Le garde bloquant est capte dans _record_guard_event, point de passage unique,
+plutot qu'aux vingt endroits qui refusent.
+
+41 tests. Suite isolee : 337 passed, 2 skipped, 2 xfailed (base 296/2/2).
+Echantillon reel de 48 cycles simules a travers la VRAIE enveloppe : WAIT sans
+aucun vote, desaccords sur 68,8 % des lignes, agents absents, trois gardes
+bloquants — les quatre controles d'inconditionnalite passent.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01HDZb3tfUng6RZLxmoY4h9V
+---
+ orchestrator/orchestrator.py |  63 +++++++++
+ tests/test_journal_cycles.py | 264 +++++++++++++++++++++++++++++++++++
+ tools/rapport_cycles.py      | 170 ++++++++++++++++++++++
+ utils/journal_cycles.py      | 230 ++++++++++++++++++++++++++++++
+ 4 files changed, 727 insertions(+)
+ create mode 100644 tests/test_journal_cycles.py
+ create mode 100644 tools/rapport_cycles.py
+ create mode 100644 utils/journal_cycles.py
+
+diff --git a/orchestrator/orchestrator.py b/orchestrator/orchestrator.py
+index 4a25646..93b9ce6 100644
+--- a/orchestrator/orchestrator.py
++++ b/orchestrator/orchestrator.py
+@@ -54,6 +54,7 @@ from utils.rotation_jsonl import rouler_si_besoin
+ from utils.tracabilite_agents import (
+     resumer_news, resumer_sentiment, resumer_fundamental)
+ from utils.pertinence_sentiment import sentiment_pertinent
++from utils import journal_cycles as _jc
+ from utils.mt5_client import MT5Client
+ from utils.performance_tracker import PerformancePoint, default_tracker, get_tracker_for_symbol
+ from utils.risk_manager import RiskManager
+@@ -643,6 +644,12 @@ def _norm(sig: Optional[str]) -> str:
+     return s if s in ("LONG", "SHORT") else ""
+ 
+ def _record_guard_event(symbol: str, tag: str, message: str) -> None:
++    # AJOUT 2026-09-13 : on note le garde pour le journal de cycles. Passer par
++    # ce point unique evite de toucher a la vingtaine d'endroits qui refusent.
++    try:
++        _jc.noter_garde(symbol, tag)
++    except Exception:
++        pass
+     try:
+         logs_dir = pathlib.Path("logs")
+         logs_dir.mkdir(parents=True, exist_ok=True)
+@@ -3660,6 +3667,34 @@ class Orchestrator:
+             return 0
+ 
+     async def _run_agents_and_decide(self):
++        """
++        AJOUT 2026-09-13 : enveloppe de mesure. La decision elle-meme est
++        INTACTE dans _run_agents_and_decide_impl ; on se contente d'ouvrir un
++        collecteur avant, et d'ecrire une ligne apres.
++
++        Le `finally` est le coeur du dispositif : la methode de decision compte
++        une trentaine de `return` anticipes (cooldown, gardes quotidiens,
++        limites de position, marche ferme, EOD...). Sans lui, le journal ne
++        contiendrait a nouveau que les cycles « interessants », et reproduirait
++        exactement le biais de selection qu'on cherche a supprimer.
++
++        La valeur de retour est rendue telle quelle, exception comprise.
++        """
++        self._cycle = {
++            "symbole": self.symbol,
++            "ts_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
++        }
++        try:
++            return await self._run_agents_and_decide_impl()
++        finally:
++            try:
++                c = getattr(self, "_cycle", None) or {}
++                c.setdefault("garde", _jc.reprendre_garde(self.symbol))
++                _jc.ecrire(_jc.lignes_du_cycle(c, getattr(self, "tfs", None)))
++            except Exception:
++                pass
++
++    async def _run_agents_and_decide_impl(self):
+         # === Cooldown guard ==========================================================
+         if self._cooldown_active():
+             try:
+@@ -3958,6 +3993,17 @@ class Orchestrator:
+ 
+             # 1) Collecte des signaux agents + indicateurs (+ hints SL/TP/PRICE)
+             per_tf_signals, global_signals, indicators, market = await self._gather_agent_signals(symbol)
++            # AJOUT 2026-09-13 : transcription pour le journal de cycles.
++            # Purement additif — rien ici n'est relu par la chaine de decision.
++            try:
++                self._cycle.update({
++                    "per_tf_signals": per_tf_signals,
++                    "global_signals": global_signals,
++                    "indicators": indicators,
++                    "px": (market or {}).get("price"),
++                })
++            except Exception:
++                pass
+ 
+             # Sauvegarde pour dashboard live
+             self.save_signals_to_json(symbol, global_signals)
+@@ -3994,6 +4040,14 @@ class Orchestrator:
+             direction, score_agr, confluence, _details = self._compute_aggregate_direction(
+                 per_tf_signals, global_signals, indicators
+             )
++            # AJOUT 2026-09-13 : transcription pour le journal de cycles.
++            try:
++                _sl, _ss = getattr(self, "_derniers_scores_ls", (None, None))
++                self._cycle.update({"direction": direction or "WAIT",
++                                    "score_L": _sl, "score_S": _ss,
++                                    "confluence": confluence})
++            except Exception:
++                pass
+             regime_label, tracker_input = self._build_tracker_signals(per_tf_signals, global_signals)
+ 
+             # FIX 2026-03-23 R15: Log décision finale
+@@ -5695,6 +5749,15 @@ class Orchestrator:
+         # FIX 2026-02-24: Cap confluence relevé 5.0→8.0 (le HARD_MIN est à 5, cap=5 rendait le filtre binaire)
+         confluence = min(confluence, 8.0)
+ 
++        # AJOUT 2026-09-13 : score_long et score_short sont locaux et ne sont
++        # pas renvoyes. On les depose sur l'instance pour le journal de cycles,
++        # PLUTOT que de les ajouter a `details` : la valeur de retour de
++        # l'agregation reste ainsi identique au caractere pres.
++        try:
++            self._derniers_scores_ls = (float(score_long), float(score_short))
++        except Exception:
++            self._derniers_scores_ls = (None, None)
++
+         return direction, float(score_agr), float(confluence), details
+     def _estimate_rr(self, proposal: Optional[Dict[str, Any]]) -> Optional[float]:
+         try:
+diff --git a/tests/test_journal_cycles.py b/tests/test_journal_cycles.py
+new file mode 100644
+index 0000000..65efd3f
+--- /dev/null
++++ b/tests/test_journal_cycles.py
+@@ -0,0 +1,264 @@
++# -*- coding: utf-8 -*-
++"""
++Journal de cycles : une ligne par cycle, quoi qu'il arrive.
++
++AJOUT 2026-09-13.
++
++Ce qui doit etre prouve
++-----------------------
++1. Une ligne est ecrite pour un cycle qui finit en WAIT, et pour un cycle
++   refuse par un garde — c'est-a-dire sur les chemins ou agents_snap.jsonl
++   n'ecrit rien, et donc precisement ceux qui manquaient a la mesure.
++2. La valeur de retour de la decision est identique avec et sans l'ecriture.
++   L'enveloppe de mesure ne doit rien changer au comportement.
++"""
++import inspect
++
++import pytest
++
++from utils import journal_cycles as jc
++
++
++# ------------------------------------------------------------ encodage
++@pytest.mark.parametrize("entree,attendu", [
++    ("LONG", "L"), ("SHORT", "S"), ("WAIT", "W"), ("long", "L"),
++    (None, "-"), ("", "-"), ("NEUTRAL", "W"), (0, "W"),
++])
++def test_code_vote(entree, attendu):
++    assert jc.code_vote(entree) == attendu
++
++
++def test_votes_positionnels_dans_l_ordre_fige():
++    ptf = {"structure": {"H1": "LONG"}, "smc": {"H1": "SHORT"},
++           "swing": {"H1": "WAIT"}, "technical": {"M5": "LONG"}}
++    gl = {"news": "SHORT"}
++    # ordre : structure, smc, swing, technical, scalping, news
++    assert jc.votes_du_tf(ptf, gl, "H1") == "LSW--S"
++    assert jc.votes_du_tf(ptf, gl, "M5") == "---L-S"
++
++
++def test_agent_absent_marque_tiret_pas_wait():
++    """
++    Distinction essentielle a la mesure : un agent qui n'a pas vote n'est pas
++    un agent qui a vote WAIT. Les confondre effacerait le contraste
++    present/absent, le seul exploitable aujourd'hui.
++    """
++    assert jc.votes_du_tf({}, {}, "H1") == "------"
++    assert jc.votes_du_tf({"structure": {"H1": "WAIT"}}, {}, "H1") == "W-----"
++
++
++@pytest.mark.parametrize("ptf,gl", [
++    (None, None), ("pas un dict", []), ({"structure": "pas un dict"}, {}),
++])
++def test_votes_ne_levent_jamais(ptf, gl):
++    assert len(jc.votes_du_tf(ptf, gl, "H1")) == len(jc.AGENTS)
++
++
++# ------------------------------------------------------------ lignes
++def _cycle(**kw):
++    base = {"symbole": "NAS100", "ts_utc": "2026-09-13T10:06:19+00:00",
++            "per_tf_signals": {"structure": {"H1": "LONG"}},
++            "global_signals": {"news": "LONG"},
++            "indicators": {"ATR_H1": 18.7, "ATR_M15": 9.2},
++            "px": 25549.5, "score_L": 3.42, "score_S": 1.1,
++            "confluence": 4.5, "direction": "LONG"}
++    base.update(kw)
++    return base
++
++
++def test_une_ligne_par_timeframe():
++    lignes = jc.lignes_du_cycle(_cycle(), ["H1", "M15", "M5"])
++    assert len(lignes) == 3
++    assert [l[2] for l in lignes] == ["H1", "M15", "M5"]
++    assert lignes[0][10] == "18.700"        # ATR du TF
++    assert lignes[2][10] == ""              # pas d'ATR_M5 -> vide, pas 0
++
++
++def test_cycle_en_wait_produit_quand_meme_des_lignes():
++    """Le cas que agents_snap.jsonl n'enregistre jamais."""
++    lignes = jc.lignes_du_cycle(
++        _cycle(direction="WAIT", score_L=1.0, score_S=1.0), ["H1", "M15"])
++    assert len(lignes) == 2
++    assert all(l[7] == "W" for l in lignes)
++
++
++def test_cycle_refuse_par_un_garde_produit_des_lignes():
++    lignes = jc.lignes_du_cycle(
++        _cycle(direction="WAIT", garde="session_filter"), ["H1"])
++    assert len(lignes) == 1
++    assert lignes[0][8] == "session_filter"
++
++
++def test_cycle_sorti_avant_tout_vote():
++    """Cooldown ou garde quotidien : aucun agent n'a tourne."""
++    lignes = jc.lignes_du_cycle(
++        {"symbole": "SP500", "ts_utc": "2026-09-13T10:00:00+00:00",
++         "garde": "daily-stop-flag"}, ["H1", "M15", "M5"])
++    assert len(lignes) == 3
++    assert all(l[3] == "------" for l in lignes)
++    assert all(l[8] == "daily-stop-flag" for l in lignes)
++
++
++def test_virgules_et_sauts_de_ligne_neutralises():
++    """Un nom de garde exotique ne doit pas casser le CSV."""
++    l = jc.lignes_du_cycle(_cycle(garde="a,b\nc"), ["H1"])[0]
++    assert "," not in l[8] and "\n" not in l[8]
++
++
++@pytest.mark.parametrize("cycle", [None, {}, "pas un dict", 42])
++def test_lignes_ne_levent_jamais(cycle):
++    assert isinstance(jc.lignes_du_cycle(cycle, ["H1"]), list)
++
++
++# ------------------------------------------------------------ ecriture
++def test_ecriture_entete_une_seule_fois(tmp_path):
++    p = tmp_path / "cycles.csv"
++    jc.ecrire(jc.lignes_du_cycle(_cycle(), ["H1"]), chemin=p)
++    jc.ecrire(jc.lignes_du_cycle(_cycle(), ["H1", "M15"]), chemin=p)
++    lignes = p.read_text(encoding="utf-8").strip().splitlines()
++    assert lignes[0] == ",".join(jc.COLONNES)
++    assert len(lignes) == 4
++    assert sum(1 for l in lignes if l.startswith("ts_utc")) == 1
++
++
++def test_chaque_ligne_a_le_bon_nombre_de_colonnes(tmp_path):
++    p = tmp_path / "cycles.csv"
++    jc.ecrire(jc.lignes_du_cycle(_cycle(garde="rr_blocked"), ["H1", "M15"]), chemin=p)
++    for l in p.read_text(encoding="utf-8").strip().splitlines():
++        assert len(l.split(",")) == len(jc.COLONNES)
++
++
++def test_ecriture_impossible_ne_leve_pas(tmp_path):
++    assert jc.ecrire(jc.lignes_du_cycle(_cycle(), ["H1"]), chemin=tmp_path) == 0
++    assert jc.ecrire([], chemin=tmp_path / "x.csv") == 0
++
++
++def test_rotation_bornee(tmp_path, monkeypatch):
++    p = tmp_path / "cycles.csv"
++    monkeypatch.setattr(jc, "TAILLE_MAX", 4096)
++    monkeypatch.setattr(jc, "CONSERVER", 2)
++    for _ in range(400):
++        jc.ecrire(jc.lignes_du_cycle(_cycle(), ["H1", "M15", "M5"]), chemin=p)
++    fichiers = list(tmp_path.glob("cycles.csv*"))
++    assert len(fichiers) <= 3
++    assert sum(f.stat().st_size for f in fichiers) <= 3 * (4096 + 4096)
++
++
++# ------------------------------------------------------------ garde
++def test_garde_note_puis_repris_une_seule_fois():
++    jc.noter_garde("EURUSD", "session_filter")
++    assert jc.reprendre_garde("EURUSD") == "session_filter"
++    assert jc.reprendre_garde("EURUSD") == ""       # efface apres lecture
++
++
++def test_garde_cloisonne_par_symbole():
++    jc.noter_garde("SP500", "rr_blocked")
++    jc.noter_garde("NAS100", "daily_loss_limit")
++    assert jc.reprendre_garde("SP500") == "rr_blocked"
++    assert jc.reprendre_garde("NAS100") == "daily_loss_limit"
++
++
++# ------------------------------------ l'enveloppe ne change pas la decision
++class _FauxOrchestrateur:
++    """Le strict minimum pour exercer la vraie enveloppe."""
++    symbol = "NAS100"
++    tfs = ["H1", "M15", "M5"]
++
++    def __init__(self, resultat=None, leve=None):
++        self._resultat, self._leve = resultat, leve
++        self.appels = 0
++
++    async def _run_agents_and_decide_impl(self):
++        self.appels += 1
++        if self._leve:
++            raise self._leve
++        return self._resultat
++
++
++def _enveloppe():
++    from orchestrator.orchestrator import Orchestrator
++    return Orchestrator._run_agents_and_decide
++
++
++@pytest.mark.parametrize("valeur", [None, True, False, 0, "", "LONG", {"a": 1}, [1, 2]])
++def test_valeur_de_retour_rendue_telle_quelle(valeur, tmp_path, monkeypatch):
++    """
++    Meme methode qu'en aout pour la tracabilite : on verrouille que la mesure
++    est transparente. Le resultat de la decision traverse l'enveloppe sans
++    etre touche.
++    """
++    import asyncio
++    monkeypatch.setattr(jc, "chemin_journal", lambda: tmp_path / "cycles.csv")
++    o = _FauxOrchestrateur(resultat=valeur)
++    obtenu = asyncio.run(_enveloppe()(o))
++    assert obtenu is valeur or obtenu == valeur
++    assert o.appels == 1
++
++
++def test_exception_de_la_decision_propagee_intacte(tmp_path, monkeypatch):
++    import asyncio
++    monkeypatch.setattr(jc, "chemin_journal", lambda: tmp_path / "cycles.csv")
++    boum = RuntimeError("panne MT5")
++    o = _FauxOrchestrateur(leve=boum)
++    with pytest.raises(RuntimeError) as e:
++        asyncio.run(_enveloppe()(o))
++    assert e.value is boum
++    # et la ligne est ecrite malgre l'exception
++    assert (tmp_path / "cycles.csv").exists()
++
++
++def test_ligne_ecrite_meme_sur_sortie_anticipee(tmp_path, monkeypatch):
++    """
++    Le coeur du dispositif : la methode de decision compte une trentaine de
++    `return` anticipes. Le `finally` doit ecrire pour chacun.
++    """
++    import asyncio
++    p = tmp_path / "cycles.csv"
++    monkeypatch.setattr(jc, "chemin_journal", lambda: p)
++    o = _FauxOrchestrateur(resultat=None)       # sortie immediate, aucun vote
++    asyncio.run(_enveloppe()(o))
++    lignes = p.read_text(encoding="utf-8").strip().splitlines()
++    assert len(lignes) == 1 + len(o.tfs)
++    for l in lignes[1:]:
++        ch = l.split(",")
++        assert ch[1] == "NAS100"
++        assert ch[3] == "------"                 # aucun agent n'a vote
++        assert ch[7] == "W"
++
++
++def test_echec_d_ecriture_ne_casse_pas_le_cycle(tmp_path, monkeypatch):
++    """Un journal en panne ne doit jamais interrompre une decision."""
++    import asyncio
++
++    def _boum(*a, **k):
++        raise OSError("disque plein")
++
++    monkeypatch.setattr(jc, "ecrire", _boum)
++    o = _FauxOrchestrateur(resultat="LONG")
++    assert asyncio.run(_enveloppe()(o)) == "LONG"
++
++
++def test_agregation_renvoie_toujours_le_meme_quadruplet():
++    """
++    Garde-fou architectural : score_long/score_short sont deposes sur
++    l'instance, jamais ajoutes a la valeur de retour de l'agregation.
++    """
++    from orchestrator.orchestrator import Orchestrator
++    src = inspect.getsource(Orchestrator._compute_aggregate_direction)
++    retours = [l.strip() for l in src.splitlines()
++               if l.startswith(" " * 8) and l[8:].startswith("return ")]
++    assert retours == ["return direction, float(score_agr), float(confluence), details"]
++    assert "self._derniers_scores_ls" in src
++
++
++def test_journal_absent_de_la_chaine_de_decision():
++    """
++    Rien de ce que le journal ecrit ne doit etre relu par la decision : on
++    verifie qu'aucune ligne ne lit self._cycle en dehors de l'enveloppe.
++    """
++    from orchestrator.orchestrator import Orchestrator
++    src = inspect.getsource(Orchestrator._run_agents_and_decide_impl)
++    for ligne in src.splitlines():
++        if "self._cycle" in ligne and not ligne.strip().startswith("#"):
++            assert ".update(" in ligne, (
++                "self._cycle est LU par la decision : %s" % ligne.strip())
+diff --git a/tools/rapport_cycles.py b/tools/rapport_cycles.py
+new file mode 100644
+index 0000000..24d29c2
+--- /dev/null
++++ b/tools/rapport_cycles.py
+@@ -0,0 +1,170 @@
++# -*- coding: utf-8 -*-
++"""
++tools/rapport_cycles.py — lire data/compte_<n>/cycles.csv.
++
++AJOUT 2026-09-13.
++
++Sert d'abord a VERIFIER que le journal est bien inconditionnel : si le nombre
++de cycles par symbole s'approche de 720 par jour de cotation, et si la
++repartition des votes contient des WAIT, des desaccords et des agents absents,
++alors le fichier n'est plus conditionne sur l'accord des agents — ce qui etait
++tout le probleme de agents_snap.jsonl.
++
++    python tools/rapport_cycles.py
++    python tools/rapport_cycles.py --depuis 2026-09-14 --jusqu-a 2026-09-21
++    python tools/rapport_cycles.py --symbole NAS100 --echantillon 10
++"""
++import argparse
++import collections
++import csv
++import os
++import sys
++from pathlib import Path
++
++RACINE = Path(__file__).resolve().parent.parent
++os.chdir(RACINE)
++sys.path.insert(0, str(RACINE))
++
++from utils.journal_cycles import AGENTS, COLONNES, NOM_FICHIER  # noqa: E402
++
++LIBELLE = {"L": "LONG", "S": "SHORT", "W": "WAIT", "-": "absent"}
++
++
++def _fichiers():
++    try:
++        from utils.account_scope import chemin_donnees
++        base = Path(chemin_donnees(NOM_FICHIER))
++    except Exception:
++        base = Path("data") / NOM_FICHIER
++    trouves = [base] if base.exists() else []
++    trouves += sorted(base.parent.glob(base.name + ".*"))
++    return trouves
++
++
++def main() -> int:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--depuis", default=None, help="AAAA-MM-JJ inclus")
++    ap.add_argument("--jusqu-a", dest="jusqu_a", default=None, help="AAAA-MM-JJ inclus")
++    ap.add_argument("--symbole", default=None)
++    ap.add_argument("--echantillon", type=int, default=0,
++                    help="afficher N lignes brutes, dont au moins un WAIT")
++    a = ap.parse_args()
++
++    fichiers = _fichiers()
++    if not fichiers:
++        print("Aucun journal de cycles trouve. Le fichier n'est cree qu'au")
++        print("premier cycle apres deploiement — il n'y a pas de rattrapage.")
++        return 1
++
++    cycles = collections.Counter()          # symbole -> nb de lignes
++    par_jour = collections.Counter()
++    votes = {a_: collections.Counter() for a_ in AGENTS}
++    directions = collections.Counter()
++    gardes = collections.Counter()
++    desaccords = 0
++    total = 0
++    echantillon, un_wait = [], False
++
++    for f in fichiers:
++        try:
++            with open(f, newline="", encoding="utf-8", errors="replace") as fh:
++                for row in csv.DictReader(fh):
++                    ts = (row.get("ts_utc") or "")[:10]
++                    if not ts:
++                        continue
++                    if a.depuis and ts < a.depuis:
++                        continue
++                    if a.jusqu_a and ts > a.jusqu_a:
++                        continue
++                    sym = row.get("symbole") or "?"
++                    if a.symbole and sym != a.symbole:
++                        continue
++                    total += 1
++                    cycles[sym] += 1
++                    par_jour[ts] += 1
++                    directions[row.get("direction") or "?"] += 1
++                    g = row.get("garde") or ""
++                    if g:
++                        gardes[g] += 1
++                    v = row.get("votes") or ""
++                    for i, a_ in enumerate(AGENTS):
++                        votes[a_][v[i] if i < len(v) else "-"] += 1
++                    exprimes = {c for c in v if c in ("L", "S")}
++                    if len(exprimes) > 1:
++                        desaccords += 1
++                    if a.echantillon:
++                        if len(echantillon) < a.echantillon:
++                            echantillon.append(row)
++                            un_wait = un_wait or row.get("direction") == "W"
++                        elif not un_wait and row.get("direction") == "W":
++                            echantillon[-1] = row
++                            un_wait = True
++        except Exception as e:
++            print("  %s illisible : %s" % (f, e))
++
++    print("=" * 74)
++    print("  JOURNAL DE CYCLES")
++    print("=" * 74)
++    print("fichiers : %s" % ", ".join(p.name for p in fichiers))
++    print("taille   : %.1f Mo" % (sum(p.stat().st_size for p in fichiers) / 1024 / 1024))
++    print("lignes retenues : %d" % total)
++    if not total:
++        print("Aucune ligne dans la periode demandee.")
++        return 0
++    jours = sorted(par_jour)
++    print("periode  : %s -> %s (%d jour(s))" % (jours[0], jours[-1], len(jours)))
++
++    print()
++    print("CYCLES PAR SYMBOLE  (une ligne par cycle ET par timeframe)")
++    for sym, n in cycles.most_common():
++        print("  %-9s %7d lignes   ~%6.0f cycles/jour"
++              % (sym, n, n / max(1, len(jours)) / 3))
++
++    print()
++    print("REPARTITION DES VOTES PAR AGENT")
++    print("  %-11s %8s %8s %8s %8s" % ("AGENT", "LONG", "SHORT", "WAIT", "absent"))
++    for a_ in AGENTS:
++        c = votes[a_]
++        print("  %-11s %7.1f%% %7.1f%% %7.1f%% %7.1f%%" % (
++            a_, 100.0 * c["L"] / total, 100.0 * c["S"] / total,
++            100.0 * c["W"] / total, 100.0 * c["-"] / total))
++
++    print()
++    print("DIRECTION RETENUE : %s" % {LIBELLE.get(k, k): v for k, v in directions.most_common()})
++    print("lignes avec desaccord entre agents : %d (%.1f %%)"
++          % (desaccords, 100.0 * desaccords / total))
++
++    print()
++    print("GARDES BLOQUANTS")
++    if gardes:
++        for g, n in gardes.most_common(15):
++            print("  %-32s %6d  %5.1f%%" % (g, n, 100.0 * n / total))
++    else:
++        print("  aucun")
++
++    print()
++    print("CONTROLE D'INCONDITIONNALITE")
++    ok = []
++    ok.append(("des cycles en WAIT", directions.get("W", 0) > 0))
++    ok.append(("des desaccords entre agents", desaccords > 0))
++    ok.append(("des agents absents", any(votes[a_]["-"] for a_ in AGENTS)))
++    ok.append(("des cycles bloques par un garde", bool(gardes)))
++    for libelle, valeur in ok:
++        print("  [%s] %s" % ("x" if valeur else " ", libelle))
++    if all(v for _, v in ok):
++        print("  -> le journal n'est pas conditionne sur l'accord des agents.")
++    else:
++        print("  -> attention : il manque au moins un cas. Soit la periode est")
++        print("     trop courte, soit l'ecriture reste conditionnelle quelque part.")
++
++    if echantillon:
++        print()
++        print("ECHANTILLON")
++        print("  " + " | ".join(COLONNES))
++        for row in echantillon:
++            print("  " + " | ".join(str(row.get(c, "")) for c in COLONNES))
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/utils/journal_cycles.py b/utils/journal_cycles.py
+new file mode 100644
+index 0000000..982285c
+--- /dev/null
++++ b/utils/journal_cycles.py
+@@ -0,0 +1,230 @@
++# -*- coding: utf-8 -*-
++"""
++utils/journal_cycles.py — une ligne par cycle, inconditionnellement.
++
++AJOUT 2026-09-13 (etape 1 de la recherche d'edge).
++
++Le probleme qu'il resout
++------------------------
++`data/agents_snap.jsonl` n'est ecrit qu'APRES qu'une direction a ete decidee :
++`context="executed"` rejoue le contexte qui a produit un ordre, `context=
++"proposed"` n'existe qu'une fois une proposition formee. Mesure du 13/09 sur
++les 33 trades appariables : 0 vote « contre », 0 « WAIT », sur les cinq
++agents. Le fichier est conditionne sur l'accord des agents — une selection sur
++la variable expliquee. Aucune mesure de pouvoir predictif n'y survit.
++
++Ce journal-ci ecrit une ligne a CHAQUE cycle, quel qu'en soit le sort :
++proposition, WAIT, refus par un garde, sortie anticipee, exception. C'est la
++seule facon d'observer les cas ou un agent votait contre, ou ou personne ne
++votait.
++
++Format
++------
++CSV a colonnes fixes plutot que JSONL. Mesure sur une ligne representative :
++75 octets en CSV contre 142 en JSONL positionnel et 250 en JSONL verbeux. A
++12 symboles x 3 TF x 720 cycles/jour, cela fait 1,94 Mo/jour contre 3,68 et
++6,48. Le contenu est strictement tabulaire — aucun sous-dictionnaire, comme
++demande — donc le CSV ne perd rien et divise la place par deux. Le prix a
++payer est un format different de agents_snap.jsonl, qui lui ne change pas.
++
++Rotation : 48 Mo x 4 = 192 Mo, soit environ 99 jours a 7j/7 et 139 jours a
++5j/7 (les indices et le forex ne cotent pas le week-end). L'objectif de 90
++jours est donc tenu meme sous l'hypothese la plus defavorable.
++
++Le prix de reference
++--------------------
++La demande portait sur « le close du cycle sur le TF concerne ». Ce close
++n'existe nulle part dans ce que le cycle a deja calcule : `market` ne porte
++qu'un prix instantane, `indicators` que des ATR par TF. L'obtenir exigerait un
++appel MT5 supplementaire, ce que la consigne interdit explicitement.
++
++On ecrit donc `px`, le prix a l'instant de la decision, et `atr`, l'ATR du TF
++concerne — tous deux deja calcules. Pour un contrefactuel c'est preferable au
++close de la derniere bougie : on veut le prix au moment ou le vote a ete emis,
++et l'ATR donne l'echelle pour normaliser en R le mouvement ulterieur.
++
++Garanties
++---------
++Aucune fonction ne leve. Ce journal est un instrument de mesure ; il ne doit
++jamais faire echouer un cycle de trading. Il n'influence aucune decision : il
++transcrit ce que le cycle a deja calcule, rien de plus.
++"""
++from __future__ import annotations
++
++import os
++import threading
++from pathlib import Path
++from typing import Any, Dict, List, Optional
++
++try:
++    from utils.rotation_jsonl import rouler_si_besoin
++except Exception:                                    # pragma: no cover
++    def rouler_si_besoin(*_a, **_k):                 # type: ignore
++        return False
++
++NOM_FICHIER = "cycles.csv"
++
++# 48 Mo x 4 fichiers = 192 Mo -> ~99 jours a 7j/7, ~139 jours a 5j/7.
++TAILLE_MAX = 48 * 1024 * 1024
++CONSERVER = 4
++
++# Ordre FIGE des agents dans la colonne `votes`. Toute modification de cette
++# liste change la signification des lignes deja ecrites : ne pas y toucher
++# sans changer aussi le nom du fichier.
++AGENTS = ("structure", "smc", "swing", "technical", "scalping", "news")
++
++COLONNES = ["ts_utc", "symbole", "tf", "votes", "score_L", "score_S",
++            "confluence", "direction", "garde", "px", "atr"]
++
++_CODE = {"LONG": "L", "SHORT": "S", "WAIT": "W"}
++_VERROU = threading.Lock()
++
++# Dernier garde declenche, par symbole. Rempli par l'orchestrateur au moment ou
++# un garde refuse, lu puis efface a la fin du cycle. Un dictionnaire de module
++# parce que les gardes sont journalises depuis une fonction de module, loin de
++# l'instance : le detour evite de toucher a la vingtaine de points d'appel.
++_DERNIER_GARDE: Dict[str, str] = {}
++
++
++def noter_garde(symbole: str, nom: str) -> None:
++    """Memorise le garde qui vient de refuser, pour le cycle en cours."""
++    try:
++        if symbole and nom:
++            _DERNIER_GARDE[str(symbole)] = str(nom)[:40]
++    except Exception:
++        pass
++
++
++def reprendre_garde(symbole: str) -> str:
++    """Renvoie le garde note pour ce symbole et l'efface."""
++    try:
++        return _DERNIER_GARDE.pop(str(symbole), "") or ""
++    except Exception:
++        return ""
++
++
++def code_vote(v: Any) -> str:
++    """LONG->L, SHORT->S, WAIT->W, absent->'-'."""
++    try:
++        if v is None:
++            return "-"
++        s = str(v).strip().upper()
++        if not s:
++            return "-"
++        return _CODE.get(s, "W")
++    except Exception:
++        return "-"
++
++
++def votes_du_tf(per_tf_signals: Any, global_signals: Any, tf: str) -> str:
++    """
++    Chaine positionnelle d'un caractere par agent, dans l'ordre de AGENTS.
++
++    On prend le vote du TF quand l'agent en a un ; sinon son vote global
++    (c'est le cas de `news`, qui n'est jamais ventile par TF) ; sinon '-'.
++    """
++    out: List[str] = []
++    ptf = per_tf_signals if isinstance(per_tf_signals, dict) else {}
++    gl = global_signals if isinstance(global_signals, dict) else {}
++    for agent in AGENTS:
++        v = None
++        try:
++            m = ptf.get(agent)
++            if isinstance(m, dict):
++                v = m.get(tf)
++            if v is None:
++                v = gl.get(agent)
++        except Exception:
++            v = None
++        out.append(code_vote(v))
++    return "".join(out)
++
++
++def _nb(x: Any, defaut: str = "") -> str:
++    try:
++        if x is None:
++            return defaut
++        return "%.3f" % float(x)
++    except Exception:
++        return defaut
++
++
++def lignes_du_cycle(cycle: Dict[str, Any], tfs: Any) -> List[List[str]]:
++    """
++    Traduit l'etat collecte pendant un cycle en une ligne par timeframe.
++
++    Un cycle sorti tres tot (cooldown, garde quotidien) n'a pas de vote : on
++    ecrit quand meme une ligne par TF, avec des votes a '-'. C'est precisement
++    ce qu'on veut pouvoir compter.
++    """
++    try:
++        c = cycle or {}
++        sym = str(c.get("symbole") or "")
++        ts = str(c.get("ts_utc") or "")
++        liste_tf = [str(t) for t in (tfs or []) if t] or ["?"]
++        ptf = c.get("per_tf_signals")
++        gl = c.get("global_signals")
++        ind = c.get("indicators") if isinstance(c.get("indicators"), dict) else {}
++        px = c.get("px")
++        sL, sS = c.get("score_L"), c.get("score_S")
++        cf = c.get("confluence")
++        direction = code_vote(c.get("direction") or "WAIT")
++        garde = str(c.get("garde") or "")[:40].replace(",", ";").replace("\n", " ")
++
++        lignes: List[List[str]] = []
++        for tf in liste_tf:
++            atr = None
++            try:
++                atr = ind.get("ATR_%s" % tf)
++            except Exception:
++                atr = None
++            lignes.append([
++                ts, sym, tf, votes_du_tf(ptf, gl, tf),
++                _nb(sL), _nb(sS), _nb(cf), direction, garde, _nb(px), _nb(atr),
++            ])
++        return lignes
++    except Exception:
++        return []
++
++
++def chemin_journal() -> Path:
++    """Chemin d'ecriture, cloisonne par compte comme les autres donnees."""
++    try:
++        from utils.account_scope import chemin_donnees
++        return Path(chemin_donnees(NOM_FICHIER))
++    except Exception:
++        p = Path("data") / NOM_FICHIER
++        try:
++            p.parent.mkdir(parents=True, exist_ok=True)
++        except Exception:
++            pass
++        return p
++
++
++def ecrire(lignes: List[List[str]], chemin: Optional[Path] = None) -> int:
++    """
++    Ajoute les lignes au journal. Renvoie le nombre de lignes ecrites.
++
++    Ne leve jamais : en cas de probleme d'ecriture on renvoie 0 et le cycle
++    continue. Perdre une ligne de mesure est sans consequence ; interrompre un
++    cycle pour cette raison serait absurde.
++    """
++    if not lignes:
++        return 0
++    try:
++        p = Path(chemin) if chemin is not None else chemin_journal()
++        with _VERROU:
++            rouler_si_besoin(p, taille_max=TAILLE_MAX, conserver=CONSERVER)
++            neuf = not p.exists() or p.stat().st_size == 0
++            try:
++                p.parent.mkdir(parents=True, exist_ok=True)
++            except Exception:
++                pass
++            with p.open("a", encoding="utf-8", newline="") as fh:
++                if neuf:
++                    fh.write(",".join(COLONNES) + "\n")
++                for l in lignes:
++                    fh.write(",".join("" if v is None else str(v) for v in l) + "\n")
++        return len(lignes)
++    except Exception:
++        return 0
+-- 
+2.43.0
+

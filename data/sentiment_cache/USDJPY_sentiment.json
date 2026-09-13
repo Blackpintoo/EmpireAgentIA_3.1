@@ -1,16 +1,16 @@
 {
-  "timestamp": "2026-04-17T19:26:48.765614+00:00",
+  "timestamp": "2026-09-11T08:14:02.570159+00:00",
   "symbol": "USDJPY",
   "cot": {
-    "report_date": "2026-04-07T00:00:00+00:00",
-    "commercial_long": 192103,
-    "commercial_short": 101707,
-    "commercial_net": 90396,
-    "noncommercial_long": 91560,
-    "noncommercial_short": 185302,
-    "noncommercial_net": -93742,
-    "open_interest": 349373,
-    "noncommercial_net_change": -20870,
-    "commercial_net_change": 19689
+    "report_date": "2026-09-01T00:00:00+00:00",
+    "commercial_long": 4843,
+    "commercial_short": 13277,
+    "commercial_net": -8434,
+    "noncommercial_long": 6560,
+    "noncommercial_short": 4642,
+    "noncommercial_net": 1918,
+    "open_interest": 22410,
+    "noncommercial_net_change": 43,
+    "commercial_net_change": -177
   }
 }

@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-09-11T19:31:46.978424+00:00",
+  "symbol": "USDCAD",
+  "cot": {
+    "report_date": "2026-09-01T00:00:00+00:00",
+    "commercial_long": 266881,
+    "commercial_short": 151599,
+    "commercial_net": 115282,
+    "noncommercial_long": 36262,
+    "noncommercial_short": 144405,
+    "noncommercial_net": -108143,
+    "open_interest": 334800,
+    "noncommercial_net_change": 13379,
+    "commercial_net_change": -7949
+  }
+}

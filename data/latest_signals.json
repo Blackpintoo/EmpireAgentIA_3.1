@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-04-19T07:00:12.890433+00:00",
-  "symbol": "BNBUSD",
+  "timestamp": "2026-09-13T10:56:13.152218+00:00",
+  "symbol": "BTCUSD",
   "signals": {
     "swing": {
       "signal": "SHORT",
@@ -14,11 +14,6 @@
     },
     "smc": {
       "signal": "SHORT",
-      "intensity": null,
-      "reason": ""
-    },
-    "news": {
-      "signal": "LONG",
       "intensity": null,
       "reason": ""
     }

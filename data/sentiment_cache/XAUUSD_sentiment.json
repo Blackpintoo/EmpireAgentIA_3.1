@@ -1,16 +1,16 @@
 {
-  "timestamp": "2026-04-17T16:32:41.097966+00:00",
+  "timestamp": "2026-09-11T13:19:56.514100+00:00",
   "symbol": "XAUUSD",
   "cot": {
-    "report_date": "2026-04-07T00:00:00+00:00",
-    "commercial_long": 57729,
-    "commercial_short": 251480,
-    "commercial_net": -193751,
-    "noncommercial_long": 205368,
-    "noncommercial_short": 49063,
-    "noncommercial_net": 156305,
-    "open_interest": 354877,
-    "noncommercial_net_change": -6897,
-    "commercial_net_change": 7889
+    "report_date": "2026-09-01T00:00:00+00:00",
+    "commercial_long": 7965,
+    "commercial_short": 0,
+    "commercial_net": 7965,
+    "noncommercial_long": 27968,
+    "noncommercial_short": 55385,
+    "noncommercial_net": -27417,
+    "open_interest": 83554,
+    "noncommercial_net_change": -8628,
+    "commercial_net_change": 668
   }
 }

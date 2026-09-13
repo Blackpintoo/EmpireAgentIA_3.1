@@ -46,7 +46,22 @@
       "Read(//tmp/**)",
       "Bash(sed 's/.*ASIA_BLOCK\\\\] //')",
       "Bash(sed 's/.*PROBATION\\\\] //')",
-      "Bash(sed 's/.*heure //')"
+      "Bash(sed 's/.*heure //')",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"Name like '%python%'\" | Select-Object ProcessId, CreationDate, @{n='cmd';e={$_.CommandLine.Substring\\(0,[Math]::Min\\(90,$_.CommandLine.Length\\)\\)}} | Format-List; \"--- PID 37428 alive? ---\"; if \\(Get-Process -Id 37428 -ErrorAction SilentlyContinue\\) { \"OUI\" } else { \"NON\" })",
+      "Bash(awk -F'|' '$1>=\"2026-08-02 22:00\"')",
+      "Bash(awk -F'|' '$1 >= \"2026-08-03 07:09:50\" && $1 <= \"2026-08-03 07:11:30\"' logs/empire_agent.log.1)",
+      "Bash(awk -F'|' '$1>=\"2026-08-03\" && $2==\"XAUUSD\" && $3==\"garde:direction_filter\"' logs/guards.log)",
+      "Bash(awk -F'|' '$1>=\"2026-08-03\" && $2==\"XAUUSD\" && $3 ~ /hour_filter/' logs/guards.log)",
+      "Bash(awk -F'|' '$1>=\"2026-08-03\" && $2==\"USDJPY\" && $3 ~ /hour_filter/' logs/guards.log)",
+      "Bash(awk -F'|' '$1>=\"2026-08-03 21:54\" && $1<=\"2026-08-03 21:59\"' logs/empire_agent.log.1)",
+      "Bash(awk -F'|' '$1>=\"2026-08-03 21:55:07\" && $1<=\"2026-08-03 21:55:20\"' logs/empire_agent.log.1)",
+      "Bash(awk -F'|' '$1>=\"2026-08-03 17:00:05\" && $1<=\"2026-08-03 17:00:25\"' logs/empire_agent.log.1)",
+      "Bash(awk '/^USDJPY:/,/^[A-Z]/' config/overrides.yaml)",
+      "Bash(awk -F'|' '$1>=\"2026-08-03\" && $2==\"USDJPY\"' logs/guards.log)",
+      "Bash(awk 'NR>=4156 && NR<=4230' orchestrator/orchestrator.py)",
+      "Bash(MT5_DRY_RUN=1 EMPIRE_SELFTEST=1 .venv/Scripts/python.exe -m pytest tests/test_fraicheur_code.py tests/test_mfe_deals_sortie.py tests/test_mfe_journal.py -q --tb=short -p no:cacheprovider)",
+      "Bash(MT5_DRY_RUN=1 EMPIRE_SELFTEST=1 .venv/Scripts/python.exe -m pytest tests/test_fraicheur_code.py tests/test_mfe_deals_sortie.py tests/test_mfe_journal.py -q --tb=short -p no:cacheprovider --basetemp=\"C:/Users/KVIN~1/AppData/Local/Temp/claude/C--EmpireAgentIA-3/464b9254-ef50-4332-b61f-27900ce6ac62/scratchpad/pt2\")",
+      "Bash(cd /c/EmpireAgentIA_3; tail -4 data/deals_history.csv; echo \"=== mtime ===\"; stat -c '%y' data/deals_history.csv; echo \"=== distribution entry ===\"; cut -d, -f4 data/deals_history.csv | sort | uniq -c | head)"
     ],
     "deny": [],
     "ask": []
